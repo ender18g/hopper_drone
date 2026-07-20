@@ -1,0 +1,1089 @@
+"use client";
+
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
+import type { WorkspaceSvg } from "blockly";
+import {
+  createEmptyDroneTelemetry,
+  getBluetoothApi,
+  hopperDeviceRequest,
+  MamboController,
+  type DroneTelemetry,
+} from "../lib/drone";
+import { ExecutionRuntime } from "../lib/runtime";
+import {
+  DEFAULT_COLOR_PROFILES,
+  VisionRuntime,
+  type ColorProfile,
+  type ColorProfiles,
+  type CustomPrediction,
+  type RgbPixel,
+  type VisionDetection,
+} from "../lib/vision";
+import wrcLogo from "../logos/wrc_logo.png?inline";
+
+type BlocklyToolkit = typeof import("../lib/blockly");
+type ConnectionState = "disconnected" | "connecting" | "connected";
+type CameraState = "offline" | "connecting" | "live" | "error";
+type ModelState = "off" | "loading" | "ready" | "error";
+type WifiState = "checking" | "connected" | "disconnected";
+
+const PROJECT_KEY = "hopper-studio-project-v1";
+const COLOR_KEY = "hopper-studio-colors-v1";
+const VISION_WIDTH_KEY = "hopper-studio-vision-width-v1";
+const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (
+  ...args: string[]
+) => (...values: unknown[]) => Promise<void>;
+
+const formatLogValue = (value: unknown) => {
+  if (typeof value === "string") return value;
+  if (value instanceof Error) return value.message;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+};
+
+const clampChannel = (value: number) => Math.max(0, Math.min(255, Number(value) || 0));
+
+const formatDetectionLabel = (label: string) =>
+  label.replace(/\b\w/g, (character) => character.toUpperCase());
+
+const formatCoordinate = (value: number) =>
+  value > 0 ? `+${Math.round(value)}` : `${Math.round(value)}`;
+
+export default function HopperStudio() {
+  const workspaceHostRef = useRef<HTMLDivElement>(null);
+  const workspaceRef = useRef<WorkspaceSvg | null>(null);
+  const blocklyRef = useRef<BlocklyToolkit | null>(null);
+  const autosaveTimerRef = useRef<number | null>(null);
+  const controllerRef = useRef<MamboController | null>(null);
+  const runtimeRef = useRef<ExecutionRuntime | null>(null);
+  const imageRef = useRef<HTMLImageElement>(null);
+  const analysisCanvasRef = useRef<HTMLCanvasElement>(null);
+  const visionRef = useRef<VisionRuntime | null>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
+  const customModelInputRef = useRef<HTMLInputElement>(null);
+  const objectScanBusyRef = useRef(false);
+  const projectNameRef = useRef("Color Landing Lab");
+  const javascriptCodeRef = useRef("");
+
+  const [editorMode, setEditorMode] = useState<"blocks" | "javascript">("blocks");
+  const [generatedCode, setGeneratedCode] = useState("");
+  const [javascriptCode, setJavascriptCode] = useState("");
+  const [projectName, setProjectName] = useState("Color Landing Lab");
+  const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected");
+  const [droneName, setDroneName] = useState("No drone selected");
+  const [telemetry, setTelemetry] = useState<DroneTelemetry>(createEmptyDroneTelemetry);
+  const [running, setRunning] = useState(false);
+  const [logs, setLogs] = useState<string[]>([
+    "Hopper Studio ready. Connect Bluetooth, then connect the video feed.",
+  ]);
+  const [showConsole, setShowConsole] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+
+  const [cameraAddress, setCameraAddress] = useState("http://192.168.2.1/");
+  const [cameraSource, setCameraSource] = useState<string | null>(null);
+  const [cameraState, setCameraState] = useState<CameraState>("offline");
+  const [wifiState, setWifiState] = useState<WifiState>("checking");
+  const [visionWidth, setVisionWidth] = useState(390);
+  const [profiles, setProfiles] = useState<ColorProfiles>(DEFAULT_COLOR_PROFILES);
+  const [activeProfile, setActiveProfile] = useState<keyof ColorProfiles>("red");
+  const [coverage, setCoverage] = useState<number | null>(null);
+  const [centerPixel, setCenterPixel] = useState<RgbPixel | null>(null);
+  const [colorScanEnabled, setColorScanEnabled] = useState(false);
+  const [modelState, setModelState] = useState<ModelState>("off");
+  const [objectScanEnabled, setObjectScanEnabled] = useState(false);
+  const [detections, setDetections] = useState<VisionDetection[]>([]);
+  const [customModelState, setCustomModelState] = useState<ModelState>("off");
+  const [customLabels, setCustomLabels] = useState<string[]>([]);
+  const [customPredictions, setCustomPredictions] = useState<CustomPrediction[]>([]);
+  const cameraLive = cameraState === "live";
+
+  const appendLog = useCallback((...values: unknown[]) => {
+    const line = values.map(formatLogValue).join(" ");
+    setLogs((current) => [...current.slice(-99), line]);
+  }, []);
+
+  const notify = useCallback((message: string) => {
+    setToast(message);
+    window.setTimeout(() => setToast(null), 3200);
+  }, []);
+
+  const persistProject = useCallback(
+    (showConfirmation = false) => {
+      const workspace = workspaceRef.current;
+      const toolkit = blocklyRef.current;
+      if (!workspace || !toolkit) return;
+      const project = {
+        version: 1,
+        name: projectNameRef.current,
+        workspace: toolkit.saveWorkspace(workspace),
+        javascriptCode: javascriptCodeRef.current,
+        savedAt: new Date().toISOString(),
+      };
+      localStorage.setItem(PROJECT_KEY, JSON.stringify(project));
+      if (showConfirmation) notify("Project saved on this computer");
+    },
+    [notify],
+  );
+
+  useEffect(() => {
+    projectNameRef.current = projectName;
+  }, [projectName]);
+
+  useEffect(() => {
+    javascriptCodeRef.current = javascriptCode;
+  }, [javascriptCode]);
+
+  useEffect(() => {
+    let disposed = false;
+    void (async () => {
+      if (!workspaceHostRef.current) return;
+      const toolkit = await import("../lib/blockly");
+      if (disposed || !workspaceHostRef.current) return;
+      blocklyRef.current = toolkit;
+      const workspace = toolkit.createHopperWorkspace(workspaceHostRef.current);
+      workspaceRef.current = workspace;
+
+      const savedProject = localStorage.getItem(PROJECT_KEY);
+      if (savedProject) {
+        try {
+          const project = JSON.parse(savedProject) as {
+            name?: string;
+            workspace?: object;
+            javascriptCode?: string;
+          };
+          if (project.workspace) toolkit.restoreWorkspace(workspace, project.workspace);
+          if (project.name) setProjectName(project.name);
+          if (project.javascriptCode) setJavascriptCode(project.javascriptCode);
+        } catch {
+          appendLog("Saved project could not be read; opened a fresh workspace.");
+        }
+      }
+
+      const refreshCode = () => {
+        try {
+          setGeneratedCode(toolkit.generateWorkspaceCode(workspace));
+          if (autosaveTimerRef.current !== null) window.clearTimeout(autosaveTimerRef.current);
+          autosaveTimerRef.current = window.setTimeout(() => persistProject(false), 500);
+        } catch (error) {
+          appendLog("Code preview:", error);
+        }
+      };
+      workspace.addChangeListener(refreshCode);
+      refreshCode();
+
+      const resize = () => toolkit.Blockly.svgResize(workspace);
+      window.addEventListener("resize", resize);
+      window.setTimeout(resize, 50);
+      return () => window.removeEventListener("resize", resize);
+    })();
+
+    return () => {
+      disposed = true;
+      if (autosaveTimerRef.current !== null) window.clearTimeout(autosaveTimerRef.current);
+      workspaceRef.current?.dispose();
+      workspaceRef.current = null;
+    };
+  }, [appendLog, persistProject]);
+
+  useEffect(() => {
+    const restorePreferences = window.setTimeout(() => {
+      try {
+        const saved = localStorage.getItem(COLOR_KEY);
+        if (saved) setProfiles(JSON.parse(saved) as ColorProfiles);
+        const savedVisionWidth = Number(localStorage.getItem(VISION_WIDTH_KEY));
+        if (Number.isFinite(savedVisionWidth) && savedVisionWidth >= 330) {
+          setVisionWidth(Math.min(720, savedVisionWidth));
+        }
+      } catch {
+        // Keep safe defaults if prior local preferences are malformed.
+      }
+    }, 0);
+
+    const vision = new VisionRuntime(
+      () => imageRef.current,
+      () => analysisCanvasRef.current,
+      setModelState,
+      setDetections,
+      setCustomModelState,
+      setCustomPredictions,
+    );
+    visionRef.current = vision;
+    return () => {
+      window.clearTimeout(restorePreferences);
+      vision.dispose();
+      visionRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(COLOR_KEY, JSON.stringify(profiles));
+    visionRef.current?.setProfiles(profiles);
+  }, [profiles]);
+
+  useEffect(() => {
+    localStorage.setItem(VISION_WIDTH_KEY, String(visionWidth));
+    const workspace = workspaceRef.current;
+    const toolkit = blocklyRef.current;
+    if (workspace && toolkit) window.setTimeout(() => toolkit.Blockly.svgResize(workspace), 0);
+  }, [visionWidth]);
+
+  useEffect(() => {
+    const workspace = workspaceRef.current;
+    const toolkit = blocklyRef.current;
+    if (editorMode === "blocks" && workspace && toolkit) {
+      window.setTimeout(() => toolkit.Blockly.svgResize(workspace), 0);
+    }
+  }, [editorMode]);
+
+  const checkWifi = useCallback(async (showChecking = true) => {
+    if (showChecking) setWifiState("checking");
+    try {
+      if (window.location.protocol === "file:") {
+        const response = await fetch("http://192.168.2.1/", {
+          cache: "no-store",
+          mode: "no-cors",
+          signal: AbortSignal.timeout(3500),
+        });
+        if (!response) throw new Error("No Hopper Wi-Fi response");
+      } else {
+        const response = await fetch(`/api/camera/status?t=${Date.now()}`, {
+          cache: "no-store",
+          signal: AbortSignal.timeout(4500),
+        });
+        if (!response.ok) throw new Error("No Hopper Wi-Fi response");
+      }
+      setWifiState("connected");
+      return true;
+    } catch {
+      setWifiState("disconnected");
+      return false;
+    }
+  }, []);
+
+  useEffect(() => {
+    const initialCheck = window.setTimeout(() => void checkWifi(), 0);
+    const interval = window.setInterval(() => void checkWifi(false), 12000);
+    return () => {
+      window.clearTimeout(initialCheck);
+      window.clearInterval(interval);
+    };
+  }, [checkWifi]);
+
+  const connectDrone = async () => {
+    const bluetooth = getBluetoothApi();
+    if (!bluetooth) {
+      notify("Web Bluetooth needs desktop Chrome or Edge on localhost");
+      return;
+    }
+    try {
+      setConnectionState("connecting");
+      appendLog("Looking for a Hopper drone…");
+      const device = await bluetooth.requestDevice(hopperDeviceRequest);
+      const controller = new MamboController(device);
+      controllerRef.current = controller;
+      controller.onTelemetry = setTelemetry;
+      controller.onEvent = (eventName) => appendLog("Drone event:", eventName);
+      device.addEventListener("gattserverdisconnected", () => {
+        setConnectionState("disconnected");
+        setTelemetry((current) => ({ ...current, connected: false }));
+        appendLog("Drone Bluetooth disconnected.");
+      });
+      await controller.connect();
+      setConnectionState("connected");
+      setDroneName(device.name || "Hopper drone");
+      appendLog("Bluetooth connected to", device.name || "Hopper drone");
+    } catch (error) {
+      controllerRef.current?.disconnect();
+      controllerRef.current = null;
+      setConnectionState("disconnected");
+      if ((error as Error).name !== "NotFoundError") appendLog("Bluetooth:", error);
+    }
+  };
+
+  const disconnectDrone = async () => {
+    runtimeRef.current?.stop();
+    controllerRef.current?.disconnect();
+    controllerRef.current = null;
+    setConnectionState("disconnected");
+    setDroneName("No drone selected");
+    setTelemetry(createEmptyDroneTelemetry());
+    appendLog("Drone disconnected.");
+  };
+
+  const runProgram = async () => {
+    if (running) return;
+    const controller = controllerRef.current;
+    const vision = visionRef.current;
+    if (!controller || connectionState !== "connected") {
+      notify("Connect the Hopper with Bluetooth before running code");
+      return;
+    }
+    if (!vision) return;
+
+    const code =
+      editorMode === "blocks"
+        ? blocklyRef.current?.generateWorkspaceCode(workspaceRef.current!) || ""
+        : javascriptCode;
+    if (!code.trim()) {
+      notify("Add some blocks or JavaScript first");
+      return;
+    }
+
+    const runtime = new ExecutionRuntime(
+      (error) => appendLog("Event error:", error),
+      () => {
+        controller.cancelRunFlag = true;
+      },
+    );
+    runtimeRef.current = runtime;
+    setRunning(true);
+    setShowConsole(true);
+    appendLog("▶ Program started");
+
+    const programConsole = {
+      log: (...values: unknown[]) => appendLog(...values),
+      warn: (...values: unknown[]) => appendLog("Warning:", ...values),
+      error: (...values: unknown[]) => appendLog("Error:", ...values),
+    };
+
+    try {
+      await controller.startRun();
+      const execute = new AsyncFunction("drone", "vision", "runtime", "console", code);
+      await execute(controller, vision, runtime, programConsole);
+      if (runtime.hasEvents && !runtime.stopped) {
+        appendLog("Listening for events. Press Stop when finished.");
+        await runtime.waitUntilStopped();
+      }
+      if (!runtime.stopped) {
+        await controller.stopRun();
+        runtime.stop();
+        appendLog("■ Program complete — landing command sent");
+      }
+    } catch (error) {
+      if ((error as Error).message !== "Program stopped") appendLog("Program error:", error);
+      if (!runtime.stopped) {
+        runtime.stop();
+        await controller.forceLand().catch(() => undefined);
+      }
+    } finally {
+      runtimeRef.current = null;
+      setRunning(false);
+    }
+  };
+
+  const stopProgram = async () => {
+    const controller = controllerRef.current;
+    runtimeRef.current?.stop();
+    if (controller) {
+      controller.cancelRunFlag = true;
+      appendLog("Stopping program — emergency landing…");
+      await controller.forceLand().catch((error) => appendLog("Landing:", error));
+    }
+    setRunning(false);
+  };
+
+  const emergencyCutoff = async () => {
+    const controller = controllerRef.current;
+    if (!controller) return;
+    if (!window.confirm("Emergency only: stop the motors immediately?")) return;
+    runtimeRef.current?.stop();
+    controller.cancelRunFlag = true;
+    await controller.cutoff().catch((error) => appendLog("Motor cutoff:", error));
+    setRunning(false);
+    appendLog("⚠ Emergency motor cutoff sent");
+  };
+
+  const connectCamera = () => {
+    try {
+      const cameraUrl = new URL(cameraAddress);
+      if (cameraUrl.protocol !== "http:") throw new Error("Camera address must use http://");
+      setCameraState("connecting");
+      setWifiState("checking");
+      setDetections([]);
+      setCenterPixel(null);
+      const source =
+        window.location.protocol === "file:"
+          ? cameraUrl.href
+          : `/api/camera?url=${encodeURIComponent(cameraUrl.href)}&t=${Date.now()}`;
+      setCameraSource(source);
+      appendLog("Connecting to camera at", cameraUrl.href);
+      void checkWifi();
+    } catch (error) {
+      setCameraState("error");
+      appendLog("Camera:", error);
+    }
+  };
+
+  const scanColor = useCallback(() => {
+    try {
+      const result = visionRef.current?.colorCoverage(activeProfile) ?? null;
+      setCoverage(result);
+      return result;
+    } catch (error) {
+      setColorScanEnabled(false);
+      appendLog("Color scan:", error);
+      return null;
+    }
+  }, [activeProfile, appendLog]);
+
+  useEffect(() => {
+    if (!colorScanEnabled) return;
+    scanColor();
+    const interval = window.setInterval(scanColor, 750);
+    return () => window.clearInterval(interval);
+  }, [colorScanEnabled, scanColor]);
+
+  useEffect(() => {
+    if (!cameraLive) return;
+    const sample = () => {
+      try {
+        setCenterPixel(visionRef.current?.sampleCenterPixel() ?? null);
+      } catch {
+        setCenterPixel(null);
+      }
+    };
+    sample();
+    const interval = window.setInterval(sample, 500);
+    return () => window.clearInterval(interval);
+  }, [cameraLive]);
+
+  useEffect(() => {
+    if (!cameraLive) return;
+    const timer = window.setTimeout(scanColor, 70);
+    return () => window.clearTimeout(timer);
+  }, [activeProfile, cameraLive, profiles, scanColor]);
+
+  const scanObjects = useCallback(async () => {
+    if (objectScanBusyRef.current) return;
+    objectScanBusyRef.current = true;
+    try {
+      await visionRef.current?.detectObjects(0.55);
+    } catch (error) {
+      setObjectScanEnabled(false);
+      appendLog("Object detection:", error);
+    } finally {
+      objectScanBusyRef.current = false;
+    }
+  }, [appendLog]);
+
+  const toggleObjectScan = async () => {
+    if (objectScanEnabled) {
+      setObjectScanEnabled(false);
+      return;
+    }
+    try {
+      await visionRef.current?.loadObjectModel();
+      setObjectScanEnabled(true);
+      await scanObjects();
+    } catch (error) {
+      appendLog("Object model:", error);
+    }
+  };
+
+  useEffect(() => {
+    if (!objectScanEnabled) return;
+    const interval = window.setInterval(() => void scanObjects(), 1800);
+    return () => window.clearInterval(interval);
+  }, [objectScanEnabled, scanObjects]);
+
+  const loadCustomModel = async (files: FileList | null) => {
+    if (!files?.length) return;
+    const selected = Array.from(files);
+    const metadataFile = selected.find((file) => file.name.toLowerCase() === "metadata.json");
+    const modelFile = selected.find(
+      (file) => file.name.toLowerCase().endsWith(".json") && file !== metadataFile,
+    );
+    const weightsFile = selected.find((file) => file.name.toLowerCase().endsWith(".bin"));
+
+    if (!modelFile || !weightsFile || !metadataFile) {
+      notify("Select model.json, weights.bin, and metadata.json together");
+      if (customModelInputRef.current) customModelInputRef.current.value = "";
+      return;
+    }
+
+    try {
+      const labels = await visionRef.current?.loadCustomModel(
+        modelFile,
+        weightsFile,
+        metadataFile,
+      );
+      setCustomLabels(labels || []);
+      appendLog("Teachable Machine model loaded:", (labels || []).join(", "));
+      notify(`Custom model ready · ${labels?.length || 0} labels`);
+    } catch (error) {
+      setCustomLabels([]);
+      appendLog("Custom model:", error);
+      notify("That Teachable Machine model could not be loaded");
+    } finally {
+      if (customModelInputRef.current) customModelInputRef.current.value = "";
+    }
+  };
+
+  const scanCustomModel = async () => {
+    try {
+      await visionRef.current?.classifyCustomModel();
+    } catch (error) {
+      appendLog("Custom model:", error);
+    }
+  };
+
+  const clampVisionWidth = useCallback((width: number) => {
+    const available = Math.max(330, window.innerWidth - 570);
+    return Math.round(Math.max(330, Math.min(720, available, width)));
+  }, []);
+
+  useEffect(() => {
+    const fitVisionDeck = () => setVisionWidth((current) => clampVisionWidth(current));
+    fitVisionDeck();
+    window.addEventListener("resize", fitVisionDeck);
+    return () => window.removeEventListener("resize", fitVisionDeck);
+  }, [clampVisionWidth]);
+
+  const beginVisionResize = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (window.innerWidth <= 820) return;
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = visionWidth;
+    document.body.classList.add("resizing-vision");
+
+    const move = (moveEvent: PointerEvent) => {
+      setVisionWidth(clampVisionWidth(startWidth + startX - moveEvent.clientX));
+    };
+    const finish = () => {
+      document.body.classList.remove("resizing-vision");
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", finish);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("pointercancel", finish);
+  };
+
+  const resizeVisionWithKeyboard = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const change = event.key === "ArrowLeft" ? 32 : -32;
+    setVisionWidth((current) => clampVisionWidth(current + change));
+  };
+
+  const updateProfile = (
+    channel: "r" | "g" | "b",
+    side: "Min" | "Max",
+    value: number,
+  ) => {
+    const key = `${channel}${side}` as keyof ColorProfile;
+    const oppositeKey = `${channel}${side === "Min" ? "Max" : "Min"}` as keyof ColorProfile;
+    setProfiles((current) => ({
+      ...current,
+      [activeProfile]: {
+        ...current[activeProfile],
+        [key]:
+          side === "Min"
+            ? Math.min(clampChannel(value), current[activeProfile][oppositeKey])
+            : Math.max(clampChannel(value), current[activeProfile][oppositeKey]),
+      },
+    }));
+  };
+
+  const newProject = () => {
+    if (!window.confirm("Start a fresh project? Your saved project will stay on this computer.")) return;
+    const workspace = workspaceRef.current;
+    const toolkit = blocklyRef.current;
+    if (workspace && toolkit) toolkit.loadDefaultWorkspace(workspace);
+    setProjectName("Untitled Hopper Project");
+    setJavascriptCode("");
+    notify("Fresh project opened");
+  };
+
+  const downloadProject = () => {
+    const workspace = workspaceRef.current;
+    const toolkit = blocklyRef.current;
+    if (!workspace || !toolkit) return;
+    const contents = JSON.stringify(
+      {
+        version: 1,
+        name: projectName,
+        workspace: toolkit.saveWorkspace(workspace),
+        javascriptCode,
+      },
+      null,
+      2,
+    );
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(new Blob([contents], { type: "application/json" }));
+    link.download = `${projectName.replace(/[^a-z0-9]+/gi, "-").toLowerCase() || "hopper-project"}.hopper.json`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
+
+  const importProject = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      const project = JSON.parse(await file.text()) as {
+        name?: string;
+        workspace?: object;
+        javascriptCode?: string;
+      };
+      if (!project.workspace) throw new Error("This file has no block workspace.");
+      blocklyRef.current?.restoreWorkspace(workspaceRef.current!, project.workspace);
+      setProjectName(project.name || "Imported Hopper Project");
+      setJavascriptCode(project.javascriptCode || "");
+      notify("Project imported");
+    } catch (error) {
+      appendLog("Import:", error);
+      notify("That project file could not be opened");
+    } finally {
+      if (importInputRef.current) importInputRef.current.value = "";
+    }
+  };
+
+  const activeRange = profiles[activeProfile];
+  const telemetryLive = telemetry.connected || cameraLive;
+  const modelLabel =
+    modelState === "loading"
+      ? "Loading local model…"
+      : modelState === "ready"
+        ? objectScanEnabled
+          ? "Scanning every 1.8s"
+          : "Model ready"
+        : modelState === "error"
+          ? "Model unavailable"
+          : "Off — zero CPU use";
+
+  const connectionLabel =
+    connectionState === "connected"
+      ? droneName
+      : connectionState === "connecting"
+        ? "Pairing…"
+        : "Connect drone";
+
+  const detectionSummary = useMemo(
+    () =>
+      detections.map((item, index) => ({
+        id: `${item.class}-${index}`,
+        label: formatDetectionLabel(item.class),
+        confidence: Math.round(item.score * 100),
+        x: formatCoordinate(item.centerX),
+        y: formatCoordinate(item.centerY),
+      })),
+    [detections],
+  );
+  const customPredictionSummary = useMemo(
+    () =>
+      [...customPredictions]
+        .sort((left, right) => right.probability - left.probability)
+        .map((item) => `${item.className} ${Math.round(item.probability * 100)}%`),
+    [customPredictions],
+  );
+  const batteryTone =
+    telemetry.batteryLevel === null
+      ? "unknown"
+      : telemetry.batteryLevel <= 20
+        ? "red"
+        : telemetry.batteryLevel <= 50
+          ? "yellow"
+          : "green";
+  const workspaceStyle = {
+    "--vision-width": `${visionWidth}px`,
+  } as CSSProperties;
+
+  return (
+    <main className="studio-shell">
+      <header className="topbar">
+        <div className="brand-lockup">
+          <img src={wrcLogo} alt="World Robotics Championship" className="wrc-logo" />
+          <span className="brand-divider" />
+          <div>
+            <div className="brand-name">HOPPER STUDIO</div>
+            <div className="brand-subtitle">FLIGHT + VISION LAB</div>
+          </div>
+        </div>
+        <div className="topbar-center">
+          <span className="local-pill"><i /> LOCAL · PRIVATE</span>
+          <span className="project-label">PROJECT</span>
+          <input
+            className="project-title-input"
+            value={projectName}
+            onChange={(event) => setProjectName(event.target.value)}
+            aria-label="Project name"
+          />
+        </div>
+        <div className="connection-cluster">
+          <button
+            className={`wifi-status-box ${wifiState}`}
+            onClick={() => void checkWifi()}
+            title="Check whether the Hopper camera responds at 192.168.2.1"
+          >
+            <span className="wifi-mark"><i /><i /><i /></span>
+            <span>
+              <b>{wifiState === "connected" ? "Wi-Fi ready" : wifiState === "checking" ? "Checking Wi-Fi…" : "Wi-Fi offline"}</b>
+              <small>192.168.2.1</small>
+            </span>
+            <i className="wifi-status-dot" />
+          </button>
+          <div className={`battery-chip ${batteryTone}`} aria-label={`Battery ${telemetry.batteryLevel ?? "unknown"}${telemetry.batteryLevel === null ? "" : "%"}`}>
+            <span className="battery-icon">
+              <i style={{ width: `${telemetry.batteryLevel ?? 0}%` }} />
+            </span>
+            <span>{telemetry.batteryLevel === null ? "—" : `${telemetry.batteryLevel}%`}</span>
+          </div>
+          {connectionState === "connected" ? (
+            <button className="connect-button connected" onClick={() => void disconnectDrone()}>
+              <span className="bluetooth-mark">ᛒ</span>
+              <span><b>{connectionLabel}</b><small>Bluetooth connected</small></span>
+              <i className="status-dot" />
+            </button>
+          ) : (
+            <button className="connect-button" onClick={() => void connectDrone()} disabled={connectionState === "connecting"}>
+              <span className="bluetooth-mark">ᛒ</span>
+              <span><b>{connectionLabel}</b><small>Bluetooth flight control</small></span>
+            </button>
+          )}
+        </div>
+      </header>
+
+      <section className="commandbar" aria-label="Project and flight controls">
+        <div className="file-actions">
+          <button onClick={newProject} title="New project"><span>＋</span> New</button>
+          <button onClick={() => persistProject(true)} title="Save project"><span>▣</span> Save</button>
+          <button onClick={downloadProject} title="Download project"><span>⇩</span> Export</button>
+          <button onClick={() => importInputRef.current?.click()} title="Import project"><span>⇧</span> Import</button>
+          <input
+            ref={importInputRef}
+            className="visually-hidden"
+            type="file"
+            accept=".json,.hopper.json"
+            onChange={(event) => void importProject(event.target.files?.[0])}
+          />
+        </div>
+        <div className="editor-tabs" role="tablist" aria-label="Editor mode">
+          <button
+            role="tab"
+            aria-selected={editorMode === "blocks"}
+            className={editorMode === "blocks" ? "active" : ""}
+            onClick={() => setEditorMode("blocks")}
+          >
+            <span className="blocks-icon">◫</span> BLOCKS
+          </button>
+          <button
+            role="tab"
+            aria-selected={editorMode === "javascript"}
+            className={editorMode === "javascript" ? "active" : ""}
+            onClick={() => {
+              if (!javascriptCode.trim()) setJavascriptCode(generatedCode);
+              setEditorMode("javascript");
+            }}
+          >
+            <span className="code-icon">&lt;/&gt;</span> JAVASCRIPT
+          </button>
+        </div>
+        <div className="flight-actions">
+          <button className="console-button" onClick={() => setShowConsole((open) => !open)}>
+            CONSOLE <span>{logs.length}</span>
+          </button>
+          {running ? (
+            <button className="stop-button" onClick={() => void stopProgram()}><span>■</span> STOP &amp; LAND</button>
+          ) : (
+            <button className="run-button" onClick={() => void runProgram()}><span>▶</span> RUN PROGRAM</button>
+          )}
+          <button className="cutoff-button" onClick={() => void emergencyCutoff()} title="Emergency motor cutoff">
+            ⚠
+          </button>
+        </div>
+      </section>
+
+      <section className="workspace-grid" style={workspaceStyle}>
+        <div className="editor-panel">
+          <div className="editor-status-strip">
+            <span><i className={connectionState === "connected" ? "online" : ""} /> {connectionState === "connected" ? "DRONE LINK READY" : "DRONE LINK OFFLINE"}</span>
+            <span>{telemetry.flyingState ? telemetry.flyingState.toUpperCase() : "LANDED / UNKNOWN"}</span>
+            <span>AUTOSAVE ON</span>
+          </div>
+          <div className={`blockly-host ${editorMode === "blocks" ? "visible" : ""}`} ref={workspaceHostRef} />
+          {editorMode === "javascript" && (
+            <div className="javascript-editor">
+              <div className="line-numbers" aria-hidden="true">
+                {javascriptCode.split("\n").map((_, index) => <span key={index}>{index + 1}</span>)}
+              </div>
+              <textarea
+                value={javascriptCode}
+                onChange={(event) => setJavascriptCode(event.target.value)}
+                spellCheck={false}
+                aria-label="JavaScript program"
+              />
+            </div>
+          )}
+          {showConsole && (
+            <div className="console-drawer">
+              <div className="console-heading">
+                <span><i /> PROGRAM CONSOLE</span>
+                <div>
+                  <button onClick={() => setLogs([])}>Clear</button>
+                  <button onClick={() => setShowConsole(false)}>×</button>
+                </div>
+              </div>
+              <div className="console-lines">
+                {logs.length === 0 ? <p className="muted">Console is clear.</p> : logs.map((line, index) => (
+                  <p key={`${index}-${line}`}><span>{String(index + 1).padStart(2, "0")}</span>{line}</p>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <button
+          className="vision-resize-handle"
+          type="button"
+          role="separator"
+          aria-label="Resize Telemetry panel"
+          aria-orientation="vertical"
+          aria-valuemin={330}
+          aria-valuemax={720}
+          aria-valuenow={visionWidth}
+          title="Drag left or right to resize Telemetry"
+          onPointerDown={beginVisionResize}
+          onKeyDown={resizeVisionWithKeyboard}
+        ><i /><i /><i /></button>
+
+        <aside className="vision-panel">
+          <div className="vision-heading">
+            <div>
+              <span className="eyebrow">CAMERA + FLIGHT</span>
+              <h1>TELEMETRY</h1>
+            </div>
+            <span className={`live-badge ${telemetryLive ? "on" : ""}`}>
+              <i /> {telemetry.connected ? "DRONE LIVE" : cameraLive ? "CAMERA LIVE" : "OFFLINE"}
+            </span>
+          </div>
+
+          <div className="camera-frame">
+            {cameraSource ? (
+              <img
+                ref={imageRef}
+                src={cameraSource}
+                alt="Hopper drone bottom camera feed"
+                onLoad={() => { setCameraState("live"); setWifiState("connected"); appendLog("Camera feed is live."); }}
+                onError={() => { setCameraState("error"); setWifiState("disconnected"); setCenterPixel(null); }}
+              />
+            ) : (
+              <div className="camera-placeholder">
+                <span className="camera-glyph">▣</span>
+                <b>CAMERA STANDBY</b>
+                <small>Join the Hopper Wi-Fi, then connect video.</small>
+              </div>
+            )}
+            <div className="reticle"><i /><b /></div>
+            <div className="frame-corners"><i /><i /><i /><i /></div>
+            {detections.map((detection, index) => (
+              <div
+                className="detection-box"
+                key={`${detection.class}-${index}`}
+                style={{
+                  left: `${(detection.bbox[0] / detection.frameWidth) * 100}%`,
+                  top: `${(detection.bbox[1] / detection.frameHeight) * 100}%`,
+                  width: `${(detection.bbox[2] / detection.frameWidth) * 100}%`,
+                  height: `${(detection.bbox[3] / detection.frameHeight) * 100}%`,
+                }}
+              >
+                <span>{detection.class} {Math.round(detection.score * 100)}%</span>
+              </div>
+            ))}
+            <div className="camera-readout">
+              <span>CAM · DOWN</span>
+              <span>{cameraLive ? "STREAM OK" : "NO SIGNAL"}</span>
+            </div>
+          </div>
+          <canvas ref={analysisCanvasRef} className="analysis-canvas" aria-hidden="true" />
+
+          <div className="camera-connect-row">
+            <input
+              value={cameraAddress}
+              onChange={(event) => setCameraAddress(event.target.value)}
+              aria-label="Drone camera URL"
+            />
+            <button onClick={connectCamera}>{cameraState === "connecting" ? "WAIT" : "CONNECT"}</button>
+          </div>
+          {cameraState === "error" && (
+            <p className="inline-warning">No camera signal. Check that this computer joined the Hopper Wi-Fi.</p>
+          )}
+
+          <section className="vision-tool color-tool">
+            <div className="tool-title">
+              <span className="tool-number">01</span>
+              <div><h2>COLOR TRACKER</h2><p>Fast pixel check · no neural network</p></div>
+              <button
+                className={`tiny-toggle ${colorScanEnabled ? "on" : ""}`}
+                onClick={() => setColorScanEnabled((enabled) => !enabled)}
+                aria-label="Toggle continuous color scan"
+              ><i /></button>
+            </div>
+            <div className="profile-tabs">
+              {(Object.keys(profiles) as Array<keyof ColorProfiles>).map((profile) => (
+                <button
+                  key={profile}
+                  className={`${profile} ${activeProfile === profile ? "active" : ""}`}
+                  onClick={() => { setActiveProfile(profile); setCoverage(null); }}
+                >
+                  <i /> {profile.toUpperCase()}
+                </button>
+              ))}
+            </div>
+            <div className="rgb-editor">
+              {(["r", "g", "b"] as const).map((channel) => (
+                <div className="rgb-row" key={channel}>
+                  <b>{channel.toUpperCase()}</b>
+                  <label className="rgb-number">MIN <input type="number" min="0" max="255" value={activeRange[`${channel}Min`]} onChange={(event) => updateProfile(channel, "Min", Number(event.target.value))} /></label>
+                  <div
+                    className={`rgb-range ${channel}`}
+                    style={{
+                      "--range-min": `${(activeRange[`${channel}Min`] / 255) * 100}%`,
+                      "--range-max": `${(activeRange[`${channel}Max`] / 255) * 100}%`,
+                    } as CSSProperties}
+                  >
+                    <i />
+                    <input
+                      type="range"
+                      min="0"
+                      max="255"
+                      value={activeRange[`${channel}Min`]}
+                      onChange={(event) => updateProfile(channel, "Min", Number(event.target.value))}
+                      aria-label={`${channel.toUpperCase()} minimum`}
+                    />
+                    <input
+                      type="range"
+                      min="0"
+                      max="255"
+                      value={activeRange[`${channel}Max`]}
+                      onChange={(event) => updateProfile(channel, "Max", Number(event.target.value))}
+                      aria-label={`${channel.toUpperCase()} maximum`}
+                    />
+                  </div>
+                  <label className="rgb-number">MAX <input type="number" min="0" max="255" value={activeRange[`${channel}Max`]} onChange={(event) => updateProfile(channel, "Max", Number(event.target.value))} /></label>
+                </div>
+              ))}
+            </div>
+            <div className="center-pixel-readout">
+              <span
+                className="center-pixel-swatch"
+                style={{
+                  background: centerPixel
+                    ? `rgb(${centerPixel.red} ${centerPixel.green} ${centerPixel.blue})`
+                    : "#c7ccca",
+                }}
+              />
+              <div><span>CENTER TARGET PIXEL</span><small>Put each MIN below and MAX above these values</small></div>
+              <b>
+                <i>R {centerPixel?.red ?? "—"}</i>
+                <i>G {centerPixel?.green ?? "—"}</i>
+                <i>B {centerPixel?.blue ?? "—"}</i>
+              </b>
+            </div>
+            <div className="coverage-meter">
+              <div><span>FRAME COVERAGE</span><b>{coverage === null ? "—" : `${coverage.toFixed(1)}%`}</b></div>
+              <div className="meter-track"><i style={{ width: `${Math.min(100, coverage || 0)}%` }} /></div>
+              <button onClick={scanColor} disabled={!cameraLive}>SCAN FRAME</button>
+            </div>
+          </section>
+
+          <section className="vision-tool object-tool">
+            <div className="tool-title">
+              <span className="tool-number">02</span>
+              <div><h2>OBJECT DETECTOR</h2><p>Local COCO-SSD · on demand only</p></div>
+              <button
+                className={`tiny-toggle ${objectScanEnabled ? "on" : ""}`}
+                onClick={() => void toggleObjectScan()}
+                aria-label="Toggle object detection"
+                disabled={!cameraLive || modelState === "loading"}
+              ><i /></button>
+            </div>
+            <div className="model-status-row">
+              <span className={`model-orb ${modelState}`}><i /></span>
+              <div><b>{modelLabel}</b><small>Runs entirely on this computer</small></div>
+              {modelState === "ready" && <button onClick={() => void scanObjects()}>SCAN ONCE</button>}
+            </div>
+            {detectionSummary.length > 0 ? (
+              <div className="detection-chips object-detections">
+                {detectionSummary.map((detection) => (
+                  <span key={detection.id}>
+                    <b>{detection.label} — {detection.confidence}%</b>
+                    <small>X {detection.x} · Y {detection.y}</small>
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="empty-detections">No labels yet. Enable the model or use a purple vision block.</p>
+            )}
+            <p className="coordinate-legend">
+              X/Y BOX CENTER · FRAME CENTER 0,0 · RIGHT/UP POSITIVE · −100 TO +100
+            </p>
+
+            <div className="custom-model-card">
+              <div>
+                <span className={`custom-model-dot ${customModelState}`} />
+                <div>
+                  <b>TEACHABLE MACHINE</b>
+                  <small>
+                    {customModelState === "loading"
+                      ? "Loading model files…"
+                      : customModelState === "ready"
+                        ? `${customLabels.length} custom labels ready`
+                        : customModelState === "error"
+                          ? "Model could not be loaded"
+                          : "Standard image model files"}
+                  </small>
+                </div>
+              </div>
+              <div className="custom-model-actions">
+                <button onClick={() => customModelInputRef.current?.click()} disabled={customModelState === "loading"}>
+                  LOAD MODEL
+                </button>
+                {customModelState === "ready" && (
+                  <button onClick={() => void scanCustomModel()} disabled={!cameraLive}>SCAN ONCE</button>
+                )}
+                <input
+                  ref={customModelInputRef}
+                  className="visually-hidden"
+                  type="file"
+                  accept=".json,.bin,application/json,application/octet-stream"
+                  multiple
+                  onChange={(event) => void loadCustomModel(event.target.files)}
+                />
+              </div>
+              {customLabels.length > 0 && (
+                <p className="custom-label-list"><b>LABELS</b> {customLabels.join(" · ")}</p>
+              )}
+              {customPredictionSummary.length > 0 && (
+                <div className="detection-chips custom-predictions">
+                  {customPredictionSummary.map((label) => <span key={label}>{label}</span>)}
+                </div>
+              )}
+            </div>
+          </section>
+
+          <div className="vision-footnote">
+            <i /> Vision blocks use the current frame. Object detection stays off until called.
+          </div>
+          <div className="creator-credit">
+            <span>CREATED BY</span>
+            <b>ALLAN ELSBERRY</b>
+          </div>
+        </aside>
+      </section>
+
+      {toast && <div className="toast" role="status">{toast}</div>}
+    </main>
+  );
+}
