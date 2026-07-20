@@ -61,7 +61,11 @@ const formatDetectionLabel = (label: string) =>
 const formatCoordinate = (value: number) =>
   value > 0 ? `+${Math.round(value)}` : `${Math.round(value)}`;
 
-export default function HopperStudio() {
+type HopperStudioProps = {
+  cameraProxyAvailable?: boolean;
+};
+
+export default function HopperStudio({ cameraProxyAvailable = false }: HopperStudioProps) {
   const workspaceHostRef = useRef<HTMLDivElement>(null);
   const workspaceRef = useRef<WorkspaceSvg | null>(null);
   const blocklyRef = useRef<BlocklyToolkit | null>(null);
@@ -250,7 +254,7 @@ export default function HopperStudio() {
   const checkWifi = useCallback(async (showChecking = true) => {
     if (showChecking) setWifiState("checking");
     try {
-      if (window.location.protocol === "file:") {
+      if (!cameraProxyAvailable) {
         const response = await fetch("http://192.168.2.1/", {
           cache: "no-store",
           mode: "no-cors",
@@ -270,16 +274,20 @@ export default function HopperStudio() {
       setWifiState("disconnected");
       return false;
     }
-  }, []);
+  }, [cameraProxyAvailable]);
 
   useEffect(() => {
+    if (!cameraProxyAvailable) {
+      setWifiState("disconnected");
+      return;
+    }
     const initialCheck = window.setTimeout(() => void checkWifi(), 0);
     const interval = window.setInterval(() => void checkWifi(false), 12000);
     return () => {
       window.clearTimeout(initialCheck);
       window.clearInterval(interval);
     };
-  }, [checkWifi]);
+  }, [cameraProxyAvailable, checkWifi]);
 
   const connectDrone = async () => {
     const bluetooth = getBluetoothApi();
@@ -413,10 +421,9 @@ export default function HopperStudio() {
       setWifiState("checking");
       setDetections([]);
       setCenterPixel(null);
-      const source =
-        window.location.protocol === "file:"
-          ? cameraUrl.href
-          : `/api/camera?url=${encodeURIComponent(cameraUrl.href)}&t=${Date.now()}`;
+      const source = cameraProxyAvailable
+        ? `/api/camera?url=${encodeURIComponent(cameraUrl.href)}&t=${Date.now()}`
+        : cameraUrl.href;
       setCameraSource(source);
       appendLog("Connecting to camera at", cameraUrl.href);
       void checkWifi();
@@ -917,7 +924,14 @@ export default function HopperStudio() {
             <button onClick={connectCamera}>{cameraState === "connecting" ? "WAIT" : "CONNECT"}</button>
           </div>
           {cameraState === "error" && (
-            <p className="inline-warning">No camera signal. Check that this computer joined the Hopper Wi-Fi.</p>
+            <p className="inline-warning">
+              No camera signal. Join the Hopper Wi-Fi and allow local-network access if Edge or Chrome asks.
+            </p>
+          )}
+          {!cameraProxyAvailable && cameraLive && (
+            <p className="inline-warning">
+              Direct video is available. Start the local app to use color tracking or object detection.
+            </p>
           )}
 
           <section className="vision-tool color-tool">

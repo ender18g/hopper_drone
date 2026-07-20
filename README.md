@@ -29,8 +29,11 @@ Requirements: Node.js 22.13 or newer and current desktop Chrome or Edge. Web Blu
 
 1. Copy the entire `local_site` folder to the student's computer.
 2. Double-click `start-windows.bat`.
-3. The first run installs the already-declared packages. Later runs start immediately.
-4. Chrome or Edge opens `http://localhost:3000`.
+3. If prompted, install the current Node.js LTS release and double-click the launcher again.
+4. The first run installs the already-declared packages. Later runs start immediately.
+5. Chrome or Edge opens `http://localhost:3000`.
+
+Keep the terminal window open while using Hopper Studio. Close it when the session is finished.
 
 ### macOS or Linux
 
@@ -235,7 +238,9 @@ That command bundles the application JavaScript and CSS into the single HTML ent
 
 Before the first deployment, open the GitHub repository's **Settings → Pages** screen and set **Source** to **GitHub Actions**. No repository secret is required. If the default branch is renamed, update the branch under `on.push.branches` in the workflow.
 
-GitHub Pages is a static HTTPS host, so it cannot run Hopper Studio's `/api/camera` proxy. The hosted page is useful for the editor and compatible Web Bluetooth features, but the drone's plain-HTTP camera and camera-based CV labs should use the local app (`start-windows.bat` or `npm run dev`).
+GitHub Pages is a static HTTPS host, so it cannot run Hopper Studio's `/api/camera` proxy. Current Chrome and Edge releases can display the feed directly after the user grants the site's local-network access prompt. Join the Hopper Wi-Fi, select **Connect**, and choose **Allow** when the browser asks to find devices on the local network.
+
+The direct feed is cross-origin, so the hosted page cannot safely read its pixels unless the drone itself supplies suitable CORS headers. Color tracking, COCO-SSD, and custom-model analysis therefore still require the local app (`start-windows.bat` or `npm run dev`). If the user previously denied local-network access, reset that permission from the icon beside the address bar and reconnect.
 
 ## Safety
 

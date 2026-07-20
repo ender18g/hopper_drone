@@ -51,6 +51,8 @@ test("ships the local flight, vision, and student-build surfaces", async () => {
   assert.match(component, /ALLAN ELSBERRY/);
   assert.match(component, /TEACHABLE MACHINE/);
   assert.match(component, /CENTER TARGET PIXEL/);
+  assert.match(component, /cameraProxyAvailable/);
+  assert.match(component, /allow local-network access/i);
   assert.match(component, /type="range"/);
   assert.match(component, /detection\.confidence/);
   assert.match(component, /batteryTone/);
@@ -69,11 +71,13 @@ test("ships the local flight, vision, and student-build surfaces", async () => {
   assert.match(blockly, /minidrone_takeoff/);
   assert.match(blockly, /new URL\("blockly\/media\/", document\.baseURI\)/);
   assert.match(readme, /start-windows\.bat/);
+  assert.match(readme, /local-network access prompt/i);
   assert.match(readme, /hair drier/);
   assert.match(readme, /Altitude telemetry/);
   assert.match(readme, /Standard model versus embedded model/);
   assert.match(packageJson, /"build:student"/);
   assert.match(packageJson, /"build:pages"/);
+  assert.doesNotMatch(packageJson, /WRANGLER_LOG_PATH=.*vinext/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
 
   await Promise.all([
