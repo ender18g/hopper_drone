@@ -62,15 +62,18 @@ test("ships the local flight, vision, and student-build surfaces", async () => {
   assert.match(vision, /detectionCenterCoordinate/);
   assert.match(vision, /lastObjectCoordinates/);
   assert.match(vision, /loadCustomModel/);
+  assert.match(vision, /new URL\("models\/coco-ssd\/model\.json", document\.baseURI\)/);
   assert.match(blockly, /vision_sees_color/);
   assert.match(blockly, /vision_sees_custom_label/);
   assert.match(blockly, /vision_object_coordinate/);
   assert.match(blockly, /minidrone_takeoff/);
+  assert.match(blockly, /new URL\("blockly\/media\/", document\.baseURI\)/);
   assert.match(readme, /start-windows\.bat/);
   assert.match(readme, /hair drier/);
   assert.match(readme, /Altitude telemetry/);
   assert.match(readme, /Standard model versus embedded model/);
   assert.match(packageJson, /"build:student"/);
+  assert.match(packageJson, /"build:pages"/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
 
   await Promise.all([

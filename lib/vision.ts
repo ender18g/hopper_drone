@@ -149,7 +149,7 @@ export class VisionRuntime {
     this.modelPromise = (async () => {
       await import("@tensorflow/tfjs");
       const cocoSsd = await import("@tensorflow-models/coco-ssd");
-      const modelUrl = new URL("/models/coco-ssd/model.json", window.location.origin).href;
+      const modelUrl = new URL("models/coco-ssd/model.json", document.baseURI).href;
       this.model = await cocoSsd.load({ base: "lite_mobilenet_v2", modelUrl });
       this.onModelStatus("ready");
       return this.model;

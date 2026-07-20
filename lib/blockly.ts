@@ -728,10 +728,7 @@ export const defaultWorkspaceXml = `
 
 export function createHopperWorkspace(container: HTMLElement) {
   registerHopperBlocks();
-  const media = new URL(
-    window.location.protocol === "file:" ? "./blockly/media/" : "/blockly/media/",
-    window.location.href,
-  ).href;
+  const media = new URL("blockly/media/", document.baseURI).href;
   const theme = Blockly.Theme.defineTheme("hopper", {
     name: "hopper",
     base: Blockly.Themes.Classic,

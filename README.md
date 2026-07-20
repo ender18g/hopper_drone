@@ -221,6 +221,22 @@ The result is `student-build/hopper-studio.html`. Application JavaScript, CSS, R
 
 Students can double-click `hopper-studio.html` in Chrome or Edge for the block editor, JavaScript editor, project files, Bluetooth controls (where Chrome permits Web Bluetooth on `file:` pages), direct camera display, and local custom-model file picker. Browser security may prevent color/object analysis or Web Bluetooth on a double-clicked file. For the complete and reliable experience, distribute the whole folder and use `start-windows.bat`.
 
+## Deploy with GitHub Pages
+
+The repository includes `.github/workflows/deploy-pages.yml`. Every push to `main` builds the standalone app and deploys it to GitHub Pages. You can also run it manually from the repository's **Actions** tab.
+
+The workflow runs:
+
+```bash
+npm run build:pages
+```
+
+That command bundles the application JavaScript and CSS into the single HTML entry point `student-build/index.html`. The copied `models` and `blockly` directories are supporting data for COCO-SSD and Blockly; there is only one HTML file in the deployed build. Every workflow run also publishes that file as the `hopper-studio-single-html` artifact, available from the run's **Artifacts** section.
+
+Before the first deployment, open the GitHub repository's **Settings → Pages** screen and set **Source** to **GitHub Actions**. No repository secret is required. If the default branch is renamed, update the branch under `on.push.branches` in the workflow.
+
+GitHub Pages is a static HTTPS host, so it cannot run Hopper Studio's `/api/camera` proxy. The hosted page is useful for the editor and compatible Web Bluetooth features, but the drone's plain-HTTP camera and camera-based CV labs should use the local app (`start-windows.bat` or `npm run dev`).
+
 ## Safety
 
 - Test new programs with propellers removed or the drone restrained.
@@ -235,6 +251,7 @@ Students can double-click `hopper-studio.html` in Chrome or Edge for the block e
 ```bash
 npm run build
 npm run build:student
+npm run build:pages
 ```
 
-Both builds are local. No deployment, account, analytics, or cloud service is required.
+All builds run locally. GitHub Pages deployment only occurs in the checked-in workflow after a push to `main`, or when manually started from GitHub Actions.
