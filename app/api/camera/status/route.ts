@@ -17,7 +17,7 @@ export async function GET() {
     if (!response.ok) {
       return Response.json(
         { connected: false, status: response.status },
-        { status: 503, headers: { "Cache-Control": "no-store" } },
+        { headers: { "Cache-Control": "no-store" } },
       );
     }
 
@@ -28,7 +28,7 @@ export async function GET() {
   } catch {
     return Response.json(
       { connected: false, host: "192.168.2.1" },
-      { status: 503, headers: { "Cache-Control": "no-store" } },
+      { headers: { "Cache-Control": "no-store" } },
     );
   } finally {
     clearTimeout(timeout);

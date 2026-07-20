@@ -61,6 +61,21 @@ const formatDetectionLabel = (label: string) =>
 const formatCoordinate = (value: number) =>
   value > 0 ? `+${Math.round(value)}` : `${Math.round(value)}`;
 
+const bluetoothErrorMessage = (error: unknown) => {
+  const name = error instanceof DOMException ? error.name : "";
+  if (name === "NotFoundError") {
+    return "No Hopper was selected. Make sure the drone is powered on and choose it from the Bluetooth list.";
+  }
+  if (name === "SecurityError" || name === "NotAllowedError") {
+    return "Bluetooth permission is blocked. Use HTTPS or http://localhost:3000 and allow Nearby devices in the browser's site settings.";
+  }
+  if (name === "NetworkError") {
+    return "The Hopper was found but its Bluetooth connection failed. Power-cycle the drone and try again.";
+  }
+  const detail = formatLogValue(error);
+  return detail === "{}" ? "Bluetooth could not connect. Check the browser's Nearby devices permission." : detail;
+};
+
 type HopperStudioProps = {
   cameraProxyAvailable?: boolean;
 };
@@ -98,7 +113,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   const [cameraAddress, setCameraAddress] = useState("http://192.168.2.1/");
   const [cameraSource, setCameraSource] = useState<string | null>(null);
   const [cameraState, setCameraState] = useState<CameraState>("offline");
-  const [wifiState, setWifiState] = useState<WifiState>("checking");
+  const [wifiState, setWifiState] = useState<WifiState>("disconnected");
   const [visionWidth, setVisionWidth] = useState(390);
   const [profiles, setProfiles] = useState<ColorProfiles>(DEFAULT_COLOR_PROFILES);
   const [activeProfile, setActiveProfile] = useState<keyof ColorProfiles>("red");
@@ -266,7 +281,8 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
           cache: "no-store",
           signal: AbortSignal.timeout(4500),
         });
-        if (!response.ok) throw new Error("No Hopper Wi-Fi response");
+        const status = await response.json() as { connected?: boolean };
+        if (!response.ok || !status.connected) throw new Error("No Hopper Wi-Fi response");
       }
       setWifiState("connected");
       return true;
@@ -276,23 +292,14 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     }
   }, [cameraProxyAvailable]);
 
-  useEffect(() => {
-    if (!cameraProxyAvailable) {
-      setWifiState("disconnected");
-      return;
-    }
-    const initialCheck = window.setTimeout(() => void checkWifi(), 0);
-    const interval = window.setInterval(() => void checkWifi(false), 12000);
-    return () => {
-      window.clearTimeout(initialCheck);
-      window.clearInterval(interval);
-    };
-  }, [cameraProxyAvailable, checkWifi]);
-
   const connectDrone = async () => {
     const bluetooth = getBluetoothApi();
     if (!bluetooth) {
-      notify("Web Bluetooth needs desktop Chrome or Edge on localhost");
+      notify(
+        window.isSecureContext
+          ? "Web Bluetooth is unavailable. Use desktop Edge or Chrome and allow Nearby devices."
+          : "Bluetooth requires HTTPS or http://localhost:3000; a double-clicked HTML file may be blocked.",
+      );
       return;
     }
     try {
@@ -316,7 +323,9 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
       controllerRef.current?.disconnect();
       controllerRef.current = null;
       setConnectionState("disconnected");
-      if ((error as Error).name !== "NotFoundError") appendLog("Bluetooth:", error);
+      const message = bluetoothErrorMessage(error);
+      appendLog("Bluetooth:", message);
+      notify(message);
     }
   };
 

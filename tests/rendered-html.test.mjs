@@ -53,6 +53,8 @@ test("ships the local flight, vision, and student-build surfaces", async () => {
   assert.match(component, /CENTER TARGET PIXEL/);
   assert.match(component, /cameraProxyAvailable/);
   assert.match(component, /allow local-network access/i);
+  assert.match(component, /Bluetooth permission is blocked/);
+  assert.match(component, /useState<WifiState>\("disconnected"\)/);
   assert.match(component, /type="range"/);
   assert.match(component, /detection\.confidence/);
   assert.match(component, /batteryTone/);
@@ -72,6 +74,7 @@ test("ships the local flight, vision, and student-build surfaces", async () => {
   assert.match(blockly, /new URL\("blockly\/media\/", document\.baseURI\)/);
   assert.match(readme, /start-windows\.bat/);
   assert.match(readme, /local-network access prompt/i);
+  assert.match(readme, /Bluetooth flight control is independent/);
   assert.match(readme, /hair drier/);
   assert.match(readme, /Altitude telemetry/);
   assert.match(readme, /Standard model versus embedded model/);

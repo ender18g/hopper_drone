@@ -46,6 +46,8 @@ npm run dev
 
 Then open `http://localhost:3000` in Chrome or Edge.
 
+Hopper Studio keeps this port fixed because browser Bluetooth permissions belong to a specific origin. If startup says port 3000 is already in use, use the already-open Hopper Studio window or close the older server before starting another one.
+
 ## Connect the drone
 
 1. Turn on the Hopper drone.
@@ -55,6 +57,8 @@ Then open `http://localhost:3000` in Chrome or Edge.
 5. Confirm that the separate Wi-Fi box turns green. It checks for a response from `192.168.2.1` and is independent of Bluetooth.
 6. In **Telemetry**, keep `http://192.168.2.1/` and select **Connect**.
 7. Build the program, place the drone in a safe open area, and select **Run Program**.
+
+Bluetooth flight control is independent of the current Wi-Fi network. The **Wi-Fi offline** camera indicator does not disable **Connect drone**. Hopper Studio checks the camera only when you select the Wi-Fi box or connect the video feed, so being on another Wi-Fi network does not create camera errors during Bluetooth-only use.
 
 The local camera proxy accepts only `192.168.2.1`; it cannot be used as a general web proxy.
 

@@ -30,6 +30,13 @@ if not exist node_modules (
   )
 )
 
+powershell.exe -NoProfile -Command "try { $response = Invoke-WebRequest -UseBasicParsing -Uri 'http://localhost:3000' -TimeoutSec 2; if ($response.Content -match 'Hopper Studio') { exit 0 } } catch {}; exit 1" >nul 2>nul
+if not errorlevel 1 (
+  echo Hopper Studio is already running.
+  start "" http://localhost:3000
+  exit /b 0
+)
+
 echo Starting Hopper Studio...
 start "" powershell.exe -NoProfile -WindowStyle Hidden -Command "Start-Sleep -Seconds 4; Start-Process 'http://localhost:3000'"
 call npm run dev
