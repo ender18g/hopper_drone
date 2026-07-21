@@ -73,6 +73,7 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(component, /requestOfflineCacheRefresh/);
   assert.match(component, /serviceWorker\.register/);
   assert.match(component, /Hard refresh Hopper Studio/);
+  assert.match(component, /OFFLINE READY/);
   assert.match(drone, /9a66fa00-0800-9191-11e4-012d1540cb8e/);
   assert.match(drone, /HOPPER/);
   assert.match(drone, /interface DroneController/);
@@ -120,6 +121,7 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(styles, /activeBlockGlow/);
   assert.match(styles, /sim-pitch-reference/);
   assert.match(styles, /wrcRefreshSpin/);
+  assert.match(styles, /local-pill\.saving/);
   assert.match(readme, /start-windows\.bat/);
   assert.match(readme, /local-network access prompt/i);
   assert.match(readme, /Bluetooth flight control is independent/);

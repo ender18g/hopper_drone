@@ -39,6 +39,7 @@ type ConnectionState = "disconnected" | "connecting" | "connected";
 type CameraState = "offline" | "connecting" | "live" | "error";
 type ModelState = "off" | "loading" | "ready" | "error";
 type WifiState = "checking" | "connected" | "disconnected";
+type OfflineCacheState = "saving" | "ready" | "unavailable";
 
 const PROJECT_KEY = "hopper-studio-project-v1";
 const COLOR_KEY = "hopper-studio-colors-v1";
@@ -138,6 +139,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   const [showConsole, setShowConsole] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [hardRefreshing, setHardRefreshing] = useState(false);
+  const [offlineCacheState, setOfflineCacheState] = useState<OfflineCacheState>("saving");
 
   const [cameraAddress, setCameraAddress] = useState("http://192.168.2.1/");
   const [cameraSource, setCameraSource] = useState<string | null>(null);
@@ -239,9 +241,11 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     if (hardRefreshing) return;
     persistProject(false);
     setHardRefreshing(true);
+    setOfflineCacheState("saving");
     notify("Checking for the newest Hopper Studio files…");
     try {
       if (!("serviceWorker" in navigator) || !window.isSecureContext) {
+        setOfflineCacheState("unavailable");
         window.location.reload();
         return;
       }
@@ -259,6 +263,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
         return;
       }
       const result = await requestOfflineCacheRefresh(worker);
+      setOfflineCacheState("ready");
       notify(
         result.status === "updated"
           ? `Newest Hopper Studio files saved${result.assets ? ` · ${result.assets} assets` : ""}. Reloading…`
@@ -266,6 +271,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
       );
       window.setTimeout(() => window.location.reload(), 650);
     } catch {
+      setOfflineCacheState("ready");
       notify("Site unavailable — reopening the saved offline copy.");
       window.setTimeout(() => window.location.reload(), 650);
     }
@@ -276,7 +282,10 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   }, [projectName]);
 
   useEffect(() => {
-    if (!("serviceWorker" in navigator) || !window.isSecureContext) return;
+    if (!("serviceWorker" in navigator) || !window.isSecureContext) {
+      const unavailableTimer = window.setTimeout(() => setOfflineCacheState("unavailable"), 0);
+      return () => window.clearTimeout(unavailableTimer);
+    }
     const registerOfflineApp = () => {
       const serviceWorkerUrl = new URL("sw.js", document.baseURI);
       const scopeUrl = new URL("./", document.baseURI);
@@ -284,8 +293,14 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
         scope: scopeUrl.pathname,
         updateViaCache: "none",
       }).then(() => navigator.serviceWorker.ready)
-        .then(() => appendLog("Offline app copy ready. The WRC logo checks for a fresh version."))
-        .catch(() => appendLog("Offline app copy could not be prepared in this browser."));
+        .then(() => {
+          setOfflineCacheState("ready");
+          appendLog("Offline app copy ready. The WRC logo checks for a fresh version.");
+        })
+        .catch(() => {
+          setOfflineCacheState("unavailable");
+          appendLog("Offline app copy could not be prepared in this browser.");
+        });
     };
     if (document.readyState === "complete") registerOfflineApp();
     else window.addEventListener("load", registerOfflineApp, { once: true });
@@ -962,7 +977,13 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
           </div>
         </div>
         <div className="topbar-center">
-          <span className="local-pill"><i /> LOCAL · PRIVATE</span>
+          <span className={`local-pill ${offlineCacheState}`}>
+            <i /> {offlineCacheState === "ready"
+              ? "LOCAL · OFFLINE READY"
+              : offlineCacheState === "saving"
+                ? "LOCAL · SAVING OFFLINE"
+                : "LOCAL · ONLINE ONLY"}
+          </span>
           <span className="project-label">PROJECT</span>
           <input
             className="project-title-input"

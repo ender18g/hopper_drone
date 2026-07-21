@@ -79,7 +79,7 @@ The included transparent floor-object PNGs are by [OpenMoji](https://openmoji.or
 
 ## Use Hopper Studio offline
 
-Open Hopper Studio once while the computer can reach its hosting site or local server. The app saves the complete current page, generated JavaScript and CSS bundles, Blockly media, simulator images, and the local object-detection model. When the computer later joins the Hopper camera Wi-Fi, refreshing the page first checks the server briefly and then opens the saved copy when that server is unavailable. Camera proxy requests are never cached.
+Open Hopper Studio once while the computer can reach its hosting site or local server. The top status changes from **LOCAL · SAVING OFFLINE** to **LOCAL · OFFLINE READY** after the app saves the complete current page, generated JavaScript and CSS bundles, Blockly media, simulator images, and the local object-detection model. When the computer later joins the Hopper camera Wi-Fi, refreshing the page first checks the server briefly and then opens the saved copy when that server is unavailable. Camera proxy requests are never cached.
 
 The circular arrow on the WRC logo is the **hard refresh** control. Select it while the hosting site or local server is reachable to download a complete fresh set of application files before joining the drone Wi-Fi. If the site is unavailable, the hard refresh leaves the existing saved version intact and reopens it instead. Projects remain in local storage throughout either refresh.
 

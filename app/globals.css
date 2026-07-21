@@ -197,6 +197,29 @@ textarea:focus-visible {
   box-shadow: 0 0 10px rgba(31, 191, 117, 0.75);
 }
 
+.local-pill.saving {
+  border-color: rgba(244, 188, 69, 0.4);
+  background: rgba(202, 142, 27, 0.11);
+  color: #ffd77d;
+}
+
+.local-pill.saving i {
+  background: var(--amber);
+  box-shadow: 0 0 9px rgba(244, 188, 69, 0.7);
+  animation: modelPulse 800ms infinite alternate;
+}
+
+.local-pill.unavailable {
+  border-color: rgba(170, 181, 187, 0.28);
+  background: rgba(132, 147, 155, 0.08);
+  color: #aeb9bf;
+}
+
+.local-pill.unavailable i {
+  background: #87969e;
+  box-shadow: none;
+}
+
 .project-label {
   font-size: 9px;
   font-weight: 800;
