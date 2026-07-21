@@ -66,9 +66,9 @@ The local camera proxy accepts only `192.168.2.1`; it cannot be used as a genera
 
 ## Use the simulated drone
 
-Select **Connect simulated drone** beside the Bluetooth button. The blue connected state means **Run Program** is sending the current Blockly or JavaScript program to the simulator. Switching between the simulator and a real Hopper never clears the workspace.
+Select **Connect simulated drone** beside the Bluetooth button. The flight room opens in a separate browser window that you can move beside the coding workspace. If the browser blocks it, allow pop-ups for Hopper Studio and select the button again. The blue connected state means **Run Program** is sending the current Blockly or JavaScript program to the simulator. Switching between the simulator and a real Hopper never clears the workspace.
 
-The room starts with airplane, car, banana, and apple targets. Drag them anywhere on the floor, select one to resize, duplicate, or delete it, or upload a local image. The simulated downward camera feeds the same RGB coverage, object label, coordinate, and custom-model blocks used by the physical camera. The 5°, 10°, and 15° manual attitude checks are useful for demonstrating acceleration and damping before students encode a lawnmower search in blocks.
+The room starts with airplane, car, banana, and apple targets. Drag them anywhere on the floor, select one to resize, duplicate, or delete it, or upload a local image. Drag the Hopper marker itself whenever you want to reposition its starting point; the simulator stops its horizontal motion and continues from the new location. The simulated downward camera feeds the same RGB coverage, object label, coordinate, and custom-model blocks used by the physical camera. Object-detection calls draw labeled confidence boxes over the camera feed, while color calls draw the matching-color bounds and coverage percentage. The 5°, 10°, and 15° manual attitude checks are useful for demonstrating acceleration and damping before students encode a lawnmower search in blocks.
 
 The included transparent floor-object PNGs are by [OpenMoji](https://openmoji.org/), the open-source emoji and icon project, and are distributed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
 

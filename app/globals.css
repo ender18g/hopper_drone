@@ -2060,9 +2060,21 @@ body.resizing-vision * {
   z-index: 8;
   translate: -50% -50%;
   rotate: var(--sim-heading, 0deg);
+  padding: 0;
+  border: 0;
+  background: transparent;
   transition: filter 100ms linear;
   filter: drop-shadow(0 calc(3px + var(--sim-altitude) * 8px) calc(2px + var(--sim-altitude) * 5px) rgba(0, 0, 0, 0.58));
-  pointer-events: none;
+  cursor: grab;
+  touch-action: none;
+}
+
+.sim-drone-top:active {
+  cursor: grabbing;
+}
+
+.sim-drone-top:disabled {
+  cursor: not-allowed;
 }
 
 .sim-drone-top.crashed {
@@ -2499,8 +2511,9 @@ body.resizing-vision * {
   object-fit: cover;
 }
 
-.sim-camera-screen > span {
+.sim-camera-status {
   position: absolute;
+  z-index: 5;
   left: 6px;
   bottom: 5px;
   padding: 2px 4px;
@@ -2522,6 +2535,63 @@ body.resizing-vision * {
 
 .sim-camera-crosshair.horizontal { width: 30px; height: 1px; }
 .sim-camera-crosshair.vertical { width: 1px; height: 30px; }
+
+.sim-vision-box {
+  position: absolute;
+  z-index: 4;
+  border: 2px solid #66f0b1;
+  background: rgba(52, 217, 139, 0.08);
+  box-shadow: 0 0 0 1px rgba(7, 19, 25, 0.72), 0 0 12px rgba(70, 229, 160, 0.3);
+  pointer-events: none;
+}
+
+.sim-vision-box > span {
+  position: absolute;
+  left: -2px;
+  top: -2px;
+  padding: 3px 5px;
+  background: #20a970;
+  color: #fff;
+  font-family: var(--mono);
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.sim-vision-box.color {
+  border-style: dashed;
+  border-color: #f5df55;
+  background: rgba(245, 223, 85, 0.08);
+  box-shadow: 0 0 0 1px rgba(7, 19, 25, 0.72), 0 0 12px rgba(245, 223, 85, 0.28);
+}
+
+.sim-vision-box.color > span { background: #8e7820; }
+.sim-vision-box.color.red { border-color: #ff5c69; background: rgba(255, 72, 87, 0.1); }
+.sim-vision-box.color.red > span { background: #c72d3a; }
+.sim-vision-box.color.green { border-color: #62ec9d; background: rgba(58, 220, 127, 0.1); }
+.sim-vision-box.color.green > span { background: #198b50; }
+.sim-vision-box.color.blue { border-color: #64b9ff; background: rgba(61, 161, 242, 0.1); }
+.sim-vision-box.color.blue > span { background: #216da8; }
+
+.sim-vision-status {
+  position: absolute;
+  z-index: 5;
+  right: 6px;
+  top: 5px;
+  padding: 3px 5px;
+  border: 1px solid rgba(128, 233, 255, 0.36);
+  background: rgba(8, 16, 21, 0.72);
+  color: #a5eaff;
+  font-family: var(--mono);
+  font-size: 6px;
+  font-weight: 850;
+  letter-spacing: 0.07em;
+}
+
+.sim-vision-status.object { color: #77f1b7; border-color: rgba(70, 229, 160, 0.46); }
+.sim-vision-status.color { color: #ffe46b; border-color: rgba(245, 223, 85, 0.5); }
+.sim-vision-status.idle { color: #8298a4; }
 
 .sim-controls-card {
   padding: 7px;
@@ -2865,4 +2935,29 @@ body.resizing-vision * {
   .sim-toolbar-spacer {
     display: none;
   }
+}
+
+body.sim-popup-body {
+  width: 100%;
+  height: 100vh;
+  min-height: 520px;
+  overflow: hidden;
+  background: #dce2e6;
+}
+
+.sim-popup-body .sim-window.detached {
+  width: 100%;
+  height: 100%;
+  min-width: 720px;
+  min-height: 520px;
+  position: fixed;
+  inset: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  animation: none;
+}
+
+.sim-popup-body .sim-window.detached .sim-body {
+  height: 100%;
 }

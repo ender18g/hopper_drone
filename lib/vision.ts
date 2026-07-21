@@ -18,6 +18,14 @@ export type RgbPixel = {
   blue: number;
 };
 
+export type ColorDetectionResult = {
+  profile: keyof ColorProfiles;
+  coverage: number;
+  bbox: [number, number, number, number] | null;
+  frameWidth: number;
+  frameHeight: number;
+};
+
 export type ObjectCoordinate = {
   x: number;
   y: number;
@@ -71,6 +79,44 @@ export const calculateColorCoverage = (data: Uint8ClampedArray, profile: ColorPr
   return total === 0 ? 0 : (matches / total) * 100;
 };
 
+export const analyzeColorDetection = (
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  profileName: keyof ColorProfiles,
+  profile: ColorProfile,
+): ColorDetectionResult => {
+  let matches = 0;
+  let minimumX = width;
+  let minimumY = height;
+  let maximumX = -1;
+  let maximumY = -1;
+  for (let index = 0; index < data.length; index += 4) {
+    if (!pixelMatchesProfile(
+      { red: data[index], green: data[index + 1], blue: data[index + 2] },
+      profile,
+    )) continue;
+    matches += 1;
+    const pixelIndex = index / 4;
+    const x = pixelIndex % width;
+    const y = Math.floor(pixelIndex / width);
+    minimumX = Math.min(minimumX, x);
+    minimumY = Math.min(minimumY, y);
+    maximumX = Math.max(maximumX, x);
+    maximumY = Math.max(maximumY, y);
+  }
+  const total = width * height;
+  return {
+    profile: profileName,
+    coverage: total === 0 ? 0 : (matches / total) * 100,
+    bbox: matches === 0
+      ? null
+      : [minimumX, minimumY, maximumX - minimumX + 1, maximumY - minimumY + 1],
+    frameWidth: width,
+    frameHeight: height,
+  };
+};
+
 export const detectionCenterCoordinate = (
   bbox: [number, number, number, number],
   frameWidth: number,
@@ -101,6 +147,7 @@ export class VisionRuntime {
     private readonly onDetections: (detections: VisionDetection[]) => void,
     private readonly onCustomModelStatus: (status: "off" | "loading" | "ready" | "error") => void,
     private readonly onCustomPredictions: (predictions: CustomPrediction[]) => void,
+    private readonly onColorDetection: (result: ColorDetectionResult) => void,
   ) {}
 
   setProfiles(profiles: ColorProfiles) {
@@ -117,8 +164,16 @@ export class VisionRuntime {
   }
 
   colorCoverage(profileName: keyof ColorProfiles) {
-    const { data } = this.captureFrame(180);
-    return calculateColorCoverage(data, this.profiles[profileName]);
+    const frame = this.captureFrame(180);
+    const result = analyzeColorDetection(
+      frame.data,
+      frame.width,
+      frame.height,
+      profileName,
+      this.profiles[profileName],
+    );
+    this.onColorDetection(result);
+    return result.coverage;
   }
 
   sampleCenterPixel(): RgbPixel {

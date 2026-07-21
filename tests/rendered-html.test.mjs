@@ -48,6 +48,8 @@ test("ships the local flight, simulation, vision, and student-build surfaces", a
   assert.doesNotMatch(component, /SENSOR HEALTH/);
   assert.match(component, /Connect drone/);
   assert.match(component, /Connect simulated drone/);
+  assert.match(component, /window\.open/);
+  assert.match(component, /hopper-simulated-drone/);
   assert.match(component, /setSyntheticDetectionProvider/);
   assert.match(component, /STOP &amp; LAND/);
   assert.match(component, /Wi-Fi ready/);
@@ -69,11 +71,16 @@ test("ships the local flight, simulation, vision, and student-build surfaces", a
   assert.match(simulatorComponent, /SIMULATED DRONE ROOM/);
   assert.match(simulatorComponent, /UPLOAD IMAGE/);
   assert.match(simulatorComponent, /5 × 5 IN/);
+  assert.match(simulatorComponent, /createPortal/);
+  assert.match(simulatorComponent, /Drag Hopper drone to reposition it/);
+  assert.match(simulatorComponent, /sim-vision-box/);
   assert.match(simulation, /SIMULATION_ROOM = \{ width: 10, height: 7 \}/);
   assert.match(simulation, /Math\.tan\(radians\(pitch\)\)/);
   assert.match(simulation, /Wall impact/);
+  assert.match(simulation, /placeDrone/);
   assert.match(vision, /lite_mobilenet_v2/);
   assert.match(vision, /colorCoverage/);
+  assert.match(vision, /analyzeColorDetection/);
   assert.match(vision, /detectionCenterCoordinate/);
   assert.match(vision, /lastObjectCoordinates/);
   assert.match(vision, /loadCustomModel/);
@@ -126,6 +133,16 @@ test("calculates inclusive RGB coverage and centered object coordinates", async 
     131, 255, 140, 255,
   ]);
   assert.equal(visionMath.calculateColorCoverage(pixels, green), 50);
+  assert.deepEqual(
+    visionMath.analyzeColorDetection(pixels, 2, 2, "green", green),
+    {
+      profile: "green",
+      coverage: 50,
+      bbox: [0, 0, 1, 2],
+      frameWidth: 2,
+      frameHeight: 2,
+    },
+  );
   assert.deepEqual(visionMath.detectionCenterCoordinate([40, 40, 20, 20], 100, 100), {
     x: 0,
     y: 0,
@@ -186,6 +203,9 @@ test("simulated takeoff, tilt acceleration, and damping behave as a flight contr
   try {
     const controller = new simulation.SimulatedDroneController();
     controller.connect();
+    controller.placeDrone(6, 5);
+    assert.equal(controller.getSnapshot().x, 6);
+    assert.equal(controller.getSnapshot().y, 5);
     const takeoff = controller.takeOff();
     let simulatedTime = performance.now();
     for (let frame = 0; frame < 300; frame += 1) {

@@ -24,6 +24,7 @@ import { SimulatedDroneController } from "../lib/simulation";
 import {
   DEFAULT_COLOR_PROFILES,
   VisionRuntime,
+  type ColorDetectionResult,
   type ColorProfile,
   type ColorProfiles,
   type CustomPrediction,
@@ -90,6 +91,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   const autosaveTimerRef = useRef<number | null>(null);
   const controllerRef = useRef<DroneController | null>(null);
   const simulationControllerRef = useRef<SimulatedDroneController | null>(null);
+  const simulatorWindowRef = useRef<Window | null>(null);
   const runtimeRef = useRef<ExecutionRuntime | null>(null);
   const imageRef = useRef<HTMLImageElement>(null);
   const simulationCameraRef = useRef<HTMLCanvasElement>(null);
@@ -109,6 +111,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected");
   const [connectionMode, setConnectionMode] = useState<"real" | "simulated" | null>(null);
   const [simulationController, setSimulationController] = useState<SimulatedDroneController | null>(null);
+  const [simulatorWindow, setSimulatorWindow] = useState<Window | null>(null);
   const [simulatorMinimized, setSimulatorMinimized] = useState(false);
   const [droneName, setDroneName] = useState("No drone selected");
   const [telemetry, setTelemetry] = useState<DroneTelemetry>(createEmptyDroneTelemetry);
@@ -127,6 +130,8 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   const [profiles, setProfiles] = useState<ColorProfiles>(DEFAULT_COLOR_PROFILES);
   const [activeProfile, setActiveProfile] = useState<keyof ColorProfiles>("red");
   const [coverage, setCoverage] = useState<number | null>(null);
+  const [colorDetection, setColorDetection] = useState<ColorDetectionResult | null>(null);
+  const [simulatorVisionMode, setSimulatorVisionMode] = useState<"object" | "color" | null>(null);
   const [centerPixel, setCenterPixel] = useState<RgbPixel | null>(null);
   const [colorScanEnabled, setColorScanEnabled] = useState(false);
   const [modelState, setModelState] = useState<ModelState>("off");
@@ -146,6 +151,53 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   const notify = useCallback((message: string) => {
     setToast(message);
     window.setTimeout(() => setToast(null), 3200);
+  }, []);
+
+  const openSimulatorWindow = useCallback(() => {
+    const availableWidth = window.screen.availWidth || 1440;
+    const availableHeight = window.screen.availHeight || 900;
+    const popupWidth = Math.min(1280, Math.max(760, Math.round(availableWidth * 0.68)));
+    const popupHeight = Math.min(900, Math.max(620, Math.round(availableHeight * 0.86)));
+    const popupLeft = Math.max(0, availableWidth - popupWidth - 24);
+    const popup = window.open(
+      "",
+      "hopper-simulated-drone",
+      `popup=yes,width=${popupWidth},height=${popupHeight},left=${popupLeft},top=32,resizable=yes,scrollbars=yes`,
+    );
+    if (!popup) {
+      notify("Allow pop-ups for Hopper Studio, then connect the simulated drone again.");
+      return null;
+    }
+
+    popup.document.title = "Hopper Studio · Simulated Drone Room";
+    popup.document.documentElement.lang = "en";
+    popup.document.head.replaceChildren();
+    const base = popup.document.createElement("base");
+    base.href = document.baseURI;
+    popup.document.head.appendChild(base);
+    document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]').forEach((stylesheet) => {
+      const link = popup.document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = stylesheet.href;
+      popup.document.head.appendChild(link);
+    });
+    document.querySelectorAll<HTMLStyleElement>("style").forEach((stylesheet) => {
+      popup.document.head.appendChild(stylesheet.cloneNode(true));
+    });
+    popup.document.body.replaceChildren();
+    popup.document.body.className = "sim-popup-body";
+    popup.focus();
+    simulatorWindowRef.current = popup;
+    setSimulatorWindow(popup);
+    setSimulatorMinimized(false);
+    return popup;
+  }, [notify]);
+
+  const closeSimulatorWindow = useCallback(() => {
+    const popup = simulatorWindowRef.current;
+    simulatorWindowRef.current = null;
+    setSimulatorWindow(null);
+    if (popup && !popup.closed) popup.close();
   }, []);
 
   const persistProject = useCallback(
@@ -244,14 +296,22 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
       () => simulationControllerRef.current ? simulationCameraRef.current : imageRef.current,
       () => analysisCanvasRef.current,
       setModelState,
-      setDetections,
+      (nextDetections) => {
+        setDetections(nextDetections);
+        setSimulatorVisionMode("object");
+      },
       setCustomModelState,
       setCustomPredictions,
+      (result) => {
+        setColorDetection(result);
+        setSimulatorVisionMode("color");
+      },
     );
     visionRef.current = vision;
     return () => {
       window.clearTimeout(restorePreferences);
       simulationControllerRef.current?.disconnect();
+      simulatorWindowRef.current?.close();
       vision.dispose();
       visionRef.current = null;
     };
@@ -261,6 +321,24 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     localStorage.setItem(COLOR_KEY, JSON.stringify(profiles));
     visionRef.current?.setProfiles(profiles);
   }, [profiles]);
+
+  useEffect(() => {
+    if (!simulatorWindow) return;
+    const handleWindowClosed = () => {
+      if (simulatorWindowRef.current !== simulatorWindow) return;
+      simulatorWindowRef.current = null;
+      setSimulatorWindow(null);
+      setSimulatorMinimized(true);
+    };
+    simulatorWindow.addEventListener("pagehide", handleWindowClosed);
+    const interval = window.setInterval(() => {
+      if (simulatorWindow.closed) handleWindowClosed();
+    }, 400);
+    return () => {
+      simulatorWindow.removeEventListener("pagehide", handleWindowClosed);
+      window.clearInterval(interval);
+    };
+  }, [simulatorWindow]);
 
   useEffect(() => {
     localStorage.setItem(VISION_WIDTH_KEY, String(visionWidth));
@@ -305,6 +383,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
 
   const disconnectSimulation = useCallback(async () => {
     runtimeRef.current?.stop();
+    closeSimulatorWindow();
     const controller = simulationControllerRef.current;
     if (controller) {
       controller.cancelRunFlag = true;
@@ -319,16 +398,19 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     setTelemetry(createEmptyDroneTelemetry());
     setCameraState("offline");
     setDetections([]);
+    setColorDetection(null);
+    setSimulatorVisionMode(null);
     setCenterPixel(null);
     setRunning(false);
     appendLog("Simulated drone disconnected. Your blocks are unchanged and ready for a real Hopper.");
-  }, [appendLog]);
+  }, [appendLog, closeSimulatorWindow]);
 
   const connectSimulation = async () => {
     if (simulationControllerRef.current) {
       await disconnectSimulation();
       return;
     }
+    if (!openSimulatorWindow()) return;
     if (controllerRef.current) {
       runtimeRef.current?.stop();
       controllerRef.current.disconnect();
@@ -349,6 +431,8 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     setConnectionMode("simulated");
     setSimulatorMinimized(false);
     setDetections([]);
+    setColorDetection(null);
+    setSimulatorVisionMode(null);
     setCameraState("live");
     setDroneName("Hopper Simulator");
     appendLog("Connected to the simulated Hopper. Run the same blocks you use with the real drone.");
@@ -1201,9 +1285,18 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
           controller={simulationController}
           cameraCanvasRef={simulationCameraRef}
           telemetryCanvasRef={simulationTelemetryCameraRef}
+          popupWindow={simulatorWindow}
           minimized={simulatorMinimized}
-          onMinimize={() => setSimulatorMinimized(true)}
-          onRestore={() => setSimulatorMinimized(false)}
+          detections={detections}
+          colorDetection={colorDetection}
+          visionMode={simulatorVisionMode}
+          onMinimize={() => {
+            closeSimulatorWindow();
+            setSimulatorMinimized(true);
+          }}
+          onRestore={() => {
+            openSimulatorWindow();
+          }}
           onDisconnect={() => void disconnectSimulation()}
         />
       )}

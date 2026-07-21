@@ -170,6 +170,20 @@ export class SimulatedDroneController implements DroneController {
     this.emitFrame();
   }
 
+  placeDrone(x: number, y: number) {
+    if (this.snapshot.crashed) return;
+    const droneRadius = 0.064;
+    this.snapshot = {
+      ...this.snapshot,
+      x: clamp(Number(x) || 0, droneRadius, SIMULATION_ROOM.width - droneRadius),
+      y: clamp(Number(y) || 0, droneRadius, SIMULATION_ROOM.height - droneRadius),
+      vx: 0,
+      vy: 0,
+      trail: this.snapshot.z <= 0.08 ? [] : this.snapshot.trail,
+    };
+    this.emitFrame();
+  }
+
   async manualTilt(axis: "pitch" | "roll", angle: number, duration = 0.8) {
     if (this.snapshot.z < 0.1 || this.snapshot.crashed) return;
     const safeAngle = clamp(Number(angle) || 0, -15, 15);

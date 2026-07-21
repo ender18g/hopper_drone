@@ -9,6 +9,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type RefObject,
 } from "react";
+import { createPortal } from "react-dom";
 import {
   SIMULATION_ROOM,
   SimulatedDroneController,
@@ -16,6 +17,7 @@ import {
   type SimulationObject,
   type SimulationSnapshot,
 } from "../lib/simulation";
+import type { ColorDetectionResult, VisionDetection } from "../lib/vision";
 
 const DEFAULT_OBJECTS: SimulationObject[] = [
   { id: "airplane-1", label: "airplane", src: "sim-assets/airplane.png", x: 3.1, y: 5.7, size: 0.7, rotation: 28 },
@@ -35,7 +37,11 @@ type SimulatedDroneAreaProps = {
   controller: SimulatedDroneController;
   cameraCanvasRef: RefObject<HTMLCanvasElement | null>;
   telemetryCanvasRef: RefObject<HTMLCanvasElement | null>;
+  popupWindow: Window | null;
   minimized: boolean;
+  detections: VisionDetection[];
+  colorDetection: ColorDetectionResult | null;
+  visionMode: "object" | "color" | null;
   onMinimize(): void;
   onRestore(): void;
   onDisconnect(): void;
@@ -48,7 +54,11 @@ export default function SimulatedDroneArea({
   controller,
   cameraCanvasRef,
   telemetryCanvasRef,
+  popupWindow,
   minimized,
+  detections,
+  colorDetection,
+  visionMode,
   onMinimize,
   onRestore,
   onDisconnect,
@@ -62,6 +72,7 @@ export default function SimulatedDroneArea({
   const trailCanvasRef = useRef<HTMLCanvasElement>(null);
   const uploadInputRef = useRef<HTMLInputElement>(null);
   const dragIdRef = useRef<string | null>(null);
+  const draggingDroneRef = useRef(false);
   const imageCacheRef = useRef(new Map<string, HTMLImageElement>());
   const nextObjectIdRef = useRef(1);
   const selectedObject = objects.find((object) => object.id === selectedId) ?? null;
@@ -264,6 +275,27 @@ export default function SimulatedDroneArea({
     dragIdRef.current = null;
   };
 
+  const beginDroneDrag = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (snapshot.crashed) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    draggingDroneRef.current = true;
+  };
+
+  const moveDrone = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    const arena = arenaRef.current;
+    if (!draggingDroneRef.current || !arena) return;
+    const bounds = arena.getBoundingClientRect();
+    const x = clampRoomX(((event.clientX - bounds.left) / bounds.width) * SIMULATION_ROOM.width);
+    const y = clampRoomY((1 - (event.clientY - bounds.top) / bounds.height) * SIMULATION_ROOM.height);
+    controller.placeDrone(x, y);
+  };
+
+  const stopDroneDrag = () => {
+    draggingDroneRef.current = false;
+  };
+
   const droneStyle = {
     left: `${(snapshot.x / SIMULATION_ROOM.width) * 100}%`,
     top: `${(1 - snapshot.y / SIMULATION_ROOM.height) * 100}%`,
@@ -275,7 +307,7 @@ export default function SimulatedDroneArea({
     "--sim-pitch": `${-snapshot.pitch}deg`,
   } as CSSProperties;
 
-  if (minimized) {
+  if (minimized || !popupWindow || popupWindow.closed) {
     return (
       <>
         <canvas ref={cameraCanvasRef} className="sim-minimized-camera" aria-hidden="true" />
@@ -286,8 +318,8 @@ export default function SimulatedDroneArea({
     );
   }
 
-  return (
-    <section className="sim-window" role="dialog" aria-label="Simulated drone room">
+  const simulatorWindowContent = (
+    <section className="sim-window detached" role="dialog" aria-label="Simulated drone room">
       <header className="sim-titlebar">
         <div>
           <span className="sim-window-icon">SIM</span>
@@ -361,7 +393,7 @@ export default function SimulatedDroneArea({
             >
               <canvas ref={trailCanvasRef} className="sim-trail-canvas" aria-hidden="true" />
               <div className="sim-start-area"><b>START</b><span>1.25, 1.20 m</span></div>
-              <span className="sim-scale-note">DRONE MARKER ENLARGED · TRUE SIZE 5 × 5 IN</span>
+              <span className="sim-scale-note">DRAG DRONE TO PLACE · MARKER ENLARGED · TRUE SIZE 5 × 5 IN</span>
               {objects.map((object) => (
                 <button
                   type="button"
@@ -382,18 +414,28 @@ export default function SimulatedDroneArea({
                   <img src={object.src} alt={object.label} draggable={false} />
                 </button>
               ))}
-              <div className={`sim-drone-top ${snapshot.crashed ? "crashed" : ""}`} style={droneStyle} aria-label="Hopper drone">
-                <div className="sim-direction-arrow"><i /></div>
-                <div className="sim-drone-shadow" />
-                <div className="sim-drone-rotor rotor-one"><i /></div>
-                <div className="sim-drone-rotor rotor-two"><i /></div>
-                <div className="sim-drone-rotor rotor-three"><i /></div>
-                <div className="sim-drone-rotor rotor-four"><i /></div>
-                <div className="sim-drone-arm arm-one" />
-                <div className="sim-drone-arm arm-two" />
-                <div className="sim-drone-body"><b>H</b><i /></div>
-                {snapshot.crashed && <div className="sim-explosion" key={snapshot.crashSequence}><i /><i /><i /><i /><b>BOOM!</b></div>}
-              </div>
+              <button
+                type="button"
+                className={`sim-drone-top ${snapshot.crashed ? "crashed" : ""}`}
+                style={droneStyle}
+                aria-label="Drag Hopper drone to reposition it"
+                disabled={snapshot.crashed}
+                onPointerDown={beginDroneDrag}
+                onPointerMove={moveDrone}
+                onPointerUp={stopDroneDrag}
+                onPointerCancel={stopDroneDrag}
+              >
+                <span className="sim-direction-arrow"><i /></span>
+                <span className="sim-drone-shadow" />
+                <span className="sim-drone-rotor rotor-one"><i /></span>
+                <span className="sim-drone-rotor rotor-two"><i /></span>
+                <span className="sim-drone-rotor rotor-three"><i /></span>
+                <span className="sim-drone-rotor rotor-four"><i /></span>
+                <span className="sim-drone-arm arm-one" />
+                <span className="sim-drone-arm arm-two" />
+                <span className="sim-drone-body"><b>H</b><i /></span>
+                {snapshot.crashed && <span className="sim-explosion" key={snapshot.crashSequence}><i /><i /><i /><i /><b>BOOM!</b></span>}
+              </button>
               {snapshot.crashed && (
                 <div className="sim-crash-card">
                   <b>IMPACT DETECTED</b>
@@ -434,8 +476,42 @@ export default function SimulatedDroneArea({
             <header><b>DOWN CAMERA</b><span>OBJECTS IN VIEW ARE AVAILABLE TO VISION BLOCKS</span></header>
             <div className="sim-camera-screen">
               <canvas ref={cameraCanvasRef} aria-label="Simulated downward drone camera feed" />
+              {visionMode === "object" && detections.map((detection, index) => (
+                <div
+                  className="sim-vision-box object"
+                  key={`${detection.class}-${index}`}
+                  style={{
+                    left: `${(detection.bbox[0] / detection.frameWidth) * 100}%`,
+                    top: `${(detection.bbox[1] / detection.frameHeight) * 100}%`,
+                    width: `${(detection.bbox[2] / detection.frameWidth) * 100}%`,
+                    height: `${(detection.bbox[3] / detection.frameHeight) * 100}%`,
+                  }}
+                >
+                  <span>{detection.class.toUpperCase()} · {Math.round(detection.score * 100)}%</span>
+                </div>
+              ))}
+              {visionMode === "color" && colorDetection?.bbox && (
+                <div
+                  className={`sim-vision-box color ${colorDetection.profile}`}
+                  style={{
+                    left: `${(colorDetection.bbox[0] / colorDetection.frameWidth) * 100}%`,
+                    top: `${(colorDetection.bbox[1] / colorDetection.frameHeight) * 100}%`,
+                    width: `${(colorDetection.bbox[2] / colorDetection.frameWidth) * 100}%`,
+                    height: `${(colorDetection.bbox[3] / colorDetection.frameHeight) * 100}%`,
+                  }}
+                >
+                  <span>{colorDetection.profile.toUpperCase()} · {colorDetection.coverage.toFixed(1)}%</span>
+                </div>
+              )}
               <i className="sim-camera-crosshair horizontal" /><i className="sim-camera-crosshair vertical" />
-              <span>CAM 01 · {snapshot.z < 0.12 ? "GROUND" : "LIVE"}</span>
+              <span className="sim-camera-status">CAM 01 · {snapshot.z < 0.12 ? "GROUND" : "LIVE"}</span>
+              <span className={`sim-vision-status ${visionMode ?? "idle"}`}>
+                {visionMode === "object"
+                  ? `OBJECT SCAN · ${detections.length} FOUND`
+                  : visionMode === "color"
+                    ? `${colorDetection?.profile.toUpperCase() ?? "COLOR"} FILTER · ${colorDetection?.coverage.toFixed(1) ?? "0.0"}%`
+                    : "VISION IDLE"}
+              </span>
             </div>
           </section>
 
@@ -468,6 +544,7 @@ export default function SimulatedDroneArea({
       </div>
     </section>
   );
+  return createPortal(simulatorWindowContent, popupWindow.document.body);
 }
 
 const clampRoomX = (value: number) => Math.max(0.2, Math.min(SIMULATION_ROOM.width - 0.2, value));
