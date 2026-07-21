@@ -16,9 +16,11 @@ import {
   getBluetoothApi,
   hopperDeviceRequest,
   MamboController,
+  type DroneController,
   type DroneTelemetry,
 } from "../lib/drone";
 import { ExecutionRuntime } from "../lib/runtime";
+import { SimulatedDroneController } from "../lib/simulation";
 import {
   DEFAULT_COLOR_PROFILES,
   VisionRuntime,
@@ -28,6 +30,7 @@ import {
   type RgbPixel,
   type VisionDetection,
 } from "../lib/vision";
+import SimulatedDroneArea from "./SimulatedDroneArea";
 import wrcLogo from "../logos/wrc_logo.png?inline";
 
 type BlocklyToolkit = typeof import("../lib/blockly");
@@ -85,9 +88,12 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   const workspaceRef = useRef<WorkspaceSvg | null>(null);
   const blocklyRef = useRef<BlocklyToolkit | null>(null);
   const autosaveTimerRef = useRef<number | null>(null);
-  const controllerRef = useRef<MamboController | null>(null);
+  const controllerRef = useRef<DroneController | null>(null);
+  const simulationControllerRef = useRef<SimulatedDroneController | null>(null);
   const runtimeRef = useRef<ExecutionRuntime | null>(null);
   const imageRef = useRef<HTMLImageElement>(null);
+  const simulationCameraRef = useRef<HTMLCanvasElement>(null);
+  const simulationTelemetryCameraRef = useRef<HTMLCanvasElement>(null);
   const analysisCanvasRef = useRef<HTMLCanvasElement>(null);
   const visionRef = useRef<VisionRuntime | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
@@ -101,6 +107,9 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   const [javascriptCode, setJavascriptCode] = useState("");
   const [projectName, setProjectName] = useState("Color Landing Lab");
   const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected");
+  const [connectionMode, setConnectionMode] = useState<"real" | "simulated" | null>(null);
+  const [simulationController, setSimulationController] = useState<SimulatedDroneController | null>(null);
+  const [simulatorMinimized, setSimulatorMinimized] = useState(false);
   const [droneName, setDroneName] = useState("No drone selected");
   const [telemetry, setTelemetry] = useState<DroneTelemetry>(createEmptyDroneTelemetry);
   const [running, setRunning] = useState(false);
@@ -126,7 +135,8 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   const [customModelState, setCustomModelState] = useState<ModelState>("off");
   const [customLabels, setCustomLabels] = useState<string[]>([]);
   const [customPredictions, setCustomPredictions] = useState<CustomPrediction[]>([]);
-  const cameraLive = cameraState === "live";
+  const simulationConnected = connectionMode === "simulated";
+  const cameraLive = cameraState === "live" || simulationConnected;
 
   const appendLog = useCallback((...values: unknown[]) => {
     const line = values.map(formatLogValue).join(" ");
@@ -231,7 +241,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     }, 0);
 
     const vision = new VisionRuntime(
-      () => imageRef.current,
+      () => simulationControllerRef.current ? simulationCameraRef.current : imageRef.current,
       () => analysisCanvasRef.current,
       setModelState,
       setDetections,
@@ -241,6 +251,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     visionRef.current = vision;
     return () => {
       window.clearTimeout(restorePreferences);
+      simulationControllerRef.current?.disconnect();
       vision.dispose();
       visionRef.current = null;
     };
@@ -292,7 +303,59 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     }
   }, [cameraProxyAvailable]);
 
+  const disconnectSimulation = useCallback(async () => {
+    runtimeRef.current?.stop();
+    const controller = simulationControllerRef.current;
+    if (controller) {
+      controller.cancelRunFlag = true;
+      controller.disconnect();
+    }
+    simulationControllerRef.current = null;
+    setSimulationController(null);
+    if (controllerRef.current === controller) controllerRef.current = null;
+    visionRef.current?.setSyntheticDetectionProvider(null);
+    setConnectionMode(null);
+    setSimulatorMinimized(false);
+    setTelemetry(createEmptyDroneTelemetry());
+    setCameraState("offline");
+    setDetections([]);
+    setCenterPixel(null);
+    setRunning(false);
+    appendLog("Simulated drone disconnected. Your blocks are unchanged and ready for a real Hopper.");
+  }, [appendLog]);
+
+  const connectSimulation = async () => {
+    if (simulationControllerRef.current) {
+      await disconnectSimulation();
+      return;
+    }
+    if (controllerRef.current) {
+      runtimeRef.current?.stop();
+      controllerRef.current.disconnect();
+      controllerRef.current = null;
+      setConnectionState("disconnected");
+      setDroneName("No drone selected");
+    }
+    const controller = new SimulatedDroneController();
+    controller.onTelemetry = setTelemetry;
+    controller.onEvent = (eventName) => appendLog("Simulator event:", eventName);
+    simulationControllerRef.current = controller;
+    setSimulationController(controller);
+    controllerRef.current = controller;
+    visionRef.current?.setSyntheticDetectionProvider((width, height) =>
+      controller.getSyntheticDetections(width, height)
+    );
+    controller.connect();
+    setConnectionMode("simulated");
+    setSimulatorMinimized(false);
+    setDetections([]);
+    setCameraState("live");
+    setDroneName("Hopper Simulator");
+    appendLog("Connected to the simulated Hopper. Run the same blocks you use with the real drone.");
+  };
+
   const connectDrone = async () => {
+    if (simulationControllerRef.current) await disconnectSimulation();
     const bluetooth = getBluetoothApi();
     if (!bluetooth) {
       notify(
@@ -312,11 +375,13 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
       controller.onEvent = (eventName) => appendLog("Drone event:", eventName);
       device.addEventListener("gattserverdisconnected", () => {
         setConnectionState("disconnected");
+        setConnectionMode((current) => current === "real" ? null : current);
         setTelemetry((current) => ({ ...current, connected: false }));
         appendLog("Drone Bluetooth disconnected.");
       });
       await controller.connect();
       setConnectionState("connected");
+      setConnectionMode("real");
       setDroneName(device.name || "Hopper drone");
       appendLog("Bluetooth connected to", device.name || "Hopper drone");
     } catch (error) {
@@ -334,6 +399,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     controllerRef.current?.disconnect();
     controllerRef.current = null;
     setConnectionState("disconnected");
+    setConnectionMode(null);
     setDroneName("No drone selected");
     setTelemetry(createEmptyDroneTelemetry());
     appendLog("Drone disconnected.");
@@ -343,8 +409,8 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     if (running) return;
     const controller = controllerRef.current;
     const vision = visionRef.current;
-    if (!controller || connectionState !== "connected") {
-      notify("Connect the Hopper with Bluetooth before running code");
+    if (!controller || !connectionMode || !telemetry.connected) {
+      notify("Connect a real or simulated Hopper before running code");
       return;
     }
     if (!vision) return;
@@ -500,7 +566,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
       return;
     }
     try {
-      await visionRef.current?.loadObjectModel();
+      if (!simulationControllerRef.current) await visionRef.current?.loadObjectModel();
       setObjectScanEnabled(true);
       await scanObjects();
     } catch (error) {
@@ -669,7 +735,11 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   const activeRange = profiles[activeProfile];
   const telemetryLive = telemetry.connected || cameraLive;
   const modelLabel =
-    modelState === "loading"
+    simulationConnected
+      ? objectScanEnabled
+        ? "Scanning simulation every 1.8s"
+        : "Simulation labels ready"
+      : modelState === "loading"
       ? "Loading local model…"
       : modelState === "ready"
         ? objectScanEnabled
@@ -715,7 +785,6 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   const workspaceStyle = {
     "--vision-width": `${visionWidth}px`,
   } as CSSProperties;
-
   return (
     <main className="studio-shell">
       <header className="topbar">
@@ -756,7 +825,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
             </span>
             <span>{telemetry.batteryLevel === null ? "—" : `${telemetry.batteryLevel}%`}</span>
           </div>
-          {connectionState === "connected" ? (
+          {connectionMode === "real" && connectionState === "connected" ? (
             <button className="connect-button connected" onClick={() => void disconnectDrone()}>
               <span className="bluetooth-mark">ᛒ</span>
               <span><b>{connectionLabel}</b><small>Bluetooth connected</small></span>
@@ -768,6 +837,17 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
               <span><b>{connectionLabel}</b><small>Bluetooth flight control</small></span>
             </button>
           )}
+          <button
+            className={`sim-connect-button ${simulationConnected ? "connected" : ""}`}
+            onClick={() => void connectSimulation()}
+          >
+            <span className="sim-connect-icon">▦</span>
+            <span>
+              <b>{simulationConnected ? "Disconnect simulator" : "Connect simulated drone"}</b>
+              <small>{simulationConnected ? "Simulation connected" : "10 × 7 m flight room"}</small>
+            </span>
+            {simulationConnected && <i className="status-dot" />}
+          </button>
         </div>
       </header>
 
@@ -824,7 +904,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
       <section className="workspace-grid" style={workspaceStyle}>
         <div className="editor-panel">
           <div className="editor-status-strip">
-            <span><i className={connectionState === "connected" ? "online" : ""} /> {connectionState === "connected" ? "DRONE LINK READY" : "DRONE LINK OFFLINE"}</span>
+            <span><i className={connectionMode ? "online" : ""} /> {connectionMode === "simulated" ? "SIMULATOR LINK READY" : connectionMode === "real" ? "DRONE LINK READY" : "DRONE LINK OFFLINE"}</span>
             <span>{telemetry.flyingState ? telemetry.flyingState.toUpperCase() : "LANDED / UNKNOWN"}</span>
             <span>AUTOSAVE ON</span>
           </div>
@@ -881,12 +961,18 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
               <h1>TELEMETRY</h1>
             </div>
             <span className={`live-badge ${telemetryLive ? "on" : ""}`}>
-              <i /> {telemetry.connected ? "DRONE LIVE" : cameraLive ? "CAMERA LIVE" : "OFFLINE"}
+              <i /> {simulationConnected ? "SIM LIVE" : telemetry.connected ? "DRONE LIVE" : cameraLive ? "CAMERA LIVE" : "OFFLINE"}
             </span>
           </div>
 
           <div className="camera-frame">
-            {cameraSource ? (
+            {simulationConnected ? (
+              <canvas
+                ref={simulationTelemetryCameraRef}
+                className="simulation-telemetry-camera"
+                aria-label="Simulated Hopper downward camera feed"
+              />
+            ) : cameraSource ? (
               <img
                 ref={imageRef}
                 src={cameraSource}
@@ -924,20 +1010,24 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
           </div>
           <canvas ref={analysisCanvasRef} className="analysis-canvas" aria-hidden="true" />
 
-          <div className="camera-connect-row">
-            <input
-              value={cameraAddress}
-              onChange={(event) => setCameraAddress(event.target.value)}
-              aria-label="Drone camera URL"
-            />
-            <button onClick={connectCamera}>{cameraState === "connecting" ? "WAIT" : "CONNECT"}</button>
-          </div>
-          {cameraState === "error" && (
+          {simulationConnected ? (
+            <div className="sim-camera-connected-row"><i /> SIMULATED DOWN CAMERA CONNECTED</div>
+          ) : (
+            <div className="camera-connect-row">
+              <input
+                value={cameraAddress}
+                onChange={(event) => setCameraAddress(event.target.value)}
+                aria-label="Drone camera URL"
+              />
+              <button onClick={connectCamera}>{cameraState === "connecting" ? "WAIT" : "CONNECT"}</button>
+            </div>
+          )}
+          {!simulationConnected && cameraState === "error" && (
             <p className="inline-warning">
               No camera signal. Join the Hopper Wi-Fi and allow local-network access if Edge or Chrome asks.
             </p>
           )}
-          {!cameraProxyAvailable && cameraLive && (
+          {!simulationConnected && !cameraProxyAvailable && cameraLive && (
             <p className="inline-warning">
               Direct video is available. Start the local app to use color tracking or object detection.
             </p>
@@ -1106,6 +1196,17 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
         </aside>
       </section>
 
+      {simulationConnected && simulationController && (
+        <SimulatedDroneArea
+          controller={simulationController}
+          cameraCanvasRef={simulationCameraRef}
+          telemetryCanvasRef={simulationTelemetryCameraRef}
+          minimized={simulatorMinimized}
+          onMinimize={() => setSimulatorMinimized(true)}
+          onRestore={() => setSimulatorMinimized(false)}
+          onDisconnect={() => void disconnectSimulation()}
+        />
+      )}
       {toast && <div className="toast" role="status">{toast}</div>}
     </main>
   );

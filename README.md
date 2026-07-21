@@ -7,6 +7,8 @@ Hopper Studio is a fully local block-coding, JavaScript, Bluetooth flight-contro
 - Blockly workspace with the original flight, battery, event, logic, loop, math, variable, function, and accessory capabilities.
 - JavaScript editor for advanced students.
 - Web Bluetooth control for Hopper, FTW, Mambo, Travis, and Mars device names.
+- A 10 m × 7 m simulated flight room with damped pitch/roll physics, wall crashes, a flight-path trail, side-view attitude, and a downward camera that uses the same blocks as the real Hopper.
+- Drag, duplicate, delete, upload, and resize floor targets for search-pattern and computer-vision labs.
 - Simultaneous Bluetooth flight control and Wi-Fi camera display.
 - Separate Bluetooth and Hopper Wi-Fi indicators. The Wi-Fi indicator checks whether `192.168.2.1` actually responds; select it to check again immediately.
 - A draggable Telemetry panel divider. Drag it left to enlarge the camera and live readouts, or right to give Blockly more room. The Left and Right arrow keys also work when the divider is focused.
@@ -61,6 +63,14 @@ Hopper Studio keeps this port fixed because browser Bluetooth permissions belong
 Bluetooth flight control is independent of the current Wi-Fi network. The **Wi-Fi offline** camera indicator does not disable **Connect drone**. Hopper Studio checks the camera only when you select the Wi-Fi box or connect the video feed, so being on another Wi-Fi network does not create camera errors during Bluetooth-only use.
 
 The local camera proxy accepts only `192.168.2.1`; it cannot be used as a general web proxy.
+
+## Use the simulated drone
+
+Select **Connect simulated drone** beside the Bluetooth button. The blue connected state means **Run Program** is sending the current Blockly or JavaScript program to the simulator. Switching between the simulator and a real Hopper never clears the workspace.
+
+The room starts with airplane, car, banana, and apple targets. Drag them anywhere on the floor, select one to resize, duplicate, or delete it, or upload a local image. The simulated downward camera feeds the same RGB coverage, object label, coordinate, and custom-model blocks used by the physical camera. The 5°, 10°, and 15° manual attitude checks are useful for demonstrating acceleration and damping before students encode a lawnmower search in blocks.
+
+The included transparent floor-object PNGs are by [OpenMoji](https://openmoji.org/), the open-source emoji and icon project, and are distributed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
 
 ## How Color Tracker controls the color blocks
 

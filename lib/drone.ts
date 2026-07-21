@@ -10,6 +10,43 @@ export type DroneTelemetry = {
   connected: boolean;
 };
 
+/**
+ * The command surface shared by the Bluetooth Hopper and the classroom
+ * simulator. Blockly-generated programs only depend on this interface, so a
+ * student can switch aircraft without rebuilding or clearing their workspace.
+ */
+export interface DroneController {
+  cancelRunFlag: boolean;
+  onTelemetry?: (telemetry: DroneTelemetry) => void;
+  onEvent?: (eventName: DroneEventName) => void;
+  disconnect(): void;
+  startRun(): Promise<void>;
+  stopRun(): Promise<void>;
+  takeOff(): Promise<void>;
+  land(): Promise<void>;
+  landNoWait(): Promise<void>;
+  forceLand(): Promise<void>;
+  cutoff(): Promise<void>;
+  hover(): Promise<void>;
+  reset(): void;
+  rotate(degrees?: number, direction?: "clockwise" | "counterclockwise"): Promise<void>;
+  fly(
+    direction: "up" | "down" | "left" | "right" | "forward" | "backward",
+    seconds?: number,
+    power?: number,
+  ): Promise<void>;
+  setAxis(axis: "pitch" | "roll" | "yaw" | "gaz" | "altitude", power: number): void;
+  flip(direction: "forward" | "backward" | "left" | "right"): Promise<void>;
+  waitUntilBatteryLevelChanges(): Promise<void>;
+  wait(seconds: number): Promise<void>;
+  getBatteryLevel(): number | null;
+  isFlying(): boolean;
+  isLanded(): boolean;
+  takePicture(): Promise<void>;
+  fireGun(): Promise<void>;
+  grabber(openOrClose: "OPEN" | "CLOSE"): Promise<void>;
+}
+
 export const createEmptyDroneTelemetry = (): DroneTelemetry => ({
   batteryLevel: null,
   flyingState: null,

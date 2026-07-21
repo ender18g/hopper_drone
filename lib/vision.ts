@@ -92,9 +92,10 @@ export class VisionRuntime {
   private lastObjectCoordinates = new Map<string, StoredObjectCoordinate>();
   private lastDetectionScanAt = Number.NEGATIVE_INFINITY;
   private lastDetectionMinimumConfidence = 1;
+  private syntheticDetectionProvider: ((width: number, height: number) => VisionDetection[]) | null = null;
 
   constructor(
-    private readonly getImage: () => HTMLImageElement | null,
+    private readonly getImage: () => HTMLImageElement | HTMLCanvasElement | null,
     private readonly getCanvas: () => HTMLCanvasElement | null,
     private readonly onModelStatus: (status: "off" | "loading" | "ready" | "error") => void,
     private readonly onDetections: (detections: VisionDetection[]) => void,
@@ -106,6 +107,15 @@ export class VisionRuntime {
     this.profiles = profiles;
   }
 
+  setSyntheticDetectionProvider(
+    provider: ((width: number, height: number) => VisionDetection[]) | null,
+  ) {
+    this.syntheticDetectionProvider = provider;
+    this.lastObjectCoordinates.clear();
+    this.onDetections([]);
+    this.onModelStatus(provider || this.model ? "ready" : "off");
+  }
+
   colorCoverage(profileName: keyof ColorProfiles) {
     const { data } = this.captureFrame(180);
     return calculateColorCoverage(data, this.profiles[profileName]);
@@ -113,6 +123,7 @@ export class VisionRuntime {
 
   sampleCenterPixel(): RgbPixel {
     const image = this.getReadyImage();
+    const { width, height } = this.getSourceSize(image);
     const canvas = this.getCanvas();
     if (!canvas) throw new Error("Camera analysis canvas is unavailable.");
     canvas.width = 1;
@@ -120,8 +131,8 @@ export class VisionRuntime {
     const context = canvas.getContext("2d", { willReadFrequently: true });
     if (!context) throw new Error("Camera analysis canvas is unavailable.");
     context.imageSmoothingEnabled = false;
-    const sourceX = Math.floor(image.naturalWidth / 2);
-    const sourceY = Math.floor(image.naturalHeight / 2);
+    const sourceX = Math.floor(width / 2);
+    const sourceY = Math.floor(height / 2);
     context.drawImage(image, sourceX, sourceY, 1, 1, 0, 0, 1, 1);
     try {
       const data = context.getImageData(0, 0, 1, 1).data;
@@ -162,6 +173,23 @@ export class VisionRuntime {
   }
 
   async detectObjects(minimumConfidence = 0.55) {
+    if (this.syntheticDetectionProvider) {
+      const frame = this.getReadyImage();
+      const size = this.getSourceSize(frame);
+      const detections = this.syntheticDetectionProvider(size.width, size.height)
+        .filter((detection) => detection.score >= Number(minimumConfidence));
+      detections.forEach((detection) => {
+        this.lastObjectCoordinates.set(detection.class.trim().toLowerCase(), {
+          x: detection.centerX,
+          y: detection.centerY,
+          confidence: detection.score,
+        });
+      });
+      this.lastDetectionScanAt = performance.now();
+      this.lastDetectionMinimumConfidence = minimumConfidence;
+      this.onDetections(detections);
+      return detections;
+    }
     const model = await this.loadObjectModel();
     const frame = this.captureCanvas(420, true);
     const detections = await model.detect(frame, 10, minimumConfidence);
@@ -276,18 +304,27 @@ export class VisionRuntime {
 
   private getReadyImage() {
     const image = this.getImage();
-    if (!image || image.naturalWidth === 0 || image.naturalHeight === 0) {
+    if (!image) {
       throw new Error("Connect the camera feed before using vision blocks.");
     }
+    const { width, height } = this.getSourceSize(image);
+    if (width === 0 || height === 0) throw new Error("Connect the camera feed before using vision blocks.");
     return image;
+  }
+
+  private getSourceSize(image: HTMLImageElement | HTMLCanvasElement) {
+    return image instanceof HTMLImageElement
+      ? { width: image.naturalWidth, height: image.naturalHeight }
+      : { width: image.width, height: image.height };
   }
 
   private captureCanvas(maxWidth: number, isolated = false) {
     const image = this.getReadyImage();
+    const source = this.getSourceSize(image);
     const canvas = isolated ? document.createElement("canvas") : this.getCanvas();
     if (!canvas) throw new Error("Camera analysis canvas is unavailable.");
-    const width = Math.min(maxWidth, image.naturalWidth);
-    const height = Math.max(1, Math.round((image.naturalHeight / image.naturalWidth) * width));
+    const width = Math.min(maxWidth, source.width);
+    const height = Math.max(1, Math.round((source.height / source.width) * width));
     canvas.width = width;
     canvas.height = height;
     const context = canvas.getContext("2d", { willReadFrequently: true });
