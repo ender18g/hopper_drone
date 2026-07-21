@@ -18,13 +18,20 @@ import {
   type SimulationObject,
   type SimulationSnapshot,
 } from "../lib/simulation";
-import type { ColorDetectionResult, VisionDetection } from "../lib/vision";
+import type { ThresholdResult, VisionDetection, VisionScanKind } from "../lib/vision";
+import {
+  APRIL_TAG_IDS,
+  aprilTagSvgDataUri,
+  drawAprilTag,
+  type AprilTagDetection,
+} from "../lib/apriltags";
 
 const DEFAULT_OBJECTS: SimulationObject[] = [
-  { id: "airplane-1", label: "airplane", src: "sim-assets/airplane.png", x: 3.1, y: 5.7, size: 0.7, rotation: 28 },
-  { id: "car-1", label: "car", src: "sim-assets/car.png", x: 7.9, y: 5.25, size: 0.72, rotation: -20 },
-  { id: "banana-1", label: "banana", src: "sim-assets/banana.png", x: 6.35, y: 2.0, size: 0.58, rotation: 8 },
-  { id: "apple-1", label: "apple", src: "sim-assets/apple.png", x: 3.8, y: 3.2, size: 0.56, rotation: 0 },
+  { id: "airplane-1", label: "airplane", src: "sim-assets/airplane.png", x: 3.1, y: 5.7, size: 0.7, rotation: 28, kind: "object" },
+  { id: "car-1", label: "car", src: "sim-assets/car.png", x: 7.9, y: 5.25, size: 0.72, rotation: -20, kind: "object" },
+  { id: "banana-1", label: "banana", src: "sim-assets/banana.png", x: 6.35, y: 2.0, size: 0.58, rotation: 8, kind: "object" },
+  { id: "apple-1", label: "apple", src: "sim-assets/apple.png", x: 3.8, y: 3.2, size: 0.56, rotation: 0, kind: "object" },
+  { id: "white-paper-1", label: "white paper", x: 5, y: 3.5, size: 0.72, rotation: 0, kind: "paper" },
 ];
 
 const FLOOR_PRESETS = [
@@ -41,8 +48,11 @@ type SimulatedDroneAreaProps = {
   popupWindow: Window | null;
   minimized: boolean;
   detections: VisionDetection[];
-  colorDetection: ColorDetectionResult | null;
-  visionMode: "object" | "color" | null;
+  thresholdResult: ThresholdResult | null;
+  aprilTagDetections: AprilTagDetection[];
+  visionMode: VisionScanKind | null;
+  scanActive: boolean;
+  scanSequence: number;
   onMinimize(): void;
   onRestore(): void;
   onDisconnect(): void;
@@ -58,8 +68,11 @@ export default function SimulatedDroneArea({
   popupWindow,
   minimized,
   detections,
-  colorDetection,
+  thresholdResult,
+  aprilTagDetections,
   visionMode,
+  scanActive,
+  scanSequence,
   onMinimize,
   onRestore,
   onDisconnect,
@@ -69,8 +82,10 @@ export default function SimulatedDroneArea({
   const [selectedId, setSelectedId] = useState(DEFAULT_OBJECTS[0].id);
   const [floorColor, setFloorColor] = useState(FLOOR_PRESETS[0].value);
   const [manualAngle, setManualAngle] = useState(10);
+  const [tagIdToAdd, setTagIdToAdd] = useState(0);
   const arenaRef = useRef<HTMLDivElement>(null);
   const trailCanvasRef = useRef<HTMLCanvasElement>(null);
+  const thresholdCanvasRef = useRef<HTMLCanvasElement>(null);
   const uploadInputRef = useRef<HTMLInputElement>(null);
   const dragIdRef = useRef<string | null>(null);
   const draggingDroneRef = useRef(false);
@@ -124,6 +139,7 @@ export default function SimulatedDroneArea({
   useEffect(() => {
     controller.setSceneObjects(objects);
     objects.forEach((object) => {
+      if (!object.src) return;
       if (imageCacheRef.current.has(object.src)) return;
       const image = new Image();
       image.src = object.src;
@@ -190,14 +206,22 @@ export default function SimulatedDroneArea({
     objects.forEach((object) => {
       const projection = projectObjectToCamera(snapshot, object, primary.width, primary.height);
       if (!projection.visible) return;
-      const image = imageCacheRef.current.get(object.src);
+      const image = object.src ? imageCacheRef.current.get(object.src) : undefined;
       context.save();
       context.translate(projection.centerX, projection.centerY);
       context.rotate(((object.rotation - snapshot.heading) * Math.PI) / 180);
       context.shadowColor = "rgba(0,0,0,.4)";
       context.shadowBlur = Math.max(2, 9 - snapshot.z * 2);
       context.shadowOffsetY = 3;
-      if (image?.complete && image.naturalWidth > 0) {
+      if (object.kind === "paper") {
+        context.fillStyle = "#fff";
+        context.fillRect(-projection.size / 2, -projection.size / 2, projection.size, projection.size * 0.78);
+        context.strokeStyle = "rgba(205,211,216,.85)";
+        context.lineWidth = 1;
+        context.strokeRect(-projection.size / 2, -projection.size / 2, projection.size, projection.size * 0.78);
+      } else if (object.kind === "apriltag" && object.tagId !== undefined) {
+        drawAprilTag(context, object.tagId, projection.size);
+      } else if (image?.complete && image.naturalWidth > 0) {
         context.drawImage(
           image,
           -projection.size / 2,
@@ -233,8 +257,26 @@ export default function SimulatedDroneArea({
     }
   }, [cameraCanvasRef, floorColor, objects, snapshot, telemetryCanvasRef]);
 
+  useEffect(() => {
+    const canvas = thresholdCanvasRef.current;
+    if (!canvas || !thresholdResult) return;
+    canvas.width = thresholdResult.frameWidth;
+    canvas.height = thresholdResult.frameHeight;
+    canvas.getContext("2d")?.putImageData(
+      new ImageData(
+        new Uint8ClampedArray(thresholdResult.binaryData),
+        thresholdResult.frameWidth,
+        thresholdResult.frameHeight,
+      ),
+      0,
+      0,
+    );
+  }, [thresholdResult]);
+
   const objectTypes = useMemo(
-    () => DEFAULT_OBJECTS.map(({ label, src, size }) => ({ label, src, size })),
+    () => DEFAULT_OBJECTS
+      .filter((object) => object.kind === "object" && object.src)
+      .map(({ label, src, size }) => ({ label, src: src!, size })),
     [],
   );
 
@@ -246,6 +288,35 @@ export default function SimulatedDroneArea({
     setObjects((current) => [
       ...current,
       { ...template, id, x: 5, y: 3.5, rotation: 0 },
+    ]);
+    setSelectedId(id);
+  };
+
+  const addWhitePaper = () => {
+    const id = `white-paper-${nextObjectIdRef.current}`;
+    nextObjectIdRef.current += 1;
+    setObjects((current) => [
+      ...current,
+      { id, label: "white paper", x: 5, y: 3.5, size: 0.72, rotation: 0, kind: "paper" },
+    ]);
+    setSelectedId(id);
+  };
+
+  const addAprilTag = () => {
+    const id = `apriltag-${tagIdToAdd}-${nextObjectIdRef.current}`;
+    nextObjectIdRef.current += 1;
+    setObjects((current) => [
+      ...current,
+      {
+        id,
+        label: `AprilTag ${tagIdToAdd}`,
+        x: 5,
+        y: 3.5,
+        size: 0.62,
+        rotation: 0,
+        kind: "apriltag",
+        tagId: tagIdToAdd,
+      },
     ]);
     setSelectedId(id);
   };
@@ -278,6 +349,12 @@ export default function SimulatedDroneArea({
     );
   };
 
+  const updateSelectedRotation = (rotation: number) => {
+    setObjects((current) =>
+      current.map((object) => object.id === selectedId ? { ...object, rotation } : object),
+    );
+  };
+
   const uploadImage = (file: File | undefined) => {
     if (!file || !file.type.startsWith("image/")) return;
     const reader = new FileReader();
@@ -288,7 +365,7 @@ export default function SimulatedDroneArea({
       nextObjectIdRef.current += 1;
       setObjects((current) => [
         ...current,
-        { id, label: fileLabel, src: reader.result as string, x: 5, y: 3.5, size: 0.8, rotation: 0, uploaded: true },
+        { id, label: fileLabel, src: reader.result as string, x: 5, y: 3.5, size: 0.8, rotation: 0, kind: "object", uploaded: true },
       ]);
       setSelectedId(id);
     };
@@ -403,7 +480,14 @@ export default function SimulatedDroneArea({
               <img src={object.src} alt="" /> + {object.label}
             </button>
           ))}
+          <button onClick={addWhitePaper}>▱ + white paper</button>
         </div>
+        <label className="sim-tag-picker">APRILTAG ID
+          <select value={tagIdToAdd} onChange={(event) => setTagIdToAdd(Number(event.target.value))}>
+            {APRIL_TAG_IDS.map((id) => <option value={id} key={id}>{id}</option>)}
+          </select>
+        </label>
+        <button onClick={addAprilTag}>＋ ADD TAG</button>
         <button onClick={() => uploadInputRef.current?.click()}>⇧ UPLOAD IMAGE</button>
         <input
           ref={uploadInputRef}
@@ -416,16 +500,28 @@ export default function SimulatedDroneArea({
         <button onClick={duplicateSelected} disabled={!selectedObject}>DUPLICATE</button>
         <button className="sim-delete-button" onClick={deleteSelected} disabled={!selectedObject}>DELETE</button>
         {selectedObject && (
-          <label className="sim-size-control">SIZE {round(selectedObject.size, 2)} m
-            <input
-              type="range"
-              min="0.25"
-              max="1.8"
-              step="0.05"
-              value={selectedObject.size}
-              onChange={(event) => updateSelectedSize(Number(event.target.value))}
-            />
-          </label>
+          <>
+            <label className="sim-size-control">SIZE {round(selectedObject.size, 2)} m
+              <input
+                type="range"
+                min="0.25"
+                max="1.8"
+                step="0.05"
+                value={selectedObject.size}
+                onChange={(event) => updateSelectedSize(Number(event.target.value))}
+              />
+            </label>
+            <label className="sim-size-control">ROTATE {Math.round(selectedObject.rotation)}°
+              <input
+                type="range"
+                min="-180"
+                max="180"
+                step="5"
+                value={selectedObject.rotation}
+                onChange={(event) => updateSelectedRotation(Number(event.target.value))}
+              />
+            </label>
+          </>
         )}
       </div>
 
@@ -446,7 +542,7 @@ export default function SimulatedDroneArea({
               {objects.map((object) => (
                 <button
                   type="button"
-                  className={`sim-floor-object ${selectedId === object.id ? "selected" : ""}`}
+                  className={`sim-floor-object ${object.kind ?? "object"} ${selectedId === object.id ? "selected" : ""}`}
                   key={object.id}
                   style={{
                     left: `${(object.x / SIMULATION_ROOM.width) * 100}%`,
@@ -460,7 +556,22 @@ export default function SimulatedDroneArea({
                   onPointerCancel={stopObjectDrag}
                   aria-label={`Move ${object.label}`}
                 >
-                  <img src={object.src} alt={object.label} draggable={false} />
+                  {object.kind === "paper" ? (
+                    <span className="sim-paper-sheet">WHITE PAPER</span>
+                  ) : (
+                    <>
+                      <img
+                        src={object.kind === "apriltag" && object.tagId !== undefined
+                          ? aprilTagSvgDataUri(object.tagId)
+                          : object.src}
+                        alt={object.label}
+                        draggable={false}
+                      />
+                      {object.kind === "apriltag" && (
+                        <span className="sim-tag-x-axis-arrow" aria-hidden="true"><b>X</b></span>
+                      )}
+                    </>
+                  )}
                 </button>
               ))}
               <button
@@ -535,6 +646,11 @@ export default function SimulatedDroneArea({
             <header><b>DOWN CAMERA</b><span>OBJECTS IN VIEW ARE AVAILABLE TO VISION BLOCKS</span></header>
             <div className="sim-camera-screen">
               <canvas ref={cameraCanvasRef} aria-label="Simulated downward drone camera feed" />
+              <canvas
+                ref={thresholdCanvasRef}
+                className={`sim-threshold-overlay ${visionMode === "threshold" ? "active" : ""}`}
+                aria-label="Simulated binary threshold scan"
+              />
               {visionMode === "object" && detections.map((detection, index) => (
                 <div
                   className="sim-vision-box object"
@@ -549,26 +665,44 @@ export default function SimulatedDroneArea({
                   <span>{detection.class.toUpperCase()} · {Math.round(detection.score * 100)}%</span>
                 </div>
               ))}
-              {visionMode === "color" && colorDetection?.bbox && (
-                <div
-                  className={`sim-vision-box color ${colorDetection.profile}`}
-                  style={{
-                    left: `${(colorDetection.bbox[0] / colorDetection.frameWidth) * 100}%`,
-                    top: `${(colorDetection.bbox[1] / colorDetection.frameHeight) * 100}%`,
-                    width: `${(colorDetection.bbox[2] / colorDetection.frameWidth) * 100}%`,
-                    height: `${(colorDetection.bbox[3] / colorDetection.frameHeight) * 100}%`,
-                  }}
-                >
-                  <span>{colorDetection.profile.toUpperCase()} · {colorDetection.coverage.toFixed(1)}%</span>
-                </div>
+              {visionMode === "threshold" && thresholdResult && (
+                <span className="sim-binary-result">
+                  WHITE {thresholdResult.whiteCoverage.toFixed(1)}% · BLACK {thresholdResult.blackCoverage.toFixed(1)}%
+                </span>
               )}
+              {visionMode === "apriltag" && aprilTagDetections.map((tag) => {
+                const right = {
+                  x: (tag.corners[1].x + tag.corners[2].x) / 2,
+                  y: (tag.corners[1].y + tag.corners[2].y) / 2,
+                };
+                const up = {
+                  x: (tag.corners[0].x + tag.corners[1].x) / 2,
+                  y: (tag.corners[0].y + tag.corners[1].y) / 2,
+                };
+                return (
+                  <svg
+                    className="sim-apriltag-overlay"
+                    key={`tag-${tag.id}`}
+                    viewBox={`0 0 ${tag.frameWidth} ${tag.frameHeight}`}
+                    preserveAspectRatio="none"
+                  >
+                    <polygon points={tag.corners.map((point) => `${point.x},${point.y}`).join(" ")} />
+                    <line className="tag-axis-x" x1={tag.center.x} y1={tag.center.y} x2={right.x} y2={right.y} />
+                    <line className="tag-axis-y" x1={tag.center.x} y1={tag.center.y} x2={up.x} y2={up.y} />
+                    <text x={tag.bbox[0]} y={Math.max(15, tag.bbox[1] - 5)}>ID {tag.id}</text>
+                  </svg>
+                );
+              })}
+              {scanActive && <i className="sim-scan-line" key={scanSequence} />}
               <i className="sim-camera-crosshair horizontal" /><i className="sim-camera-crosshair vertical" />
               <span className="sim-camera-status">CAM 01 · {snapshot.z < 0.12 ? "GROUND" : "LIVE"}</span>
               <span className={`sim-vision-status ${visionMode ?? "idle"}`}>
                 {visionMode === "object"
                   ? `OBJECT SCAN · ${detections.length} FOUND`
-                  : visionMode === "color"
-                    ? `${colorDetection?.profile.toUpperCase() ?? "COLOR"} FILTER · ${colorDetection?.coverage.toFixed(1) ?? "0.0"}%`
+                  : visionMode === "threshold"
+                    ? `BINARY SCAN · ${thresholdResult?.whiteCoverage.toFixed(1) ?? "0.0"}% WHITE`
+                    : visionMode === "apriltag"
+                      ? `APRILTAG SCAN · ${aprilTagDetections.length} FOUND`
                     : "VISION IDLE"}
               </span>
             </div>

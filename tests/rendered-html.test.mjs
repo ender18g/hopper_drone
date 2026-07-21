@@ -32,13 +32,14 @@ test("server-renders Hopper Studio metadata and product shell", async () => {
 });
 
 test("ships the local flight, simulation, vision, offline cache, and student-build surfaces", async () => {
-  const [component, simulatorComponent, drone, simulation, runtime, vision, blockly, serviceWorker, offlineManifestScript, builtOfflineManifest, styles, readme, packageJson] = await Promise.all([
+  const [component, simulatorComponent, drone, simulation, runtime, vision, aprilTags, blockly, serviceWorker, offlineManifestScript, builtOfflineManifest, styles, readme, packageJson] = await Promise.all([
     readFile(new URL("../components/HopperStudio.tsx", import.meta.url), "utf8"),
     readFile(new URL("../components/SimulatedDroneArea.tsx", import.meta.url), "utf8"),
     readFile(new URL("../lib/drone.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/simulation.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/runtime.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/vision.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/apriltags.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/blockly.ts", import.meta.url), "utf8"),
     readFile(new URL("../public/sw.js", import.meta.url), "utf8"),
     readFile(new URL("../scripts/write-offline-manifest.mjs", import.meta.url), "utf8"),
@@ -48,8 +49,8 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
     readFile(new URL("../package.json", import.meta.url), "utf8"),
   ]);
 
-  assert.match(component, /TELEMETRY/);
-  assert.doesNotMatch(component, /DRONE TELEMETRY/);
+  assert.match(component, /VISION TESTING/);
+  assert.doesNotMatch(component, /COLOR TRACKER/);
   assert.doesNotMatch(component, /SENSOR HEALTH/);
   assert.match(component, /Connect drone/);
   assert.match(component, /Connect simulated drone/);
@@ -58,10 +59,16 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(component, /setSyntheticDetectionProvider/);
   assert.match(component, /STOP &amp; LAND/);
   assert.match(component, /Wi-Fi ready/);
-  assert.match(component, /Resize Telemetry panel/);
+  assert.match(component, /Resize Vision Testing panel/);
   assert.match(component, /ALLAN ELSBERRY/);
   assert.match(component, /TEACHABLE MACHINE/);
-  assert.match(component, /CENTER TARGET PIXEL/);
+  assert.match(component, /CENTER PIXEL/);
+  assert.match(component, /THRESHOLDING/);
+  assert.match(component, /APRILTAG DETECTION/);
+  assert.match(component, /GENERATE PDF/);
+  assert.match(component, /openAprilTagPdf/);
+  assert.match(component, /tag36h11/);
+  assert.match(component, /ONE TEST AT A TIME/);
   assert.match(component, /cameraProxyAvailable/);
   assert.match(component, /allow local-network access/i);
   assert.match(component, /Bluetooth permission is blocked/);
@@ -85,6 +92,10 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(simulatorComponent, /createPortal/);
   assert.match(simulatorComponent, /Drag Hopper drone to reposition it/);
   assert.match(simulatorComponent, /sim-vision-box/);
+  assert.match(simulatorComponent, /white-paper-1/);
+  assert.match(simulatorComponent, /ADD TAG/);
+  assert.match(simulatorComponent, /sim-tag-x-axis-arrow/);
+  assert.match(simulatorComponent, /sim-scan-line/);
   assert.match(simulatorComponent, /sideDroneRef/);
   assert.match(simulatorComponent, /FRONT/);
   assert.match(simulation, /SIMULATION_ROOM = \{ width: 10, height: 7 \}/);
@@ -97,13 +108,24 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(simulation, /placeDrone/);
   assert.match(runtime, /runBlock/);
   assert.match(vision, /lite_mobilenet_v2/);
-  assert.match(vision, /colorCoverage/);
-  assert.match(vision, /analyzeColorDetection/);
+  assert.match(vision, /scanThreshold/);
+  assert.match(vision, /analyzeThreshold/);
+  assert.match(vision, /scanAprilTags/);
+  assert.match(vision, /centerOnAprilTag/);
   assert.match(vision, /detectionCenterCoordinate/);
   assert.match(vision, /lastObjectCoordinates/);
   assert.match(vision, /loadCustomModel/);
   assert.match(vision, /new URL\("models\/coco-ssd\/model\.json", document\.baseURI\)/);
-  assert.match(blockly, /vision_sees_color/);
+  assert.match(aprilTags, /detectAprilTags/);
+  assert.match(aprilTags, /buildAprilTagPdf/);
+  assert.match(aprilTags, /tag36h11/);
+  assert.match(aprilTags, /hamming/);
+  assert.match(blockly, /vision_sees_binary/);
+  assert.match(blockly, /vision_binary_center/);
+  assert.match(blockly, /vision_scan_apriltags/);
+  assert.match(blockly, /vision_sees_apriltag/);
+  assert.match(blockly, /vision_center_apriltag/);
+  assert.doesNotMatch(blockly, /vision_sees_color/);
   assert.match(blockly, /vision_sees_custom_label/);
   assert.match(blockly, /vision_object_coordinate/);
   assert.match(blockly, /minidrone_takeoff/);
@@ -128,6 +150,9 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.ok(offlineManifest.assets.includes("sw.js"));
   assert.match(styles, /activeBlockGlow/);
   assert.match(styles, /sim-pitch-reference/);
+  assert.match(styles, /visionScanSweep/);
+  assert.match(styles, /threshold-camera-overlay/);
+  assert.match(styles, /apriltag-overlay/);
   assert.match(styles, /rotateX\(var\(--sim-flip-pitch/);
   assert.match(styles, /height: 232px/);
   assert.match(styles, /wrcRefreshSpin/);
@@ -143,6 +168,7 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(readme, /Standard model versus embedded model/);
   assert.match(packageJson, /"build:student"/);
   assert.match(packageJson, /"build:pages"/);
+  assert.match(packageJson, /"apriltag"/);
   assert.doesNotMatch(packageJson, /WRANGLER_LOG_PATH=.*vinext/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
 
@@ -264,33 +290,33 @@ test("refreshes local CSS as a stylesheet and promotes offline caches atomically
   assert.match(await (await activeCache.match(new Request("https://hopper.test/"))).text(), /app\/globals\.css/);
 });
 
-test("calculates inclusive RGB coverage and centered object coordinates", async () => {
+test("calculates binary threshold coverage and centered object coordinates", async () => {
   const source = await readFile(new URL("../lib/vision.ts", import.meta.url), "utf8");
   const compiled = ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
-  }).outputText;
+  }).outputText.replace(
+    /^import \{ detectAprilTags \} from "\.\/apriltags";$/m,
+    "const detectAprilTags = () => [];",
+  );
   const visionMath = await import(
     `data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`
   );
 
-  const green = { rMin: 0, rMax: 130, gMin: 120, gMax: 255, bMin: 0, bMax: 140 };
   const pixels = new Uint8ClampedArray([
-    0, 200, 0, 255,
-    50, 119, 50, 255,
-    130, 255, 140, 255,
-    131, 255, 140, 255,
+    0, 0, 0, 255,
+    160, 160, 160, 255,
+    255, 255, 255, 255,
+    150, 150, 150, 255,
   ]);
-  assert.equal(visionMath.calculateColorCoverage(pixels, green), 50);
-  assert.deepEqual(
-    visionMath.analyzeColorDetection(pixels, 2, 2, "green", green),
-    {
-      profile: "green",
-      coverage: 50,
-      bbox: [0, 0, 1, 2],
-      frameWidth: 2,
-      frameHeight: 2,
-    },
-  );
+  const binary = visionMath.analyzeThreshold(pixels, 2, 2, 60, false);
+  assert.equal(binary.whiteCoverage, 50);
+  assert.equal(binary.blackCoverage, 50);
+  assert.equal(binary.centerWhite, false);
+  assert.equal(binary.binaryData[0], 0);
+  assert.equal(binary.binaryData[4], 255);
+  const inverted = visionMath.analyzeThreshold(pixels, 2, 2, 60, true);
+  assert.equal(inverted.whiteCoverage, 50);
+  assert.equal(inverted.centerWhite, true);
   assert.deepEqual(visionMath.detectionCenterCoordinate([40, 40, 20, 20], 100, 100), {
     x: 0,
     y: 0,
@@ -303,6 +329,74 @@ test("calculates inclusive RGB coverage and centered object coordinates", async 
     x: -100,
     y: -100,
   });
+});
+
+test("detects tag36h11 IDs and rotated 2D pose from camera pixels", async () => {
+  const source = await readFile(new URL("../lib/apriltags.ts", import.meta.url), "utf8");
+  const { AprilTagFamily } = await import("apriltag");
+  const tagConfig = JSON.parse(await readFile(new URL("../node_modules/apriltag/families/36h11.json", import.meta.url), "utf8"));
+  globalThis.__hopperAprilTagTest = { AprilTagFamily, tagConfig };
+  try {
+    const compiled = ts.transpileModule(source, {
+      compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+    }).outputText
+      .replace(
+        /^import \{ AprilTagFamily \} from "apriltag";$/m,
+        "const { AprilTagFamily } = globalThis.__hopperAprilTagTest;",
+      )
+      .replace(
+        /^import tag36h11 from "apriltag\/families\/36h11\.json";$/m,
+        "const tag36h11 = globalThis.__hopperAprilTagTest.tagConfig;",
+      );
+    const aprilTags = await import(
+      `data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`
+    );
+    const width = 220;
+    const height = 220;
+    const centerX = 110;
+    const centerY = 110;
+    const size = 140;
+    const angle = 25 * Math.PI / 180;
+    const pixels = new Uint8ClampedArray(width * height * 4);
+    for (let index = 0; index < pixels.length; index += 4) {
+      pixels[index] = 255;
+      pixels[index + 1] = 255;
+      pixels[index + 2] = 255;
+      pixels[index + 3] = 255;
+    }
+    const marker = aprilTags.getAprilTagPixels(19);
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const dx = x - centerX;
+        const dy = y - centerY;
+        const localX = dx * Math.cos(angle) + dy * Math.sin(angle);
+        const localY = -dx * Math.sin(angle) + dy * Math.cos(angle);
+        const gridX = Math.floor((localX + size / 2) / (size / 10));
+        const gridY = Math.floor((localY + size / 2) / (size / 10));
+        if (gridX < 0 || gridX >= 10 || gridY < 0 || gridY >= 10 || marker[gridY][gridX] !== "b") continue;
+        const pixel = (y * width + x) * 4;
+        pixels[pixel] = 0;
+        pixels[pixel + 1] = 0;
+        pixels[pixel + 2] = 0;
+      }
+    }
+    const detections = aprilTags.detectAprilTags({ data: pixels, width, height }, width, height);
+    assert.equal(detections.length, 1);
+    assert.equal(detections[0].id, 19);
+    assert.equal(detections[0].hamming, 0);
+    assert.ok(Math.abs(detections[0].centerX) < 1);
+    assert.ok(Math.abs(detections[0].centerY) < 1);
+    assert.ok(Math.abs(detections[0].yaw - 115) < 1.5);
+    const pdf = aprilTags.buildAprilTagPdf(586);
+    const pdfText = Buffer.from(pdf).toString("latin1");
+    assert.match(pdfText, /^%PDF-1\.4/);
+    assert.match(pdfText, /\/MediaBox \[0 0 612 792\]/);
+    assert.match(pdfText, /tag36h11 - ID 586/);
+    assert.match(pdfText, /xref\n0 7/);
+    assert.match(pdfText, /%%EOF\n$/);
+  } finally {
+    delete globalThis.__hopperAprilTagTest;
+  }
 });
 
 test("projects simulated floor targets into the downward camera frame", async () => {

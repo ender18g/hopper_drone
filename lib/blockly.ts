@@ -4,6 +4,10 @@ import { javascriptGenerator, Order } from "blockly/javascript";
 const DRONE = "#17212b";
 const GENERAL = "#d8444e";
 const VISION = "#6b4eff";
+const APRIL_TAG_OPTIONS = [
+  ["any", "any"],
+  ...Array.from({ length: 587 }, (_, id) => [String(id), String(id)]),
+];
 
 let registered = false;
 
@@ -321,41 +325,45 @@ export function registerHopperBlocks() {
       colour: DRONE,
     },
     {
-      type: "vision_sees_color",
-      message0: "camera sees %1 over %2 %%",
+      type: "vision_sees_binary",
+      message0: "camera sees binary %1 with threshold at %2 %% invert %3 in %4 %% of frame",
       args0: [
         {
           type: "field_dropdown",
-          name: "PROFILE",
+          name: "COLOR",
           options: [
-            ["red", "red"],
-            ["green", "green"],
-            ["blue", "blue"],
+            ["white", "white"],
+            ["black", "black"],
           ],
         },
+        { type: "input_value", name: "THRESHOLD", check: "Number" },
+        { type: "field_checkbox", name: "INVERT", checked: false },
         { type: "input_value", name: "COVERAGE", check: "Number" },
       ],
       output: "Boolean",
       inputsInline: true,
       colour: VISION,
-      tooltip: "True when enough camera pixels fall inside the editable RGB profile.",
+      tooltip: "Scans a binary frame. Brightness at or above the threshold is white unless invert is checked.",
     },
     {
-      type: "vision_color_coverage",
-      message0: "%1 coverage %%",
+      type: "vision_binary_center",
+      message0: "camera sees binary %1 at center pixel with threshold at %2 %% invert %3",
       args0: [
         {
           type: "field_dropdown",
-          name: "PROFILE",
+          name: "COLOR",
           options: [
-            ["red", "red"],
-            ["green", "green"],
-            ["blue", "blue"],
+            ["white", "white"],
+            ["black", "black"],
           ],
         },
+        { type: "input_value", name: "THRESHOLD", check: "Number" },
+        { type: "field_checkbox", name: "INVERT", checked: false },
       ],
-      output: "Number",
+      output: "Boolean",
+      inputsInline: true,
       colour: VISION,
+      tooltip: "Scans the camera and checks only the pixel at the center reticle.",
     },
     {
       type: "vision_detect_objects",
@@ -375,7 +383,7 @@ export function registerHopperBlocks() {
       output: "Boolean",
       inputsInline: true,
       colour: VISION,
-      tooltip: "Runs the local COCO-SSD model only when this block is evaluated.",
+      tooltip: "Checks the objects saved by the latest scan for objects block.",
     },
     {
       type: "vision_object_coordinate",
@@ -408,9 +416,64 @@ export function registerHopperBlocks() {
       output: "Boolean",
       inputsInline: true,
       colour: VISION,
-      tooltip: "Classifies the current camera frame with the Teachable Machine model loaded in Telemetry.",
+      tooltip: "Classifies the current camera frame with the Teachable Machine model loaded in Vision Testing.",
+    },
+    {
+      type: "vision_scan_apriltags",
+      message0: "scan for april tags",
+      previousStatement: null,
+      nextStatement: null,
+      colour: VISION,
+      tooltip: "Scans once for tag36h11 AprilTags and saves their IDs and poses.",
+    },
+    {
+      type: "vision_sees_apriltag",
+      message0: "camera sees april tag with ID %1",
+      args0: [
+        {
+          type: "field_dropdown",
+          name: "TAG_ID",
+          options: APRIL_TAG_OPTIONS,
+        },
+      ],
+      output: "Boolean",
+      colour: VISION,
+      tooltip: "Checks the results from the latest scan for AprilTags block.",
     },
   ]);
+
+  const settingsIcon = `data:image/svg+xml,${encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="white" d="M19.4 13a7.7 7.7 0 0 0 .1-1 7.7 7.7 0 0 0-.1-1l2.1-1.6-2-3.4-2.5 1a7.9 7.9 0 0 0-1.7-1L15 3.3h-4L10.6 6a7.9 7.9 0 0 0-1.7 1L6.4 6l-2 3.4L6.5 11a7.7 7.7 0 0 0-.1 1 7.7 7.7 0 0 0 .1 1l-2.1 1.6 2 3.4 2.5-1a7.9 7.9 0 0 0 1.7 1l.4 2.7h4l.4-2.7a7.9 7.9 0 0 0 1.7-1l2.5 1 2-3.4L19.4 13ZM13 15.5A3.5 3.5 0 1 1 13 8a3.5 3.5 0 0 1 0 7.5Z"/></svg>',
+  )}`;
+  Blockly.Blocks.vision_center_apriltag = {
+    init() {
+      this.appendDummyInput()
+        .appendField("center on april tag")
+        .appendField(new Blockly.FieldDropdown(APRIL_TAG_OPTIONS as [string, string][]), "TAG_ID")
+        .appendField("at");
+      this.appendValueInput("POWER").setCheck("Number").appendField("% power");
+      this.appendDummyInput("SLACK_SETTINGS")
+        .appendField("finish within")
+        .appendField(new Blockly.FieldNumber(5, 1, 35, 1), "CENTER_SLACK")
+        .appendField("% center and")
+        .appendField(new Blockly.FieldNumber(5, 1, 45, 1), "ANGLE_SLACK")
+        .appendField("° alignment")
+        .setVisible(false);
+      this.appendDummyInput()
+        .appendField(new Blockly.FieldImage(settingsIcon, 18, 18, "Alignment settings", (field) => {
+          const source = field.getSourceBlock();
+          const input = source?.getInput("SLACK_SETTINGS");
+          if (!input) return;
+          input.setVisible(!input.isVisible());
+          (source as Blockly.BlockSvg | null)?.render();
+        }));
+      this.setPreviousStatement(true);
+      this.setNextStatement(true);
+      this.setInputsInline(true);
+      this.setColour(DRONE);
+      this.setTooltip("Centers the tag within the chosen percentage, then aligns the drone forward axis with the tag x axis. The gear changes both exit tolerances.");
+    },
+  };
 
   const value = (block: Blockly.Block, name: string, fallback = "0") =>
     javascriptGenerator.valueToCode(block, name, Order.ATOMIC) || fallback;
@@ -500,13 +563,13 @@ export function registerHopperBlocks() {
     const statements = generator.statementToCode(block, "DO");
     return `runtime.registerDrone("${state}", async () => {\n${statements}});\n`;
   };
-  javascriptGenerator.forBlock.vision_sees_color = (block) => activeExpression(
+  javascriptGenerator.forBlock.vision_sees_binary = (block) => activeExpression(
     block,
-    `await vision.seesColor("${block.getFieldValue("PROFILE")}", ${value(block, "COVERAGE", "12")})`,
+    `await vision.seesBinary("${block.getFieldValue("COLOR")}", ${value(block, "THRESHOLD", "60")}, ${block.getFieldValue("INVERT") === "TRUE"}, ${value(block, "COVERAGE", "10")})`,
   );
-  javascriptGenerator.forBlock.vision_color_coverage = (block) => activeExpression(
+  javascriptGenerator.forBlock.vision_binary_center = (block) => activeExpression(
     block,
-    `vision.colorCoverage("${block.getFieldValue("PROFILE")}")`,
+    `await vision.binaryCenter("${block.getFieldValue("COLOR")}", ${value(block, "THRESHOLD", "60")}, ${block.getFieldValue("INVERT") === "TRUE"})`,
   );
   javascriptGenerator.forBlock.vision_detect_objects = (block) =>
     activeStatement(block, "await vision.detectObjects();\n");
@@ -521,6 +584,16 @@ export function registerHopperBlocks() {
   javascriptGenerator.forBlock.vision_sees_custom_label = (block) => activeExpression(
     block,
     `await vision.seesCustomLabel(${value(block, "LABEL", '"my label"')}, ${value(block, "CONFIDENCE", "75")} / 100)`,
+  );
+  javascriptGenerator.forBlock.vision_scan_apriltags = (block) =>
+    activeStatement(block, "await vision.scanAprilTags();\n");
+  javascriptGenerator.forBlock.vision_sees_apriltag = (block) => activeExpression(
+    block,
+    `vision.seesAprilTag(${JSON.stringify(block.getFieldValue("TAG_ID"))})`,
+  );
+  javascriptGenerator.forBlock.vision_center_apriltag = (block) => activeStatement(
+    block,
+    `await vision.centerOnAprilTag(drone, ${JSON.stringify(block.getFieldValue("TAG_ID"))}, ${value(block, "POWER", "5")}, ${Number(block.getFieldValue("CENTER_SLACK")) || 5}, ${Number(block.getFieldValue("ANGLE_SLACK")) || 5});\n`,
   );
 
   const asyncProcedureDefinition = (
@@ -606,6 +679,11 @@ export const hopperToolbox: Blockly.utils.toolbox.ToolboxDefinition = {
             },
             {
               kind: "block",
+              type: "vision_center_apriltag",
+              inputs: { POWER: numberShadow(5) },
+            },
+            {
+              kind: "block",
               type: "minidrone_rotate",
               inputs: { DEGREES: numberShadow(90) },
             },
@@ -649,10 +727,14 @@ export const hopperToolbox: Blockly.utils.toolbox.ToolboxDefinition = {
       contents: [
         {
           kind: "block",
-          type: "vision_sees_color",
-          inputs: { COVERAGE: numberShadow(12) },
+          type: "vision_sees_binary",
+          inputs: { THRESHOLD: numberShadow(60), COVERAGE: numberShadow(10) },
         },
-        { kind: "block", type: "vision_color_coverage" },
+        {
+          kind: "block",
+          type: "vision_binary_center",
+          inputs: { THRESHOLD: numberShadow(60) },
+        },
         { kind: "block", type: "vision_detect_objects" },
         {
           kind: "block",
@@ -678,6 +760,8 @@ export const hopperToolbox: Blockly.utils.toolbox.ToolboxDefinition = {
             CONFIDENCE: numberShadow(75),
           },
         },
+        { kind: "block", type: "vision_scan_apriltags" },
+        { kind: "block", type: "vision_sees_apriltag" },
       ],
     },
     {

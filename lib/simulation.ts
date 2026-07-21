@@ -1,5 +1,6 @@
 import type { DroneController, DroneEventName, DroneTelemetry } from "./drone";
 import type { VisionDetection } from "./vision";
+import type { AprilTagDetection } from "./apriltags";
 
 export const SIMULATION_ROOM = { width: 10, height: 7 } as const;
 export const SIMULATION_START = { x: 1.25, y: 1.2 } as const;
@@ -7,11 +8,13 @@ export const SIMULATION_START = { x: 1.25, y: 1.2 } as const;
 export type SimulationObject = {
   id: string;
   label: string;
-  src: string;
+  src?: string;
   x: number;
   y: number;
   size: number;
   rotation: number;
+  kind?: "object" | "paper" | "apriltag";
+  tagId?: number;
   uploaded?: boolean;
 };
 
@@ -210,6 +213,7 @@ export class SimulatedDroneController implements DroneController {
   getSyntheticDetections(width = 640, height = 480): VisionDetection[] {
     if (!this.connected || this.snapshot.crashed || this.snapshot.z < 0.12) return [];
     return this.sceneObjects.flatMap((object) => {
+      if (object.kind && object.kind !== "object") return [];
       const projection = projectObjectToCamera(this.snapshot, object, width, height);
       if (!projection.visible) return [];
       const boxLeft = clamp(projection.centerX - projection.size / 2, 0, width);
@@ -226,6 +230,48 @@ export class SimulatedDroneController implements DroneController {
         frameHeight: height,
         centerX: Math.round(centerX * 10) / 10,
         centerY: Math.round(centerY * 10) / 10,
+      }];
+    });
+  }
+
+  getSyntheticAprilTags(width = 640, height = 480): AprilTagDetection[] {
+    if (!this.connected || this.snapshot.crashed || this.snapshot.z < 0.12) return [];
+    return this.sceneObjects.flatMap((object) => {
+      if (object.kind !== "apriltag" || object.tagId === undefined) return [];
+      const projection = projectObjectToCamera(this.snapshot, object, width, height);
+      if (!projection.visible) return [];
+      const angle = radians(object.rotation - this.snapshot.heading);
+      const halfSize = projection.size / 2;
+      const rotatePoint = (localX: number, localY: number) => ({
+        x: projection.centerX + localX * Math.cos(angle) - localY * Math.sin(angle),
+        y: projection.centerY + localX * Math.sin(angle) + localY * Math.cos(angle),
+      });
+      const corners: AprilTagDetection["corners"] = [
+        rotatePoint(-halfSize, -halfSize),
+        rotatePoint(halfSize, -halfSize),
+        rotatePoint(halfSize, halfSize),
+        rotatePoint(-halfSize, halfSize),
+      ];
+      const xs = corners.map((point) => point.x);
+      const ys = corners.map((point) => point.y);
+      const left = Math.max(0, Math.min(...xs));
+      const top = Math.max(0, Math.min(...ys));
+      const right = Math.min(width, Math.max(...xs));
+      const bottom = Math.min(height, Math.max(...ys));
+      const centerX = clamp((projection.centerX / width - 0.5) * 200, -100, 100);
+      const centerY = clamp((0.5 - projection.centerY / height) * 200, -100, 100);
+      return [{
+        id: object.tagId,
+        family: "tag36h11",
+        corners,
+        center: { x: projection.centerX, y: projection.centerY },
+        bbox: [left, top, right - left, bottom - top],
+        frameWidth: width,
+        frameHeight: height,
+        centerX: Math.round(centerX * 10) / 10,
+        centerY: Math.round(centerY * 10) / 10,
+        yaw: Math.round(((object.rotation - this.snapshot.heading + 90 + 540) % 360 - 180) * 10) / 10,
+        hamming: 0,
       }];
     });
   }

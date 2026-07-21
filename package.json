@@ -20,6 +20,7 @@
     "@teachablemachine/image": "^0.8.5",
     "@tensorflow-models/coco-ssd": "^2.2.3",
     "@tensorflow/tfjs": "^4.22.0",
+    "apriltag": "^2.0.3",
     "blockly": "^13.1.1",
     "drizzle-orm": "0.45.2",
     "next": "16.2.6",

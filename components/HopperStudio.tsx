@@ -22,15 +22,18 @@ import {
 import { ExecutionRuntime } from "../lib/runtime";
 import { SimulatedDroneController } from "../lib/simulation";
 import {
-  DEFAULT_COLOR_PROFILES,
   VisionRuntime,
-  type ColorDetectionResult,
-  type ColorProfile,
-  type ColorProfiles,
   type CustomPrediction,
-  type RgbPixel,
+  type ThresholdResult,
+  type VisionScanEvent,
+  type VisionScanKind,
   type VisionDetection,
 } from "../lib/vision";
+import {
+  APRIL_TAG_IDS,
+  buildAprilTagPdf,
+  type AprilTagDetection,
+} from "../lib/apriltags";
 import SimulatedDroneArea from "./SimulatedDroneArea";
 import wrcLogo from "../logos/wrc_logo.png?inline";
 
@@ -42,7 +45,7 @@ type WifiState = "checking" | "connected" | "disconnected";
 type OfflineCacheState = "saving" | "ready" | "unavailable";
 
 const PROJECT_KEY = "hopper-studio-project-v1";
-const COLOR_KEY = "hopper-studio-colors-v1";
+const THRESHOLD_KEY = "hopper-studio-threshold-v1";
 const VISION_WIDTH_KEY = "hopper-studio-vision-width-v1";
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (
   ...args: string[]
@@ -96,7 +99,7 @@ const formatLogValue = (value: unknown) => {
   }
 };
 
-const clampChannel = (value: number) => Math.max(0, Math.min(255, Number(value) || 0));
+const clampPercent = (value: number) => Math.max(0, Math.min(100, Number(value) || 0));
 
 const formatDetectionLabel = (label: string) =>
   label.replace(/\b\w/g, (character) => character.toUpperCase());
@@ -136,17 +139,22 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   const simulationCameraRef = useRef<HTMLCanvasElement>(null);
   const simulationTelemetryCameraRef = useRef<HTMLCanvasElement>(null);
   const analysisCanvasRef = useRef<HTMLCanvasElement>(null);
+  const thresholdOverlayRef = useRef<HTMLCanvasElement>(null);
   const visionRef = useRef<VisionRuntime | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
   const customModelInputRef = useRef<HTMLInputElement>(null);
   const objectScanBusyRef = useRef(false);
-  const projectNameRef = useRef("Color Landing Lab");
+  const aprilTagScanBusyRef = useRef(false);
+  const latestDetectionsRef = useRef<VisionDetection[]>([]);
+  const latestThresholdRef = useRef<ThresholdResult | null>(null);
+  const latestAprilTagsRef = useRef<AprilTagDetection[]>([]);
+  const projectNameRef = useRef("Binary Landing Lab");
   const javascriptCodeRef = useRef("");
 
   const [editorMode, setEditorMode] = useState<"blocks" | "javascript">("blocks");
   const [generatedCode, setGeneratedCode] = useState("");
   const [javascriptCode, setJavascriptCode] = useState("");
-  const [projectName, setProjectName] = useState("Color Landing Lab");
+  const [projectName, setProjectName] = useState("Binary Landing Lab");
   const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected");
   const [connectionMode, setConnectionMode] = useState<"real" | "simulated" | null>(null);
   const [simulationController, setSimulationController] = useState<SimulatedDroneController | null>(null);
@@ -168,16 +176,20 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   const [cameraState, setCameraState] = useState<CameraState>("offline");
   const [wifiState, setWifiState] = useState<WifiState>("disconnected");
   const [visionWidth, setVisionWidth] = useState(390);
-  const [profiles, setProfiles] = useState<ColorProfiles>(DEFAULT_COLOR_PROFILES);
-  const [activeProfile, setActiveProfile] = useState<keyof ColorProfiles>("red");
-  const [coverage, setCoverage] = useState<number | null>(null);
-  const [colorDetection, setColorDetection] = useState<ColorDetectionResult | null>(null);
-  const [simulatorVisionMode, setSimulatorVisionMode] = useState<"object" | "color" | null>(null);
-  const [centerPixel, setCenterPixel] = useState<RgbPixel | null>(null);
-  const [colorScanEnabled, setColorScanEnabled] = useState(false);
+  const [thresholdPercent, setThresholdPercent] = useState(60);
+  const [thresholdInvert, setThresholdInvert] = useState(false);
+  const [thresholdResult, setThresholdResult] = useState<ThresholdResult | null>(null);
+  const [visionTestingMode, setVisionTestingMode] = useState<VisionScanKind | null>(null);
+  const [displayVisionMode, setDisplayVisionMode] = useState<VisionScanKind | null>(null);
+  const [simulatorVisionMode, setSimulatorVisionMode] = useState<VisionScanKind | null>(null);
+  const [scanEvent, setScanEvent] = useState<VisionScanEvent | null>(null);
   const [modelState, setModelState] = useState<ModelState>("off");
-  const [objectScanEnabled, setObjectScanEnabled] = useState(false);
   const [detections, setDetections] = useState<VisionDetection[]>([]);
+  const [aprilTagDetections, setAprilTagDetections] = useState<AprilTagDetection[]>([]);
+  const [pdfTagId, setPdfTagId] = useState(0);
+  const [simulatorDetections, setSimulatorDetections] = useState<VisionDetection[]>([]);
+  const [simulatorThresholdResult, setSimulatorThresholdResult] = useState<ThresholdResult | null>(null);
+  const [simulatorAprilTags, setSimulatorAprilTags] = useState<AprilTagDetection[]>([]);
   const [customModelState, setCustomModelState] = useState<ModelState>("off");
   const [customLabels, setCustomLabels] = useState<string[]>([]);
   const [customPredictions, setCustomPredictions] = useState<CustomPrediction[]>([]);
@@ -392,8 +404,12 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   useEffect(() => {
     const restorePreferences = window.setTimeout(() => {
       try {
-        const saved = localStorage.getItem(COLOR_KEY);
-        if (saved) setProfiles(JSON.parse(saved) as ColorProfiles);
+        const savedThreshold = localStorage.getItem(THRESHOLD_KEY);
+        if (savedThreshold) {
+          const saved = JSON.parse(savedThreshold) as { threshold?: number; invert?: boolean };
+          if (Number.isFinite(saved.threshold)) setThresholdPercent(clampPercent(saved.threshold ?? 60));
+          setThresholdInvert(Boolean(saved.invert));
+        }
         const savedVisionWidth = Number(localStorage.getItem(VISION_WIDTH_KEY));
         if (Number.isFinite(savedVisionWidth) && savedVisionWidth >= 330) {
           setVisionWidth(Math.min(720, savedVisionWidth));
@@ -408,14 +424,32 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
       () => analysisCanvasRef.current,
       setModelState,
       (nextDetections) => {
+        latestDetectionsRef.current = nextDetections;
         setDetections(nextDetections);
-        setSimulatorVisionMode("object");
       },
       setCustomModelState,
       setCustomPredictions,
       (result) => {
-        setColorDetection(result);
-        setSimulatorVisionMode("color");
+        latestThresholdRef.current = result;
+        setThresholdResult(result);
+      },
+      (tags) => {
+        latestAprilTagsRef.current = tags;
+        setAprilTagDetections(tags);
+      },
+      (event) => {
+        setScanEvent(event);
+        if (event.phase === "start") {
+          setVisionTestingMode(null);
+          setDisplayVisionMode(event.kind);
+          if (simulationControllerRef.current) setSimulatorVisionMode(null);
+        }
+        if (event.phase === "complete" && simulationControllerRef.current) {
+          setSimulatorVisionMode(event.kind);
+          if (event.kind === "threshold") setSimulatorThresholdResult(latestThresholdRef.current);
+          if (event.kind === "object") setSimulatorDetections(latestDetectionsRef.current);
+          if (event.kind === "apriltag") setSimulatorAprilTags(latestAprilTagsRef.current);
+        }
       },
     );
     visionRef.current = vision;
@@ -429,9 +463,26 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   }, []);
 
   useEffect(() => {
-    localStorage.setItem(COLOR_KEY, JSON.stringify(profiles));
-    visionRef.current?.setProfiles(profiles);
-  }, [profiles]);
+    localStorage.setItem(THRESHOLD_KEY, JSON.stringify({ threshold: thresholdPercent, invert: thresholdInvert }));
+  }, [thresholdInvert, thresholdPercent]);
+
+  useEffect(() => {
+    const canvas = thresholdOverlayRef.current;
+    if (!canvas || !thresholdResult) return;
+    canvas.width = thresholdResult.frameWidth;
+    canvas.height = thresholdResult.frameHeight;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    context.putImageData(
+      new ImageData(
+        new Uint8ClampedArray(thresholdResult.binaryData),
+        thresholdResult.frameWidth,
+        thresholdResult.frameHeight,
+      ),
+      0,
+      0,
+    );
+  }, [thresholdResult]);
 
   useEffect(() => {
     if (!simulatorWindow) return;
@@ -504,14 +555,20 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     setSimulationController(null);
     if (controllerRef.current === controller) controllerRef.current = null;
     visionRef.current?.setSyntheticDetectionProvider(null);
+    visionRef.current?.setSyntheticAprilTagProvider(null);
     setConnectionMode(null);
     setSimulatorMinimized(false);
     setTelemetry(createEmptyDroneTelemetry());
     setCameraState("offline");
     setDetections([]);
-    setColorDetection(null);
+    setAprilTagDetections([]);
+    setThresholdResult(null);
+    setSimulatorDetections([]);
+    setSimulatorAprilTags([]);
+    setSimulatorThresholdResult(null);
+    setVisionTestingMode(null);
+    setDisplayVisionMode(null);
     setSimulatorVisionMode(null);
-    setCenterPixel(null);
     setRunning(false);
     appendLog("Simulated drone disconnected. Your blocks are unchanged and ready for a real Hopper.");
   }, [appendLog, closeSimulatorWindow]);
@@ -538,11 +595,20 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     visionRef.current?.setSyntheticDetectionProvider((width, height) =>
       controller.getSyntheticDetections(width, height)
     );
+    visionRef.current?.setSyntheticAprilTagProvider((width, height) =>
+      controller.getSyntheticAprilTags(width, height)
+    );
     controller.connect();
     setConnectionMode("simulated");
     setSimulatorMinimized(false);
     setDetections([]);
-    setColorDetection(null);
+    setAprilTagDetections([]);
+    setThresholdResult(null);
+    setSimulatorDetections([]);
+    setSimulatorAprilTags([]);
+    setSimulatorThresholdResult(null);
+    setVisionTestingMode(null);
+    setDisplayVisionMode(null);
     setSimulatorVisionMode(null);
     setCameraState("live");
     setDroneName("Hopper Simulator");
@@ -691,7 +757,8 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
       setCameraState("connecting");
       setWifiState("checking");
       setDetections([]);
-      setCenterPixel(null);
+      setAprilTagDetections([]);
+      setThresholdResult(null);
       const source = cameraProxyAvailable
         ? `/api/camera?url=${encodeURIComponent(cameraUrl.href)}&t=${Date.now()}`
         : cameraUrl.href;
@@ -704,77 +771,88 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     }
   };
 
-  const scanColor = useCallback(() => {
+  const previewThreshold = useCallback(async () => {
     try {
-      const result = visionRef.current?.colorCoverage(activeProfile) ?? null;
-      setCoverage(result);
-      return result;
+      return await visionRef.current?.scanThreshold(thresholdPercent, thresholdInvert, false);
     } catch (error) {
-      setColorScanEnabled(false);
-      appendLog("Color scan:", error);
-      return null;
+      setVisionTestingMode(null);
+      appendLog("Threshold scan:", error);
+      return undefined;
     }
-  }, [activeProfile, appendLog]);
+  }, [appendLog, thresholdInvert, thresholdPercent]);
 
   useEffect(() => {
-    if (!colorScanEnabled) return;
-    scanColor();
-    const interval = window.setInterval(scanColor, 750);
-    return () => window.clearInterval(interval);
-  }, [colorScanEnabled, scanColor]);
-
-  useEffect(() => {
-    if (!cameraLive) return;
-    const sample = () => {
-      try {
-        setCenterPixel(visionRef.current?.sampleCenterPixel() ?? null);
-      } catch {
-        setCenterPixel(null);
-      }
+    if (visionTestingMode !== "threshold") return;
+    const initial = window.setTimeout(() => void previewThreshold(), 0);
+    const interval = window.setInterval(() => void previewThreshold(), 650);
+    return () => {
+      window.clearTimeout(initial);
+      window.clearInterval(interval);
     };
-    sample();
-    const interval = window.setInterval(sample, 500);
-    return () => window.clearInterval(interval);
-  }, [cameraLive]);
+  }, [previewThreshold, visionTestingMode]);
 
-  useEffect(() => {
-    if (!cameraLive) return;
-    const timer = window.setTimeout(scanColor, 70);
-    return () => window.clearTimeout(timer);
-  }, [activeProfile, cameraLive, profiles, scanColor]);
-
-  const scanObjects = useCallback(async () => {
+  const previewObjects = useCallback(async () => {
     if (objectScanBusyRef.current) return;
     objectScanBusyRef.current = true;
     try {
-      await visionRef.current?.detectObjects(0.55);
+      await visionRef.current?.detectObjects(0.55, false);
     } catch (error) {
-      setObjectScanEnabled(false);
+      setVisionTestingMode(null);
       appendLog("Object detection:", error);
     } finally {
       objectScanBusyRef.current = false;
     }
   }, [appendLog]);
 
-  const toggleObjectScan = async () => {
-    if (objectScanEnabled) {
-      setObjectScanEnabled(false);
+  const previewAprilTags = useCallback(async () => {
+    if (aprilTagScanBusyRef.current) return;
+    aprilTagScanBusyRef.current = true;
+    try {
+      await visionRef.current?.scanAprilTags(false);
+    } catch (error) {
+      setVisionTestingMode(null);
+      appendLog("AprilTag detection:", error);
+    } finally {
+      aprilTagScanBusyRef.current = false;
+    }
+  }, [appendLog]);
+
+  const toggleVisionTesting = async (mode: VisionScanKind) => {
+    if (visionTestingMode === mode) {
+      setVisionTestingMode(null);
+      setDisplayVisionMode(null);
       return;
     }
     try {
-      if (!simulationControllerRef.current) await visionRef.current?.loadObjectModel();
-      setObjectScanEnabled(true);
-      await scanObjects();
+      if (mode === "object" && !simulationControllerRef.current) {
+        await visionRef.current?.loadObjectModel();
+      }
+      setDisplayVisionMode(mode);
+      setVisionTestingMode(mode);
     } catch (error) {
-      appendLog("Object model:", error);
+      appendLog(`${mode} testing:`, error);
     }
   };
 
   useEffect(() => {
-    if (!objectScanEnabled) return;
-    const interval = window.setInterval(() => void scanObjects(), 1800);
-    return () => window.clearInterval(interval);
-  }, [objectScanEnabled, scanObjects]);
+    if (visionTestingMode !== "object") return;
+    const initial = window.setTimeout(() => void previewObjects(), 0);
+    const interval = window.setInterval(() => void previewObjects(), 1800);
+    return () => {
+      window.clearTimeout(initial);
+      window.clearInterval(interval);
+    };
+  }, [previewObjects, visionTestingMode]);
+
+  useEffect(() => {
+    if (visionTestingMode !== "apriltag") return;
+    const initial = window.setTimeout(() => void previewAprilTags(), 0);
+    const interval = window.setInterval(() => void previewAprilTags(), 900);
+    return () => {
+      window.clearTimeout(initial);
+      window.clearInterval(interval);
+    };
+  }, [previewAprilTags, visionTestingMode]);
 
   const loadCustomModel = async (files: FileList | null) => {
     if (!files?.length) return;
@@ -817,6 +895,19 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     }
   };
 
+  const openAprilTagPdf = () => {
+    const pdfWindow = window.open("about:blank", "_blank");
+    if (!pdfWindow) {
+      notify("Allow pop-ups to open the printable AprilTag PDF");
+      return;
+    }
+    const pdfBytes = buildAprilTagPdf(pdfTagId);
+    const pdfUrl = URL.createObjectURL(new Blob([pdfBytes], { type: "application/pdf" }));
+    pdfWindow.opener = null;
+    pdfWindow.location.href = pdfUrl;
+    window.setTimeout(() => URL.revokeObjectURL(pdfUrl), 60_000);
+  };
+
   const clampVisionWidth = useCallback((width: number) => {
     const available = Math.max(330, window.innerWidth - 570);
     return Math.round(Math.max(330, Math.min(720, available, width)));
@@ -855,25 +946,6 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     event.preventDefault();
     const change = event.key === "ArrowLeft" ? 32 : -32;
     setVisionWidth((current) => clampVisionWidth(current + change));
-  };
-
-  const updateProfile = (
-    channel: "r" | "g" | "b",
-    side: "Min" | "Max",
-    value: number,
-  ) => {
-    const key = `${channel}${side}` as keyof ColorProfile;
-    const oppositeKey = `${channel}${side === "Min" ? "Max" : "Min"}` as keyof ColorProfile;
-    setProfiles((current) => ({
-      ...current,
-      [activeProfile]: {
-        ...current[activeProfile],
-        [key]:
-          side === "Min"
-            ? Math.min(clampChannel(value), current[activeProfile][oppositeKey])
-            : Math.max(clampChannel(value), current[activeProfile][oppositeKey]),
-      },
-    }));
   };
 
   const newProject = () => {
@@ -928,17 +1000,16 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     }
   };
 
-  const activeRange = profiles[activeProfile];
   const telemetryLive = telemetry.connected || cameraLive;
   const modelLabel =
     simulationConnected
-      ? objectScanEnabled
+      ? visionTestingMode === "object"
         ? "Scanning simulation every 1.8s"
         : "Simulation labels ready"
       : modelState === "loading"
       ? "Loading local model…"
       : modelState === "ready"
-        ? objectScanEnabled
+        ? visionTestingMode === "object"
           ? "Scanning every 1.8s"
           : "Model ready"
         : modelState === "error"
@@ -963,6 +1034,15 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
       })),
     [detections],
   );
+  const aprilTagSummary = useMemo(
+    () => aprilTagDetections.map((tag) => ({
+      id: tag.id,
+      x: formatCoordinate(tag.centerX),
+      y: formatCoordinate(tag.centerY),
+      yaw: formatCoordinate(tag.yaw),
+    })),
+    [aprilTagDetections],
+  );
   const customPredictionSummary = useMemo(
     () =>
       [...customPredictions]
@@ -981,6 +1061,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   const workspaceStyle = {
     "--vision-width": `${visionWidth}px`,
   } as CSSProperties;
+  const scanActive = scanEvent?.phase === "start";
   return (
     <main className="studio-shell">
       <header className="topbar">
@@ -1156,12 +1237,12 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
           className="vision-resize-handle"
           type="button"
           role="separator"
-          aria-label="Resize Telemetry panel"
+          aria-label="Resize Vision Testing panel"
           aria-orientation="vertical"
           aria-valuemin={330}
           aria-valuemax={720}
           aria-valuenow={visionWidth}
-          title="Drag left or right to resize Telemetry"
+          title="Drag left or right to resize Vision Testing"
           onPointerDown={beginVisionResize}
           onKeyDown={resizeVisionWithKeyboard}
         ><i /><i /><i /></button>
@@ -1169,8 +1250,8 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
         <aside className="vision-panel">
           <div className="vision-heading">
             <div>
-              <span className="eyebrow">CAMERA + FLIGHT</span>
-              <h1>TELEMETRY</h1>
+              <span className="eyebrow">ONE TEST AT A TIME</span>
+              <h1>VISION TESTING</h1>
             </div>
             <span className={`live-badge ${telemetryLive ? "on" : ""}`}>
               <i /> {simulationConnected ? "SIM LIVE" : telemetry.connected ? "DRONE LIVE" : cameraLive ? "CAMERA LIVE" : "OFFLINE"}
@@ -1190,7 +1271,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
                 src={cameraSource}
                 alt="Hopper drone bottom camera feed"
                 onLoad={() => { setCameraState("live"); setWifiState("connected"); appendLog("Camera feed is live."); }}
-                onError={() => { setCameraState("error"); setWifiState("disconnected"); setCenterPixel(null); }}
+                onError={() => { setCameraState("error"); setWifiState("disconnected"); setThresholdResult(null); }}
               />
             ) : (
               <div className="camera-placeholder">
@@ -1199,9 +1280,14 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
                 <small>Join the Hopper Wi-Fi, then connect video.</small>
               </div>
             )}
+            <canvas
+              ref={thresholdOverlayRef}
+              className={`threshold-camera-overlay ${displayVisionMode === "threshold" ? "active" : ""}`}
+              aria-label="Binary threshold camera view"
+            />
             <div className="reticle"><i /><b /></div>
             <div className="frame-corners"><i /><i /><i /><i /></div>
-            {detections.map((detection, index) => (
+            {displayVisionMode === "object" && detections.map((detection, index) => (
               <div
                 className="detection-box"
                 key={`${detection.class}-${index}`}
@@ -1215,6 +1301,36 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
                 <span>{detection.class} {Math.round(detection.score * 100)}%</span>
               </div>
             ))}
+            {displayVisionMode === "apriltag" && aprilTagDetections.map((tag) => {
+              const right = {
+                x: (tag.corners[1].x + tag.corners[2].x) / 2,
+                y: (tag.corners[1].y + tag.corners[2].y) / 2,
+              };
+              const up = {
+                x: (tag.corners[0].x + tag.corners[1].x) / 2,
+                y: (tag.corners[0].y + tag.corners[1].y) / 2,
+              };
+              return (
+                <svg
+                  className="apriltag-overlay"
+                  key={`tag-${tag.id}`}
+                  viewBox={`0 0 ${tag.frameWidth} ${tag.frameHeight}`}
+                  preserveAspectRatio="none"
+                >
+                  <polygon points={tag.corners.map((point) => `${point.x},${point.y}`).join(" ")} />
+                  <line className="tag-axis-x" x1={tag.center.x} y1={tag.center.y} x2={right.x} y2={right.y} />
+                  <line className="tag-axis-y" x1={tag.center.x} y1={tag.center.y} x2={up.x} y2={up.y} />
+                  <circle cx={tag.center.x} cy={tag.center.y} r="4" />
+                  <text x={tag.bbox[0]} y={Math.max(14, tag.bbox[1] - 5)}>ID {tag.id} · X {formatCoordinate(tag.centerX)} · Y {formatCoordinate(tag.centerY)}</text>
+                </svg>
+              );
+            })}
+            {scanActive && (
+              <i
+                className={`vision-scan-line ${scanEvent?.kind ?? ""}`}
+                key={scanEvent?.sequence}
+              />
+            )}
             <div className="camera-readout">
               <span>CAM · DOWN</span>
               <span>{cameraLive ? "STREAM OK" : "NO SIGNAL"}</span>
@@ -1241,85 +1357,55 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
           )}
           {!simulationConnected && !cameraProxyAvailable && cameraLive && (
             <p className="inline-warning">
-              Direct video is available. Start the local app to use color tracking or object detection.
+              Direct video is available. Start the local app to use thresholding, object detection, or AprilTag detection.
             </p>
           )}
 
-          <section className="vision-tool color-tool">
+          <section className="vision-tool threshold-tool">
             <div className="tool-title">
               <span className="tool-number">01</span>
-              <div><h2>COLOR TRACKER</h2><p>Fast pixel check · no neural network</p></div>
+              <div><h2>THRESHOLDING</h2><p>Binary white / black · live preview</p></div>
               <button
-                className={`tiny-toggle ${colorScanEnabled ? "on" : ""}`}
-                onClick={() => setColorScanEnabled((enabled) => !enabled)}
-                aria-label="Toggle continuous color scan"
+                className={`tiny-toggle ${visionTestingMode === "threshold" ? "on" : ""}`}
+                onClick={() => void toggleVisionTesting("threshold")}
+                aria-label="Toggle threshold testing"
+                disabled={!cameraLive}
               ><i /></button>
             </div>
-            <div className="profile-tabs">
-              {(Object.keys(profiles) as Array<keyof ColorProfiles>).map((profile) => (
-                <button
-                  key={profile}
-                  className={`${profile} ${activeProfile === profile ? "active" : ""}`}
-                  onClick={() => { setActiveProfile(profile); setCoverage(null); }}
-                >
-                  <i /> {profile.toUpperCase()}
-                </button>
-              ))}
-            </div>
-            <div className="rgb-editor">
-              {(["r", "g", "b"] as const).map((channel) => (
-                <div className="rgb-row" key={channel}>
-                  <b>{channel.toUpperCase()}</b>
-                  <label className="rgb-number">MIN <input type="number" min="0" max="255" value={activeRange[`${channel}Min`]} onChange={(event) => updateProfile(channel, "Min", Number(event.target.value))} /></label>
-                  <div
-                    className={`rgb-range ${channel}`}
-                    style={{
-                      "--range-min": `${(activeRange[`${channel}Min`] / 255) * 100}%`,
-                      "--range-max": `${(activeRange[`${channel}Max`] / 255) * 100}%`,
-                    } as CSSProperties}
-                  >
-                    <i />
-                    <input
-                      type="range"
-                      min="0"
-                      max="255"
-                      value={activeRange[`${channel}Min`]}
-                      onChange={(event) => updateProfile(channel, "Min", Number(event.target.value))}
-                      aria-label={`${channel.toUpperCase()} minimum`}
-                    />
-                    <input
-                      type="range"
-                      min="0"
-                      max="255"
-                      value={activeRange[`${channel}Max`]}
-                      onChange={(event) => updateProfile(channel, "Max", Number(event.target.value))}
-                      aria-label={`${channel.toUpperCase()} maximum`}
-                    />
-                  </div>
-                  <label className="rgb-number">MAX <input type="number" min="0" max="255" value={activeRange[`${channel}Max`]} onChange={(event) => updateProfile(channel, "Max", Number(event.target.value))} /></label>
-                </div>
-              ))}
-            </div>
-            <div className="center-pixel-readout">
-              <span
-                className="center-pixel-swatch"
-                style={{
-                  background: centerPixel
-                    ? `rgb(${centerPixel.red} ${centerPixel.green} ${centerPixel.blue})`
-                    : "#c7ccca",
-                }}
+            <div className="threshold-control">
+              <div>
+                <label htmlFor="threshold-slider">BRIGHTNESS THRESHOLD</label>
+                <b>{thresholdPercent}%</b>
+              </div>
+              <input
+                id="threshold-slider"
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+                value={thresholdPercent}
+                onChange={(event) => setThresholdPercent(clampPercent(Number(event.target.value)))}
               />
-              <div><span>CENTER TARGET PIXEL</span><small>Put each MIN below and MAX above these values</small></div>
-              <b>
-                <i>R {centerPixel?.red ?? "—"}</i>
-                <i>G {centerPixel?.green ?? "—"}</i>
-                <i>B {centerPixel?.blue ?? "—"}</i>
-              </b>
+              <div className="threshold-scale"><span>BLACK · 0%</span><span>WHITE · 100%</span></div>
             </div>
-            <div className="coverage-meter">
-              <div><span>FRAME COVERAGE</span><b>{coverage === null ? "—" : `${coverage.toFixed(1)}%`}</b></div>
-              <div className="meter-track"><i style={{ width: `${Math.min(100, coverage || 0)}%` }} /></div>
-              <button onClick={scanColor} disabled={!cameraLive}>SCAN FRAME</button>
+            <label className="invert-control">
+              <input
+                type="checkbox"
+                checked={thresholdInvert}
+                onChange={(event) => setThresholdInvert(event.target.checked)}
+              />
+              <span><i /> INVERT WHITE AND BLACK</span>
+            </label>
+            <div className="binary-readouts">
+              <span className="white"><small>WHITE IN FRAME</small><b>{thresholdResult ? `${thresholdResult.whiteCoverage.toFixed(1)}%` : "—"}</b></span>
+              <span className="black"><small>BLACK IN FRAME</small><b>{thresholdResult ? `${thresholdResult.blackCoverage.toFixed(1)}%` : "—"}</b></span>
+              <span className={thresholdResult?.centerWhite ? "white" : "black"}>
+                <small>CENTER PIXEL</small><b>{thresholdResult ? thresholdResult.centerWhite ? "WHITE" : "BLACK" : "—"}</b>
+              </span>
+            </div>
+            <div className="threshold-actions">
+              <span>Use the purple binary blocks to scan during flight.</span>
+              <button onClick={() => void previewThreshold()} disabled={!cameraLive}>TEST ONCE</button>
             </div>
           </section>
 
@@ -1328,8 +1414,8 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
               <span className="tool-number">02</span>
               <div><h2>OBJECT DETECTOR</h2><p>Local COCO-SSD · on demand only</p></div>
               <button
-                className={`tiny-toggle ${objectScanEnabled ? "on" : ""}`}
-                onClick={() => void toggleObjectScan()}
+                className={`tiny-toggle ${visionTestingMode === "object" ? "on" : ""}`}
+                onClick={() => void toggleVisionTesting("object")}
                 aria-label="Toggle object detection"
                 disabled={!cameraLive || modelState === "loading"}
               ><i /></button>
@@ -1337,7 +1423,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
             <div className="model-status-row">
               <span className={`model-orb ${modelState}`}><i /></span>
               <div><b>{modelLabel}</b><small>Runs entirely on this computer</small></div>
-              {modelState === "ready" && <button onClick={() => void scanObjects()}>SCAN ONCE</button>}
+              {modelState === "ready" && <button onClick={() => void previewObjects()}>TEST ONCE</button>}
             </div>
             {detectionSummary.length > 0 ? (
               <div className="detection-chips object-detections">
@@ -1398,8 +1484,49 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
             </div>
           </section>
 
+          <section className="vision-tool apriltag-tool">
+            <div className="tool-title">
+              <span className="tool-number">03</span>
+              <div><h2>APRILTAG DETECTION</h2><p>tag36h11 · ID + 2D pose axes</p></div>
+              <button
+                className={`tiny-toggle ${visionTestingMode === "apriltag" ? "on" : ""}`}
+                onClick={() => void toggleVisionTesting("apriltag")}
+                aria-label="Toggle AprilTag detection"
+                disabled={!cameraLive}
+              ><i /></button>
+            </div>
+            <div className="apriltag-pdf-menu">
+              <div><b>PRINT A REAL TAG</b><small>Full-page US Letter vector PDF</small></div>
+              <label>TAG ID
+                <select value={pdfTagId} onChange={(event) => setPdfTagId(Number(event.target.value))}>
+                  {APRIL_TAG_IDS.map((id) => <option value={id} key={id}>{id}</option>)}
+                </select>
+              </label>
+              <button type="button" onClick={openAprilTagPdf}>GENERATE PDF ↗</button>
+            </div>
+            <div className="apriltag-family-row">
+              <span><small>TAG FAMILY</small><b>tag36h11</b></span>
+              <button onClick={() => void previewAprilTags()} disabled={!cameraLive}>TEST ONCE</button>
+            </div>
+            {aprilTagSummary.length > 0 ? (
+              <div className="detection-chips apriltag-detections">
+                {aprilTagSummary.map((tag) => (
+                  <span key={tag.id}>
+                    <b>APRILTAG ID {tag.id}</b>
+                    <small>X {tag.x} · Y {tag.y} · YAW {tag.yaw}°</small>
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="empty-detections">No tag36h11 markers found in the current test frame.</p>
+            )}
+            <p className="coordinate-legend">
+              RED X AXIS · CYAN Y AXIS · FRAME CENTER 0,0 · ALIGNMENT 0°
+            </p>
+          </section>
+
           <div className="vision-footnote">
-            <i /> Vision blocks use the current frame. Object detection stays off until called.
+            <i /> The toggles are test-only and mutually exclusive. Flight blocks perform their own one-shot scans.
           </div>
           <div className="creator-credit">
             <span>CREATED BY</span>
@@ -1415,9 +1542,12 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
           telemetryCanvasRef={simulationTelemetryCameraRef}
           popupWindow={simulatorWindow}
           minimized={simulatorMinimized}
-          detections={detections}
-          colorDetection={colorDetection}
+          detections={simulatorDetections}
+          thresholdResult={simulatorThresholdResult}
+          aprilTagDetections={simulatorAprilTags}
           visionMode={simulatorVisionMode}
+          scanActive={scanActive && simulationConnected}
+          scanSequence={scanEvent?.sequence ?? 0}
           onMinimize={() => {
             closeSimulatorWindow();
             setSimulatorMinimized(true);
