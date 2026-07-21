@@ -118,6 +118,7 @@ export class VisionRuntime {
     private readonly onThreshold: (result: ThresholdResult) => void,
     private readonly onAprilTags: (detections: AprilTagDetection[]) => void,
     private readonly onScan: (event: VisionScanEvent) => void,
+    private readonly onLog: (message: string) => void = () => undefined,
   ) {}
 
   setSyntheticDetectionProvider(
@@ -289,6 +290,13 @@ export class VisionRuntime {
     const safeLostTagSearches = Math.max(1, Math.min(20, Math.round(Number(lostTagSearches) || 3)));
     const deadline = performance.now() + 30_000;
     let misses = 0;
+    const requestedTag = wanted === "any" ? "any AprilTag" : `AprilTag ${wanted}`;
+    const signed = (value: number) => {
+      const rounded = Math.round(value * 10) / 10;
+      return rounded > 0 ? `+${rounded}` : String(rounded);
+    };
+
+    this.onLog(`AprilTag centering: looking for ${requestedTag}.`);
 
     while (!drone.cancelRunFlag && performance.now() < deadline) {
       const detections = await this.scanAprilTags(true);
@@ -300,8 +308,12 @@ export class VisionRuntime {
       )[0];
       if (!target) {
         misses += 1;
+        this.onLog(
+          `AprilTag centering: ${requestedTag} not detected — search ${misses} of ${safeLostTagSearches}.`,
+        );
         if (misses >= safeLostTagSearches) {
           drone.reset();
+          this.onLog(`AprilTag centering: gave up after ${safeLostTagSearches} lost-tag searches.`);
           return false;
         }
         await drone.wait(0.45);
@@ -310,28 +322,46 @@ export class VisionRuntime {
       misses = 0;
       const horizontalError = target.centerX;
       const verticalError = target.centerY;
+      this.onLog(
+        `AprilTag centering: tag ${target.id} detected at X ${signed(horizontalError)}%, Y ${signed(verticalError)}%, yaw ${signed(target.yaw)}°.`,
+      );
       if (Math.abs(horizontalError) > safeCenterSlack || Math.abs(verticalError) > safeCenterSlack) {
         if (Math.abs(horizontalError) >= Math.abs(verticalError)) {
-          drone.setAxis("roll", horizontalError > 0 ? safeTranslationPower : -safeTranslationPower);
+          const direction = horizontalError > 0 ? "right" : "left";
+          this.onLog(`AprilTag centering: moving ${direction} at ${safeTranslationPower}% power.`);
+          drone.setAxis("roll", direction === "right" ? safeTranslationPower : -safeTranslationPower);
         } else {
-          drone.setAxis("pitch", verticalError > 0 ? safeTranslationPower : -safeTranslationPower);
+          const direction = verticalError > 0 ? "forward" : "backward";
+          this.onLog(`AprilTag centering: moving ${direction} at ${safeTranslationPower}% power.`);
+          drone.setAxis("pitch", direction === "forward" ? safeTranslationPower : -safeTranslationPower);
         }
         await drone.wait(0.3);
         drone.reset();
+        this.onLog("AprilTag centering: stabilizing, then scanning again.");
         await drone.wait(0.65);
         continue;
       }
       if (Math.abs(target.yaw) > safeAngleSlack) {
+        const yawDirection = target.yaw > 0 ? "clockwise" : "counterclockwise";
+        this.onLog(
+          `AprilTag centering: yawing ${yawDirection} ${Math.round(Math.abs(target.yaw) * 10) / 10}°.`,
+        );
         await drone.rotate(
           Math.abs(target.yaw),
-          target.yaw > 0 ? "clockwise" : "counterclockwise",
+          yawDirection,
         );
         continue;
       }
       drone.reset();
+      this.onLog(`AprilTag centering: tag ${target.id} is centered and aligned.`);
       return true;
     }
     drone.reset();
+    this.onLog(
+      drone.cancelRunFlag
+        ? "AprilTag centering: stopped."
+        : "AprilTag centering: timed out after 30 seconds.",
+    );
     return false;
   }
 

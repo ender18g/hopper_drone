@@ -677,7 +677,7 @@ export const hopperToolbox: Blockly.utils.toolbox.ToolboxDefinition = {
             {
               kind: "block",
               type: "minidrone_fly",
-              inputs: { SECONDS: numberShadow(1), POWER: numberShadow(40) },
+              inputs: { SECONDS: numberShadow(1), POWER: numberShadow(15) },
             },
             {
               kind: "block",

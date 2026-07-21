@@ -4,10 +4,10 @@ Hopper Studio is a fully local block-coding, JavaScript, Bluetooth flight-contro
 
 ## What is included
 
-- Blockly workspace with the original flight, battery, event, logic, loop, math, variable, function, and accessory capabilities.
+- Blockly workspace with the original flight, battery, event, logic, loop, math, variable, function, and accessory capabilities. Newly dragged `fly forward` blocks default to 15% power.
 - JavaScript editor for advanced students.
 - Web Bluetooth control for Hopper, FTW, Mambo, Travis, and Mars device names.
-- A 10 m × 7 m simulated flight room with damped pitch/roll physics, wall crashes, a flight-path trail, side-view attitude, and a downward camera that uses the same blocks as the real Hopper.
+- A 10 m × 7 m simulated flight room with damped pitch/roll physics, wall crashes, a flight-path trail, side-view attitude, and a downward camera that uses the same blocks as the real Hopper. New rooms include a rotated AprilTag 0 floor marker.
 - A live execution glow that follows each active flight, wait, accessory, and camera-vision block on both simulated and physical Hopper runs.
 - Drag, duplicate, delete, upload, and resize floor targets for search-pattern and computer-vision labs.
 - Simultaneous Bluetooth flight control and Wi-Fi camera display.
@@ -74,7 +74,7 @@ Select **Connect simulated drone** beside the Bluetooth button. The flight room 
 
 The room starts with airplane, car, banana, and apple targets plus one plain white sheet at the center of the dark floor. Drag them anywhere on the floor, select one to resize or rotate, duplicate or delete it, or upload a local image. Choose a tag36h11 ID from the AprilTag dropdown and add as many printable floor tags as the lab needs. A translucent red X-axis arrow rotates with each simulated tag to make visual alignment easy; that helper is intentionally omitted from the simulated drone camera. Drag the Hopper marker itself whenever you want to reposition its starting point; the simulator stops its horizontal motion and continues from the new location. The simulated downward camera feeds the same threshold, object, AprilTag, coordinate, and custom-model blocks used by the physical camera.
 
-The simulator camera remains in **VISION IDLE** during ordinary flight. A scan block animates a green line down the image and then shows only that scan's result: binary white/black percentages, object labels and boxes, or AprilTag IDs, boxes, and pose axes. The panel toggles are only for setup testing and do not write annotations into the simulator camera. The 5°, 10°, and 15° manual attitude checks are useful for demonstrating acceleration and damping before students encode a lawnmower search in blocks.
+The simulator camera remains in **VISION IDLE** during ordinary flight unless a Vision Testing toggle is enabled. A scan block animates a green line down the image and shows that scan's result: binary white/black percentages, object labels and boxes, or AprilTag IDs, boxes, and pose axes. Panel testing also refreshes those annotations continuously, even while the simulated drone is landed and no program is running. The 5°, 10°, and 15° manual attitude checks are useful for demonstrating acceleration and damping before students encode a lawnmower search in blocks.
 
 Flight power uses a classroom-friendly response curve: 5% produces a visible slow crawl, 20% gives roughly 4.3° of pitch or roll for a more useful search speed, and 100% still tops out at 15°. While a program runs, the active action block has a cyan glowing border for the full command duration. Vision blocks take over that glow while an image is being processed, then the glow returns to the surrounding flight action when appropriate. Loop containers remain unhighlighted so students can follow the concrete drone and camera operations.
 
@@ -94,7 +94,7 @@ Offline caching requires HTTPS or `http://localhost`, as required by browser ser
 
 ## Vision testing and scan blocks
 
-The three Vision Testing toggles are mutually exclusive: thresholding, object detection, or AprilTag detection can run continuously for setup, but never more than one at a time. Panel tests use the same camera and algorithms as flight blocks. A program scan automatically stops the continuous test mode.
+The three Vision Testing toggles are mutually exclusive: thresholding, object detection, or AprilTag detection can run continuously for setup, but never more than one at a time. Panel tests use the same camera and algorithms as flight blocks and are independent of flight execution: they continue while the drone is landed, while no program is running, during a program, and after Stop & Land. Program scans no longer switch off the selected panel test.
 
 - Threshold 0% makes almost every pixel white; increasing the threshold requires more brightness for white. **Invert** swaps the binary output after thresholding.
 - `camera sees binary white with threshold at 60%, invert false, in 10% of frame` scans once and returns true when at least 10% of the processed frame is white. Its dropdown can check black instead.
@@ -103,7 +103,7 @@ The three Vision Testing toggles are mutually exclusive: thresholding, object de
 - `scan for objects` refreshes COCO results explicitly. The `camera sees [object]` predicate also performs a fresh object scan every time it is evaluated; the X/Y-coordinate block reads the most recently detected position.
 - `scan for april tags` refreshes tag36h11 IDs and 2D poses. `camera sees april tag with ID` also performs a fresh AprilTag scan every time it is evaluated, so it works directly inside an `if` without a preceding scan block; the ID dropdown includes `any`.
 - In AprilTag Detection, choose an ID under **Print a real tag** and select **Generate PDF**. Hopper Studio opens a full-page US Letter PDF in a new tab for printing; allow pop-ups if the browser asks.
-- `center on april tag` rescans after every movement while it centers X/Y and aligns the drone's forward axis with the tag x axis. Roll/pitch defaults to 10% power and uses a 0.30-second correction pulse before stabilizing and rescanning. Yaw uses the measured tag angle as a complete clockwise or counterclockwise `rotate` command, then scans the tag again. It succeeds inside ±5% of frame center and ±5° by default. Select its gear to adjust both tolerances and how many consecutive lost-tag scans are allowed; the lost limit defaults to three and can be raised when the real camera temporarily loses the tag during movement. A 30-second overall timeout still prevents the block from becoming trapped forever.
+- `center on april tag` rescans after every movement while it centers X/Y and aligns the drone's forward axis with the tag x axis. Roll/pitch defaults to 10% power and uses a 0.30-second correction pulse before stabilizing and rescanning. Yaw uses the measured tag angle as a complete clockwise or counterclockwise `rotate` command, then scans the tag again. The program console reports each detection, lost-tag retry, translation direction, yaw correction, and completion result. It succeeds inside ±5% of frame center and ±5° by default. Select its gear to adjust both tolerances and how many consecutive lost-tag scans are allowed; the lost limit defaults to three and can be raised when the real camera temporarily loses the tag during movement. A 30-second overall timeout still prevents the block from becoming trapped forever.
 - Every `camera sees`, `custom model sees`, and explicit `scan` block captures a fresh frame and shows the scan sweep. Saved detection state is still available to coordinate blocks after that scan.
 
 Lighting, camera auto-exposure, shadows, print quality, and target size affect vision. Tune with the real target and classroom lighting before flight. For AprilTags, print tag36h11 markers with a clean white margin and keep them flat.

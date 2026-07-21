@@ -448,7 +448,6 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
       (event) => {
         setScanEvent(event);
         if (event.phase === "start") {
-          setVisionTestingMode(null);
           setDisplayVisionMode(event.kind);
           if (simulationControllerRef.current) setSimulatorVisionMode(null);
         }
@@ -459,6 +458,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
           if (event.kind === "apriltag") setSimulatorAprilTags(latestAprilTagsRef.current);
         }
       },
+      (message) => appendLog(message),
     );
     visionRef.current = vision;
     return () => {
@@ -468,7 +468,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
       vision.dispose();
       visionRef.current = null;
     };
-  }, []);
+  }, [appendLog]);
 
   useEffect(() => {
     localStorage.setItem(THRESHOLD_KEY, JSON.stringify({ threshold: thresholdPercent, invert: thresholdInvert }));
@@ -760,7 +760,6 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
       setManualOverrideDirection(null);
       runtime?.stop();
       controller?.abortRun();
-      setVisionTestingMode(null);
       if (controller) {
         appendLog("Stopping program — cancelling all tasks and landing…");
         await controller.forceLand().catch((error) => appendLog("Landing:", error));
@@ -859,7 +858,14 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
 
   const previewThreshold = useCallback(async () => {
     try {
-      return await visionRef.current?.scanThreshold(thresholdPercent, thresholdInvert, false);
+      const result = await visionRef.current?.scanThreshold(thresholdPercent, thresholdInvert, false);
+      if (!result) return undefined;
+      setDisplayVisionMode("threshold");
+      if (simulationControllerRef.current) {
+        setSimulatorVisionMode("threshold");
+        setSimulatorThresholdResult(result);
+      }
+      return result;
     } catch (error) {
       setVisionTestingMode(null);
       appendLog("Threshold scan:", error);
@@ -881,7 +887,13 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     if (objectScanBusyRef.current) return;
     objectScanBusyRef.current = true;
     try {
-      await visionRef.current?.detectObjects(0.55, false);
+      const nextDetections = await visionRef.current?.detectObjects(0.55, false);
+      if (!nextDetections) return;
+      setDisplayVisionMode("object");
+      if (simulationControllerRef.current) {
+        setSimulatorVisionMode("object");
+        setSimulatorDetections(nextDetections);
+      }
     } catch (error) {
       setVisionTestingMode(null);
       appendLog("Object detection:", error);
@@ -894,7 +906,13 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     if (aprilTagScanBusyRef.current) return;
     aprilTagScanBusyRef.current = true;
     try {
-      await visionRef.current?.scanAprilTags(false);
+      const nextTags = await visionRef.current?.scanAprilTags(false);
+      if (!nextTags) return;
+      setDisplayVisionMode("apriltag");
+      if (simulationControllerRef.current) {
+        setSimulatorVisionMode("apriltag");
+        setSimulatorAprilTags(nextTags);
+      }
     } catch (error) {
       setVisionTestingMode(null);
       appendLog("AprilTag detection:", error);
@@ -907,6 +925,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     if (visionTestingMode === mode) {
       setVisionTestingMode(null);
       setDisplayVisionMode(null);
+      setSimulatorVisionMode(null);
       return;
     }
     try {
@@ -914,6 +933,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
         await visionRef.current?.loadObjectModel();
       }
       setDisplayVisionMode(mode);
+      if (simulationControllerRef.current) setSimulatorVisionMode(mode);
       setVisionTestingMode(mode);
     } catch (error) {
       appendLog(`${mode} testing:`, error);
@@ -1546,7 +1566,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
           <section className="vision-tool object-tool">
             <div className="tool-title">
               <span className="tool-number">02</span>
-              <div><h2>OBJECT DETECTOR</h2><p>Local COCO-SSD · on demand only</p></div>
+              <div><h2>OBJECT DETECTOR</h2><p>Local COCO-SSD · continuous live testing</p></div>
               <button
                 className={`tiny-toggle ${visionTestingMode === "object" ? "on" : ""}`}
                 onClick={() => void toggleVisionTesting("object")}

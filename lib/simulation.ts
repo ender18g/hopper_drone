@@ -223,7 +223,7 @@ export class SimulatedDroneController implements DroneController {
   }
 
   getSyntheticDetections(width = 640, height = 480): VisionDetection[] {
-    if (!this.connected || this.snapshot.crashed || this.snapshot.z < 0.12) return [];
+    if (!this.connected || this.snapshot.crashed) return [];
     return this.sceneObjects.flatMap((object) => {
       if (object.kind && object.kind !== "object") return [];
       const projection = projectObjectToCamera(this.snapshot, object, width, height);
@@ -247,7 +247,7 @@ export class SimulatedDroneController implements DroneController {
   }
 
   getSyntheticAprilTags(width = 640, height = 480): AprilTagDetection[] {
-    if (!this.connected || this.snapshot.crashed || this.snapshot.z < 0.12) return [];
+    if (!this.connected || this.snapshot.crashed) return [];
     return this.sceneObjects.flatMap((object) => {
       if (object.kind !== "apriltag" || object.tagId === undefined) return [];
       const projection = projectObjectToCamera(this.snapshot, object, width, height);

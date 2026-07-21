@@ -89,6 +89,20 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(component, /event\.code === "Space"/);
   assert.match(component, /simulatorWindow \? \[window, simulatorWindow\]/);
   assert.match(component, /className="manual-land"[\s\S]*?onClick=\{\(\) => void stopProgram\(\)\}/);
+  assert.match(component, /visionTestingMode !== "object"[\s\S]*?setInterval\(\(\) => void previewObjects\(\), 1800\)/);
+  assert.match(component, /visionTestingMode !== "apriltag"[\s\S]*?setInterval\(\(\) => void previewAprilTags\(\), 900\)/);
+  assert.match(component, /setSimulatorDetections\(nextDetections\)/);
+  assert.match(component, /setSimulatorAprilTags\(nextTags\)/);
+  const stopProgramSource = component.slice(
+    component.indexOf("const stopProgram = useCallback"),
+    component.indexOf("const manualNudge"),
+  );
+  assert.doesNotMatch(stopProgramSource, /setVisionTestingMode/);
+  const visionRuntimeSetup = component.slice(
+    component.indexOf("const vision = new VisionRuntime"),
+    component.indexOf("visionRef.current = vision"),
+  );
+  assert.doesNotMatch(visionRuntimeSetup, /setVisionTestingMode/);
   assert.match(drone, /9a66fa00-0800-9191-11e4-012d1540cb8e/);
   assert.match(drone, /HOPPER/);
   assert.match(drone, /interface DroneController/);
@@ -105,6 +119,8 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(simulatorComponent, /Drag Hopper drone to reposition it/);
   assert.match(simulatorComponent, /sim-vision-box/);
   assert.match(simulatorComponent, /white-paper-1/);
+  assert.match(simulatorComponent, /apriltag-0-default/);
+  assert.match(simulatorComponent, /rotation: 22/);
   assert.match(simulatorComponent, /ADD TAG/);
   assert.match(simulatorComponent, /sim-tag-x-axis-arrow/);
   assert.match(simulatorComponent, /sim-scan-line/);
@@ -129,6 +145,7 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(vision, /centerOnAprilTag/);
   assert.match(vision, /this\.scanned\("custom"/);
   assert.match(vision, /safeLostTagSearches/);
+  assert.match(vision, /AprilTag centering: tag/);
   assert.match(vision, /await drone\.rotate/);
   assert.match(vision, /detectionCenterCoordinate/);
   assert.match(vision, /lastObjectCoordinates/);
@@ -143,6 +160,7 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(blockly, /vision_scan_apriltags/);
   assert.match(blockly, /vision_sees_apriltag/);
   assert.match(blockly, /vision_center_apriltag/);
+  assert.match(blockly, /POWER: numberShadow\(15\)/);
   assert.doesNotMatch(blockly, /YAW_POWER/);
   assert.match(blockly, /LOST_SEARCHES/);
   assert.doesNotMatch(blockly, /vision_sees_color/);
@@ -351,6 +369,7 @@ test("calculates binary threshold coverage and centered object coordinates", asy
   });
 
   const noOp = () => undefined;
+  const centeringLogs = [];
   const runtime = new visionMath.VisionRuntime(
     () => null,
     () => null,
@@ -361,6 +380,7 @@ test("calculates binary threshold coverage and centered object coordinates", asy
     noOp,
     noOp,
     noOp,
+    (message) => centeringLogs.push(message),
   );
   let objectScans = 0;
   runtime.detectObjects = async () => {
@@ -382,6 +402,7 @@ test("calculates binary threshold coverage and centered object coordinates", asy
     [{ id: 7, centerX: 18, centerY: 0, yaw: 0 }],
     [],
     [],
+    [{ id: 7, centerX: 0, centerY: 12, yaw: 0 }],
     [{ id: 7, centerX: 0, centerY: 0, yaw: 20 }],
     [{ id: 7, centerX: 0, centerY: 0, yaw: 0 }],
   ];
@@ -396,8 +417,14 @@ test("calculates binary threshold coverage and centered object coordinates", asy
   };
   assert.equal(await runtime.centerOnAprilTag(drone, 7, 7, 5, 5, 3), true);
   assert.ok(commands.some((command) => command[0] === "axis" && command[1] === "roll" && command[2] === 7));
+  assert.ok(commands.some((command) => command[0] === "axis" && command[1] === "pitch" && command[2] === 7));
   assert.ok(commands.some((command) => command[0] === "wait" && command[1] === 0.3));
   assert.ok(commands.some((command) => command[0] === "rotate" && command[1] === 20 && command[2] === "clockwise"));
+  assert.ok(centeringLogs.some((message) => message.includes("tag 7 detected")));
+  assert.ok(centeringLogs.some((message) => message.includes("moving right")));
+  assert.ok(centeringLogs.some((message) => message.includes("moving forward")));
+  assert.ok(centeringLogs.some((message) => message.includes("yawing clockwise 20°")));
+  assert.ok(centeringLogs.some((message) => message.includes("centered and aligned")));
   assert.equal(scanSequence.length, 0, "centering rescans after movement and tolerates two missed frames");
 });
 
@@ -591,6 +618,17 @@ test("simulated takeoff, tilt acceleration, and damping behave as a flight contr
   try {
     const controller = new simulation.SimulatedDroneController();
     controller.connect();
+    controller.setSceneObjects([
+      { id: "landed-apple", label: "apple", x: 1.25, y: 1.2, size: 0.56, rotation: 0, kind: "object" },
+      { id: "landed-tag", label: "AprilTag 23", x: 1.25, y: 1.2, size: 0.62, rotation: 22, kind: "apriltag", tagId: 23 },
+    ]);
+    assert.equal(controller.getSnapshot().z, 0);
+    const landedObjects = controller.getSyntheticDetections(640, 360);
+    assert.equal(landedObjects.length, 1, "object testing detects a floor target while the drone is landed");
+    assert.equal(landedObjects[0].class, "apple");
+    const landedTags = controller.getSyntheticAprilTags(640, 360);
+    assert.equal(landedTags.length, 1, "AprilTag testing detects a floor marker while the drone is landed");
+    assert.equal(landedTags[0].id, 23);
     controller.placeDrone(6, 5);
     assert.equal(controller.getSnapshot().x, 6);
     assert.equal(controller.getSnapshot().y, 5);

@@ -32,6 +32,7 @@ const DEFAULT_OBJECTS: SimulationObject[] = [
   { id: "banana-1", label: "banana", src: "sim-assets/banana.png", x: 6.35, y: 2.0, size: 0.58, rotation: 8, kind: "object" },
   { id: "apple-1", label: "apple", src: "sim-assets/apple.png", x: 3.8, y: 3.2, size: 0.56, rotation: 0, kind: "object" },
   { id: "white-paper-1", label: "white paper", x: 5, y: 3.5, size: 0.72, rotation: 0, kind: "paper" },
+  { id: "apriltag-0-default", label: "AprilTag 0", x: 5.65, y: 4.15, size: 0.62, rotation: 22, kind: "apriltag", tagId: 0 },
 ];
 
 const FLOOR_PRESETS = [
