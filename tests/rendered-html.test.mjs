@@ -82,12 +82,21 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(component, /serviceWorker\.register/);
   assert.match(component, /Hard refresh Hopper Studio/);
   assert.match(component, /OFFLINE READY/);
+  assert.match(component, /MANUAL OVERRIDE/);
+  assert.match(component, /manualNudge/);
+  assert.match(component, /showConsole \? "above-console"/);
+  assert.match(component, /ArrowUp: "forward"/);
+  assert.match(component, /event\.code === "Space"/);
+  assert.match(component, /simulatorWindow \? \[window, simulatorWindow\]/);
+  assert.match(component, /className="manual-land"[\s\S]*?onClick=\{\(\) => void stopProgram\(\)\}/);
   assert.match(drone, /9a66fa00-0800-9191-11e4-012d1540cb8e/);
   assert.match(drone, /HOPPER/);
   assert.match(drone, /interface DroneController/);
   assert.match(drone, /abortRun/);
   assert.match(drone, /runGeneration/);
   assert.match(drone, /isRunActive/);
+  assert.match(drone, /manualFlightOverride/);
+  assert.match(drone, /manualNudge/);
   assert.doesNotMatch(drone, /sensorHealth|linkRssi/);
   assert.match(simulatorComponent, /SIMULATED DRONE ROOM/);
   assert.match(simulatorComponent, /UPLOAD IMAGE/);
@@ -109,10 +118,13 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(simulation, /getSimulationSideViewPose/);
   assert.match(simulation, /Wall impact/);
   assert.match(simulation, /placeDrone/);
+  assert.match(simulation, /manualFlightOverride/);
   assert.match(runtime, /runBlock/);
   assert.match(vision, /lite_mobilenet_v2/);
   assert.match(vision, /scanThreshold/);
   assert.match(vision, /analyzeThreshold/);
+  assert.match(styles, /\.manual-flight-pad/);
+  assert.match(styles, /\.manual-flight-pad\.above-console/);
   assert.match(vision, /scanAprilTags/);
   assert.match(vision, /centerOnAprilTag/);
   assert.match(vision, /this\.scanned\("custom"/);
@@ -663,6 +675,41 @@ test("simulated takeoff, tilt acceleration, and damping behave as a flight contr
     controller.setAxis("pitch", 20);
     await staleFly;
     assert.equal(controller.axes.pitch, 20, "a stale command cannot clear movement from a newer run");
+
+    const manualCorrection = controller.manualNudge("left", 30, 0.15);
+    assert.equal(controller.manualFlightOverride.roll, -30, "manual correction takes control immediately");
+    controller.setAxis("pitch", 35);
+    assert.equal(controller.axes.pitch, 35, "program commands continue updating beneath the override");
+    await manualCorrection;
+    assert.equal(controller.manualFlightOverride, null, "manual correction releases control after its pulse");
+    assert.equal(controller.axes.pitch, 35, "the latest program command is ready to resume");
+
+    const manualDirectionChecks = [
+      ["forward", "y", 1],
+      ["backward", "y", -1],
+      ["left", "x", -1],
+      ["right", "x", 1],
+    ];
+    for (const [direction, coordinate, sign] of manualDirectionChecks) {
+      controller.setAxis("pitch", 0);
+      controller.setAxis("roll", 0);
+      controller.setAxis("yaw", 0);
+      controller.setAxis("gaz", 0);
+      for (let frame = 0; frame < 120; frame += 1) {
+        simulatedTime += 16;
+        controller.step(0.016, simulatedTime);
+      }
+      controller.placeDrone(5, 3);
+      const start = controller.getSnapshot()[coordinate];
+      const correction = controller.manualNudge(direction, 30, 0.15);
+      for (let frame = 0; frame < 30; frame += 1) {
+        simulatedTime += 16;
+        controller.step(0.016, simulatedTime);
+      }
+      const distance = (controller.getSnapshot()[coordinate] - start) * sign;
+      assert.ok(distance > 0.01, `${direction} manual control moves the simulated drone`);
+      await correction;
+    }
 
     const forcedLanding = controller.forceLand();
     for (let frame = 0; frame < 300; frame += 1) {

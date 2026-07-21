@@ -10,6 +10,8 @@ export type DroneTelemetry = {
   connected: boolean;
 };
 
+export type ManualFlightDirection = "forward" | "backward" | "left" | "right";
+
 /**
  * The command surface shared by the Bluetooth Hopper and the classroom
  * simulator. Blockly-generated programs only depend on this interface, so a
@@ -30,6 +32,7 @@ export interface DroneController {
   cutoff(): Promise<void>;
   hover(): Promise<void>;
   reset(): void;
+  manualNudge(direction: ManualFlightDirection, power?: number, seconds?: number): Promise<void>;
   rotate(degrees?: number, direction?: "clockwise" | "counterclockwise"): Promise<void>;
   fly(
     direction: "up" | "down" | "left" | "right" | "forward" | "backward",
@@ -128,6 +131,13 @@ export class MamboController {
   private connectionPing: number | null = null;
   private flightCommandPing: number | null = null;
   private runGeneration = 0;
+  private manualFlightOverride: {
+    token: symbol;
+    roll: number;
+    pitch: number;
+    yaw: number;
+    gaz: number;
+  } | null = null;
   private gunUSBID: number | null = null;
   private gunAttached = false;
   private clawUSBID: number | null = null;
@@ -202,12 +212,14 @@ export class MamboController {
     this.runGeneration += 1;
     this.cancelRunFlag = true;
     this.reset();
+    this.manualFlightOverride = null;
     this.stopFlightPing();
   }
 
   async startRun() {
     this.runGeneration += 1;
     this.cancelRunFlag = false;
+    this.manualFlightOverride = null;
     this.stopConnectionPing();
     this.reset();
     this.startFlightPing();
@@ -317,6 +329,26 @@ export class MamboController {
 
   reset() {
     this.flightCommandBuffer = this.emptyFlightBuffer();
+  }
+
+  async manualNudge(
+    direction: ManualFlightDirection,
+    power = 30,
+    seconds = 0.45,
+  ) {
+    if (this.cancelRunFlag || !this.isFlying()) return;
+    const safePower = Math.max(1, Math.min(100, Math.abs(Number(power) || 30)));
+    const safeSeconds = Math.max(0.15, Math.min(1.5, Number(seconds) || 0.45));
+    const token = Symbol(direction);
+    this.manualFlightOverride = {
+      token,
+      roll: direction === "right" ? safePower : direction === "left" ? -safePower : 0,
+      pitch: direction === "forward" ? safePower : direction === "backward" ? -safePower : 0,
+      yaw: 0,
+      gaz: 0,
+    };
+    await sleep(safeSeconds * 1000);
+    if (this.manualFlightOverride?.token === token) this.manualFlightOverride = null;
   }
 
   async rotate(degrees = 0, direction: "clockwise" | "counterclockwise" = "clockwise") {
@@ -531,7 +563,13 @@ export class MamboController {
       buffer[axis].driveStepsRemaining -= 1;
       if (buffer[axis].driveStepsRemaining < 0) buffer[axis].consign = 0;
     }
-    const moving = buffer.pitch.consign !== 0 || buffer.roll.consign !== 0;
+    const output = this.manualFlightOverride ?? {
+      roll: buffer.roll.consign,
+      pitch: buffer.pitch.consign,
+      yaw: buffer.yaw.consign,
+      gaz: buffer.gaz.consign,
+    };
+    const moving = output.pitch !== 0 || output.roll !== 0;
     const values = [
       2,
       this.nextSequence("fa0b"),
@@ -540,10 +578,10 @@ export class MamboController {
       2,
       0,
       moving ? 1 : 0,
-      buffer.roll.consign,
-      buffer.pitch.consign,
-      buffer.yaw.consign,
-      buffer.gaz.consign,
+      output.roll,
+      output.pitch,
+      output.yaw,
+      output.gaz,
       0,
       0,
       0,

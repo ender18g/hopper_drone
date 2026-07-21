@@ -723,6 +723,93 @@ body.resizing-vision * {
   visibility: visible;
 }
 
+.manual-flight-pad {
+  width: 178px;
+  position: absolute;
+  z-index: 900;
+  right: 18px;
+  bottom: 18px;
+  display: grid;
+  grid-template-columns: repeat(3, 52px);
+  grid-template-rows: 17px repeat(3, 46px);
+  gap: 4px;
+  justify-content: center;
+  padding: 8px;
+  border: 1px solid rgba(27, 39, 47, .24);
+  border-radius: 8px;
+  background: rgba(246, 247, 244, .94);
+  box-shadow: 0 10px 28px rgba(23, 35, 42, .18);
+  backdrop-filter: blur(5px);
+  transition: bottom 180ms ease;
+}
+
+.manual-flight-pad.above-console {
+  bottom: calc(min(240px, 34%) + 14px);
+}
+
+.manual-flight-pad > span {
+  grid-column: 1 / -1;
+  color: #68767d;
+  font-family: var(--mono);
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: .1em;
+  text-align: center;
+}
+
+.manual-flight-pad button {
+  min-width: 0;
+  padding: 0;
+  border: 1px solid #c7cdca;
+  border-radius: 5px;
+  background: #fff;
+  color: #26353d;
+  box-shadow: 0 2px 5px rgba(22, 34, 41, .09);
+  cursor: pointer;
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.manual-flight-pad button small {
+  display: block;
+  margin-top: -3px;
+  font-size: 5px;
+  letter-spacing: .06em;
+}
+
+.manual-flight-pad button:hover:not(:disabled),
+.manual-flight-pad button.active {
+  border-color: #3195ce;
+  background: #e9f7ff;
+  color: #1679b1;
+  box-shadow: 0 0 0 2px rgba(49, 149, 206, .18);
+}
+
+.manual-flight-pad button:disabled {
+  opacity: .38;
+  cursor: not-allowed;
+}
+
+.manual-flight-pad .manual-forward { grid-column: 2; grid-row: 2; }
+.manual-flight-pad .manual-left { grid-column: 1; grid-row: 3; }
+.manual-flight-pad .manual-land { grid-column: 2; grid-row: 3; }
+.manual-flight-pad .manual-right { grid-column: 3; grid-row: 3; }
+.manual-flight-pad .manual-back { grid-column: 2; grid-row: 4; }
+
+.manual-flight-pad .manual-land {
+  border-color: #d93442;
+  background: #e63e4c;
+  color: #fff;
+  font-size: 8px;
+  letter-spacing: .05em;
+}
+
+.manual-flight-pad .manual-land:hover:not(:disabled) {
+  border-color: #b8222f;
+  background: #c92d3a;
+  color: #fff;
+}
+
 .blocklySvg {
   background: #f7f6f2 !important;
 }

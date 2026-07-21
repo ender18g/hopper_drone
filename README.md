@@ -22,6 +22,7 @@ Hopper Studio is a fully local block-coding, JavaScript, Bluetooth flight-contro
 - Object results include confidence and centered X/Y coordinates on a signed `-100` to `+100` scale. `(0, 0)` is the frame center; right and up are positive.
 - A local file loader and block for standard Teachable Machine image classifiers.
 - Local project autosave, JSON import, and JSON export.
+- A BLOCKS-view manual flight pad for temporary forward/back/left/right corrections. The arrow keys trigger the same controls, and Spacebar always triggers Stop & Land while a program is running.
 - An emergency Stop & Land action plus a separately confirmed motor cutoff.
 
 ## Start the full local app (recommended)
@@ -274,13 +275,14 @@ Before the first deployment, open the GitHub repository's **Settings → Pages**
 
 GitHub Pages is a static HTTPS host, so it cannot run Hopper Studio's `/api/camera` proxy. Current Chrome and Edge releases can display the feed directly after the user grants the site's local-network access prompt. Join the Hopper Wi-Fi, select **Connect**, and choose **Allow** when the browser asks to find devices on the local network.
 
-The direct feed is cross-origin, so the hosted page cannot safely read its pixels unless the drone itself supplies suitable CORS headers. Color tracking, COCO-SSD, and custom-model analysis therefore still require the local app (`start-windows.bat` or `npm run dev`). If the user previously denied local-network access, reset that permission from the icon beside the address bar and reconnect.
+The direct feed is cross-origin, so the hosted page cannot safely read its pixels unless the drone itself supplies suitable CORS headers. Thresholding, AprilTag, COCO-SSD, and custom-model analysis therefore still require the local app (`start-windows.bat` or `npm run dev`). If the user previously denied local-network access, reset that permission from the icon beside the address bar and reconnect.
 
 ## Safety
 
 - Test new programs with propellers removed or the drone restrained.
 - Keep students, faces, loose clothing, and fragile objects out of the flight area.
 - The normal red Stop button invalidates the entire run, unregisters its keyboard/drone events, clears buffered movement and flight pings, waits briefly for active vision/actions to settle, and repeatedly sends an emergency landing command. A new run cannot begin while this cleanup is in progress.
+- While a BLOCKS program is flying, the on-screen direction pad or keyboard arrow keys temporarily replace its flight output with a 30% correction pulse, then release control back to the latest program command. The red LAND control and Spacebar use the same full Stop & Land cleanup as the top-right button.
 - The warning-triangle button immediately cuts motor power and asks for confirmation first. Use it only when landing would be less safe.
 - Programs automatically send a landing command when their main sequence finishes.
 - Treat camera classifications as uncertain sensor readings. Require multiple consistent readings and conservative confidence thresholds before changing flight.

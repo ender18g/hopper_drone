@@ -1,4 +1,9 @@
-import type { DroneController, DroneEventName, DroneTelemetry } from "./drone";
+import type {
+  DroneController,
+  DroneEventName,
+  DroneTelemetry,
+  ManualFlightDirection,
+} from "./drone";
 import type { VisionDetection } from "./vision";
 import type { AprilTagDetection } from "./apriltags";
 
@@ -149,6 +154,13 @@ export class SimulatedDroneController implements DroneController {
 
   private connected = false;
   private runGeneration = 0;
+  private manualFlightOverride: {
+    token: symbol;
+    roll: number;
+    pitch: number;
+    yaw: number;
+    gaz: number;
+  } | null = null;
   private animationFrame: number | null = null;
   private previousFrame = 0;
   private telemetryElapsed = 0;
@@ -319,11 +331,13 @@ export class SimulatedDroneController implements DroneController {
     this.runGeneration += 1;
     this.cancelRunFlag = true;
     this.reset();
+    this.manualFlightOverride = null;
   }
 
   async startRun() {
     this.runGeneration += 1;
     this.cancelRunFlag = false;
+    this.manualFlightOverride = null;
     this.reset();
   }
 
@@ -393,6 +407,26 @@ export class SimulatedDroneController implements DroneController {
     if (this.snapshot.z > 0.08 && !this.snapshot.crashed) {
       this.targetAltitude = this.snapshot.z;
     }
+  }
+
+  async manualNudge(
+    direction: ManualFlightDirection,
+    power = 30,
+    seconds = 0.45,
+  ) {
+    if (this.cancelRunFlag || !this.isFlying()) return;
+    const safePower = clamp(Math.abs(Number(power) || 30), 1, 100);
+    const safeSeconds = clamp(Number(seconds) || 0.45, 0.15, 1.5);
+    const token = Symbol(direction);
+    this.manualFlightOverride = {
+      token,
+      roll: direction === "right" ? safePower : direction === "left" ? -safePower : 0,
+      pitch: direction === "forward" ? safePower : direction === "backward" ? -safePower : 0,
+      yaw: 0,
+      gaz: 0,
+    };
+    await new Promise<void>((resolve) => window.setTimeout(resolve, safeSeconds * 1000));
+    if (this.manualFlightOverride?.token === token) this.manualFlightOverride = null;
   }
 
   async rotate(degreesToTurn = 0, direction: "clockwise" | "counterclockwise" = "clockwise") {
@@ -519,8 +553,9 @@ export class SimulatedDroneController implements DroneController {
     const emergency = current.flyingState === "emergency";
     const activeFlip = this.flipAnimation;
 
-    let targetPitch = powerToTiltDegrees(this.axes.pitch);
-    let targetRoll = powerToTiltDegrees(this.axes.roll);
+    const flightAxes = this.manualFlightOverride ?? this.axes;
+    let targetPitch = powerToTiltDegrees(flightAxes.pitch);
+    let targetRoll = powerToTiltDegrees(flightAxes.roll);
     if (now < this.manualOverrideUntil) {
       targetPitch = this.manualPitch ?? targetPitch;
       targetRoll = this.manualRoll ?? targetRoll;
@@ -534,7 +569,7 @@ export class SimulatedDroneController implements DroneController {
     const pitch = current.pitch + this.pitchVelocity * elapsed;
     const roll = current.roll + this.rollVelocity * elapsed;
 
-    const targetYawRate = airborne && !emergency ? this.axes.yaw * 1.8 : 0;
+    const targetYawRate = airborne && !emergency ? flightAxes.yaw * 1.8 : 0;
     const yawRate = current.yawRate + (targetYawRate - current.yawRate) * Math.min(1, elapsed * 5.4);
     const heading = (current.heading + yawRate * elapsed + 360) % 360;
     const headingRadians = radians(heading);
@@ -584,7 +619,7 @@ export class SimulatedDroneController implements DroneController {
       ) * elapsed;
 
       const targetVerticalVelocity = this.targetAltitude === null
-        ? this.axes.gaz * 0.014
+        ? flightAxes.gaz * 0.014
         : clamp((this.targetAltitude - z) * 1.7, -0.9, 1.25);
       vz += (targetVerticalVelocity - vz) * Math.min(1, elapsed * 3.6);
     } else if (emergency) {

@@ -18,6 +18,7 @@ import {
   MamboController,
   type DroneController,
   type DroneTelemetry,
+  type ManualFlightDirection,
 } from "../lib/drone";
 import { ExecutionRuntime } from "../lib/runtime";
 import { SimulatedDroneController } from "../lib/simulation";
@@ -150,6 +151,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   const latestDetectionsRef = useRef<VisionDetection[]>([]);
   const latestThresholdRef = useRef<ThresholdResult | null>(null);
   const latestAprilTagsRef = useRef<AprilTagDetection[]>([]);
+  const manualNudgeSequenceRef = useRef(0);
   const projectNameRef = useRef("Binary Landing Lab");
   const javascriptCodeRef = useRef("");
 
@@ -165,6 +167,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   const [droneName, setDroneName] = useState("No drone selected");
   const [telemetry, setTelemetry] = useState<DroneTelemetry>(createEmptyDroneTelemetry);
   const [running, setRunning] = useState(false);
+  const [manualOverrideDirection, setManualOverrideDirection] = useState<ManualFlightDirection | null>(null);
   const [logs, setLogs] = useState<string[]>([
     "Hopper Studio ready. Connect Bluetooth, then connect the video feed.",
   ]);
@@ -197,6 +200,9 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   const [customPredictions, setCustomPredictions] = useState<CustomPrediction[]>([]);
   const simulationConnected = connectionMode === "simulated";
   const cameraLive = cameraState === "live" || simulationConnected;
+  const manualControlsAvailable = running
+    && telemetry.connected
+    && ["hovering", "flying", "flipping"].includes(telemetry.flyingState ?? "");
 
   const appendLog = useCallback((...values: unknown[]) => {
     const line = values.map(formatLogValue).join(" ");
@@ -742,7 +748,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     }
   };
 
-  const stopProgram = async () => {
+  const stopProgram = useCallback(async () => {
     if (stopProgramPromiseRef.current) {
       await stopProgramPromiseRef.current;
       return;
@@ -750,6 +756,8 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     const controller = controllerRef.current;
     const runtime = runtimeRef.current;
     const stopTask = Promise.resolve().then(async () => {
+      manualNudgeSequenceRef.current += 1;
+      setManualOverrideDirection(null);
       runtime?.stop();
       controller?.abortRun();
       setVisionTestingMode(null);
@@ -773,7 +781,49 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     } finally {
       if (stopProgramPromiseRef.current === stopTask) stopProgramPromiseRef.current = null;
     }
-  };
+  }, [appendLog]);
+
+  const manualNudge = useCallback(async (direction: ManualFlightDirection) => {
+    const controller = controllerRef.current;
+    if (!running || editorMode !== "blocks" || !controller?.isFlying()) return;
+    const sequence = ++manualNudgeSequenceRef.current;
+    setManualOverrideDirection(direction);
+    appendLog(`Manual override: ${direction}`);
+    try {
+      await controller.manualNudge(direction);
+    } finally {
+      if (manualNudgeSequenceRef.current === sequence) setManualOverrideDirection(null);
+    }
+  }, [appendLog, editorMode, running]);
+
+  useEffect(() => {
+    if (!running) return;
+    const handleManualFlightKey = (event: KeyboardEvent) => {
+      if (event.code === "Space") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        void stopProgram();
+        return;
+      }
+      if (editorMode !== "blocks") return;
+      const directions: Partial<Record<string, ManualFlightDirection>> = {
+        ArrowUp: "forward",
+        ArrowDown: "backward",
+        ArrowLeft: "left",
+        ArrowRight: "right",
+      };
+      const direction = directions[event.key];
+      if (!direction) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      void manualNudge(direction);
+    };
+    const keyboardTargets = simulatorWindow ? [window, simulatorWindow] : [window];
+    keyboardTargets.forEach((target) => target.addEventListener("keydown", handleManualFlightKey, true));
+    return () => keyboardTargets.forEach((target) => {
+      target.removeEventListener("keydown", handleManualFlightKey, true);
+    });
+  }, [editorMode, manualNudge, running, simulatorWindow, stopProgram]);
 
   const emergencyCutoff = async () => {
     const controller = controllerRef.current;
@@ -1238,6 +1288,54 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
             <span>AUTOSAVE ON</span>
           </div>
           <div className={`blockly-host ${editorMode === "blocks" ? "visible" : ""}`} ref={workspaceHostRef} />
+          {editorMode === "blocks" && (
+            <div
+              className={`manual-flight-pad ${showConsole ? "above-console" : ""}`}
+              aria-label="Manual flight override controls"
+            >
+              <span>MANUAL OVERRIDE</span>
+              <button
+                type="button"
+                className={`manual-forward ${manualOverrideDirection === "forward" ? "active" : ""}`}
+                onClick={() => void manualNudge("forward")}
+                disabled={!manualControlsAvailable}
+                aria-label="Temporarily override program and fly forward"
+                title="Fly forward · Up arrow"
+              >↑<small>FWD</small></button>
+              <button
+                type="button"
+                className={`manual-left ${manualOverrideDirection === "left" ? "active" : ""}`}
+                onClick={() => void manualNudge("left")}
+                disabled={!manualControlsAvailable}
+                aria-label="Temporarily override program and fly left"
+                title="Fly left · Left arrow"
+              >←</button>
+              <button
+                type="button"
+                className="manual-land"
+                onClick={() => void stopProgram()}
+                disabled={!running}
+                aria-label="Stop program and land"
+                title="Stop and land · Spacebar"
+              >LAND</button>
+              <button
+                type="button"
+                className={`manual-right ${manualOverrideDirection === "right" ? "active" : ""}`}
+                onClick={() => void manualNudge("right")}
+                disabled={!manualControlsAvailable}
+                aria-label="Temporarily override program and fly right"
+                title="Fly right · Right arrow"
+              >→</button>
+              <button
+                type="button"
+                className={`manual-back ${manualOverrideDirection === "backward" ? "active" : ""}`}
+                onClick={() => void manualNudge("backward")}
+                disabled={!manualControlsAvailable}
+                aria-label="Temporarily override program and fly backward"
+                title="Fly backward · Down arrow"
+              >↓<small>BACK</small></button>
+            </div>
+          )}
           {editorMode === "javascript" && (
             <div className="javascript-editor">
               <div className="line-numbers" aria-hidden="true">
