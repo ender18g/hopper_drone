@@ -32,13 +32,15 @@ test("server-renders Hopper Studio metadata and product shell", async () => {
 });
 
 test("ships the local flight, simulation, vision, and student-build surfaces", async () => {
-  const [component, simulatorComponent, drone, simulation, vision, blockly, readme, packageJson] = await Promise.all([
+  const [component, simulatorComponent, drone, simulation, runtime, vision, blockly, styles, readme, packageJson] = await Promise.all([
     readFile(new URL("../components/HopperStudio.tsx", import.meta.url), "utf8"),
     readFile(new URL("../components/SimulatedDroneArea.tsx", import.meta.url), "utf8"),
     readFile(new URL("../lib/drone.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/simulation.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/runtime.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/vision.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/blockly.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../README.md", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
   ]);
@@ -64,6 +66,7 @@ test("ships the local flight, simulation, vision, and student-build surfaces", a
   assert.match(component, /type="range"/);
   assert.match(component, /detection\.confidence/);
   assert.match(component, /batteryTone/);
+  assert.match(component, /highlightBlock/);
   assert.match(drone, /9a66fa00-0800-9191-11e4-012d1540cb8e/);
   assert.match(drone, /HOPPER/);
   assert.match(drone, /interface DroneController/);
@@ -76,8 +79,10 @@ test("ships the local flight, simulation, vision, and student-build surfaces", a
   assert.match(simulatorComponent, /sim-vision-box/);
   assert.match(simulation, /SIMULATION_ROOM = \{ width: 10, height: 7 \}/);
   assert.match(simulation, /Math\.tan\(radians\(pitch\)\)/);
+  assert.match(simulation, /powerToTiltDegrees/);
   assert.match(simulation, /Wall impact/);
   assert.match(simulation, /placeDrone/);
+  assert.match(runtime, /runBlock/);
   assert.match(vision, /lite_mobilenet_v2/);
   assert.match(vision, /colorCoverage/);
   assert.match(vision, /analyzeColorDetection/);
@@ -89,7 +94,10 @@ test("ships the local flight, simulation, vision, and student-build surfaces", a
   assert.match(blockly, /vision_sees_custom_label/);
   assert.match(blockly, /vision_object_coordinate/);
   assert.match(blockly, /minidrone_takeoff/);
+  assert.match(blockly, /activeStatement/);
+  assert.match(blockly, /activeExpression/);
   assert.match(blockly, /new URL\("blockly\/media\/", document\.baseURI\)/);
+  assert.match(styles, /activeBlockGlow/);
   assert.match(readme, /start-windows\.bat/);
   assert.match(readme, /local-network access prompt/i);
   assert.match(readme, /Bluetooth flight control is independent/);
@@ -180,6 +188,38 @@ test("projects simulated floor targets into the downward camera frame", async ()
   assert.ok(east.centerX > 320, "east/right targets appear right of frame center");
 });
 
+test("tracks nested active action and vision blocks without highlighting loop blocks", async () => {
+  const source = await readFile(new URL("../lib/runtime.ts", import.meta.url), "utf8");
+  const compiled = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const { ExecutionRuntime } = await import(
+    `data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`
+  );
+  const previousWindow = globalThis.window;
+  globalThis.window = {
+    addEventListener() {},
+    removeEventListener() {},
+    setTimeout,
+  };
+  const activeBlocks = [];
+  try {
+    const runtime = new ExecutionRuntime(() => {}, () => {}, (blockId) => activeBlocks.push(blockId));
+    const result = await runtime.runBlock("fly-forward", async () =>
+      runtime.runBlock("camera-sees-apple", async () => 42)
+    );
+    assert.equal(result, 42);
+    assert.deepEqual(activeBlocks, [
+      "fly-forward",
+      "camera-sees-apple",
+      "fly-forward",
+      null,
+    ]);
+  } finally {
+    globalThis.window = previousWindow;
+  }
+});
+
 test("simulated takeoff, tilt acceleration, and damping behave as a flight controller", async () => {
   const source = await readFile(new URL("../lib/simulation.ts", import.meta.url), "utf8");
   const compiled = ts.transpileModule(source, {
@@ -215,6 +255,39 @@ test("simulated takeoff, tilt acceleration, and damping behave as a flight contr
     await takeoff;
     assert.ok(controller.getSnapshot().z > 1, "takeoff reaches a stable hover altitude");
 
+    controller.placeDrone(5, 3);
+    controller.setAxis("pitch", 5);
+    for (let frame = 0; frame < 60; frame += 1) {
+      simulatedTime += 16;
+      controller.step(0.016, simulatedTime);
+    }
+    const crawl = controller.getSnapshot();
+    assert.ok(crawl.pitch > 1 && crawl.pitch < 2.2, "5% power produces a visible slow-crawl pitch");
+
+    controller.setAxis("pitch", 0);
+    for (let frame = 0; frame < 140; frame += 1) {
+      simulatedTime += 16;
+      controller.step(0.016, simulatedTime);
+    }
+    controller.placeDrone(5, 3);
+    controller.setAxis("pitch", 20);
+    for (let frame = 0; frame < 60; frame += 1) {
+      simulatedTime += 16;
+      controller.step(0.016, simulatedTime);
+    }
+    const twentyPercent = controller.getSnapshot();
+    assert.ok(twentyPercent.pitch > 3.5 && twentyPercent.pitch < 5.3, "20% power uses a stronger forward pitch");
+    assert.ok(
+      Math.hypot(twentyPercent.vx, twentyPercent.vy) > Math.hypot(crawl.vx, crawl.vy) * 2,
+      "20% power travels clearly faster than the 5% crawl",
+    );
+
+    controller.setAxis("pitch", 0);
+    for (let frame = 0; frame < 140; frame += 1) {
+      simulatedTime += 16;
+      controller.step(0.016, simulatedTime);
+    }
+    controller.placeDrone(5, 3);
     controller.setAxis("pitch", 100);
     for (let frame = 0; frame < 60; frame += 1) {
       simulatedTime += 16;

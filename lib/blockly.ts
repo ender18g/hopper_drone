@@ -414,12 +414,21 @@ export function registerHopperBlocks() {
 
   const value = (block: Blockly.Block, name: string, fallback = "0") =>
     javascriptGenerator.valueToCode(block, name, Order.ATOMIC) || fallback;
+  const activeStatement = (block: Blockly.Block, statement: string) =>
+    `await runtime.runBlock(${JSON.stringify(block.id)}, async () => {\n${statement}});\n`;
+  const activeExpression = (block: Blockly.Block, expression: string) => [
+    `await runtime.runBlock(${JSON.stringify(block.id)}, async () => (${expression}))`,
+    Order.AWAIT,
+  ] as [string, Order];
 
   javascriptGenerator.forBlock.program_start = (block, generator) =>
     generator.statementToCode(block, "DO");
-  javascriptGenerator.forBlock.stop_program = () => "runtime.stop();\nreturn;\n";
-  javascriptGenerator.forBlock.wait = (block) =>
-    `await drone.wait(${value(block, "SECONDS")});\n`;
+  javascriptGenerator.forBlock.stop_program = (block) =>
+    `${activeStatement(block, "runtime.stop();\n")}return;\n`;
+  javascriptGenerator.forBlock.wait = (block) => activeStatement(
+    block,
+    `await drone.wait(${value(block, "SECONDS")});\n`,
+  );
   javascriptGenerator.forBlock.custom_print = (block) =>
     `console.log(${value(block, "MESSAGE", '""')});\n`;
   javascriptGenerator.forBlock.continue_if = (block) =>
@@ -442,23 +451,40 @@ export function registerHopperBlocks() {
     const statements = generator.statementToCode(block, "DO");
     return `await runtime.repeatForSeconds(${value(block, "SECONDS")}, async () => {\n${statements}});\n`;
   };
-  javascriptGenerator.forBlock.minidrone_takeoff = () => "await drone.takeOff();\n";
-  javascriptGenerator.forBlock.minidrone_land = () => "await drone.land();\n";
-  javascriptGenerator.forBlock.minidrone_hover = () => "await drone.hover();\n";
-  javascriptGenerator.forBlock.minidrone_cutoff = () => "await drone.cutoff();\n";
-  javascriptGenerator.forBlock.minidrone_fly = (block) =>
-    `await drone.fly("${block.getFieldValue("DIRECTION")}", ${value(block, "SECONDS")}, ${value(block, "POWER")});\n`;
-  javascriptGenerator.forBlock.minidrone_rotate = (block) =>
-    `await drone.rotate(${value(block, "DEGREES")}, "${block.getFieldValue("DIRECTION")}");\n`;
-  javascriptGenerator.forBlock.minidrone_flip = (block) =>
-    `await drone.flip("${block.getFieldValue("DIRECTION")}");\n`;
-  javascriptGenerator.forBlock.minidrone_set_direction = (block) =>
-    `drone.setAxis("${block.getFieldValue("AXIS")}", ${value(block, "POWER")});\n`;
-  javascriptGenerator.forBlock.minidrone_reset = () => "drone.reset();\n";
-  javascriptGenerator.forBlock.minidrone_take_picture = () => "await drone.takePicture();\n";
-  javascriptGenerator.forBlock.minidrone_fire_bb = () => "await drone.fireGun();\n";
-  javascriptGenerator.forBlock.minidrone_grabber = (block) =>
-    `await drone.grabber("${block.getFieldValue("ACTION")}");\n`;
+  javascriptGenerator.forBlock.minidrone_takeoff = (block) =>
+    activeStatement(block, "await drone.takeOff();\n");
+  javascriptGenerator.forBlock.minidrone_land = (block) =>
+    activeStatement(block, "await drone.land();\n");
+  javascriptGenerator.forBlock.minidrone_hover = (block) =>
+    activeStatement(block, "await drone.hover();\n");
+  javascriptGenerator.forBlock.minidrone_cutoff = (block) =>
+    activeStatement(block, "await drone.cutoff();\n");
+  javascriptGenerator.forBlock.minidrone_fly = (block) => activeStatement(
+    block,
+    `await drone.fly("${block.getFieldValue("DIRECTION")}", ${value(block, "SECONDS")}, ${value(block, "POWER")});\n`,
+  );
+  javascriptGenerator.forBlock.minidrone_rotate = (block) => activeStatement(
+    block,
+    `await drone.rotate(${value(block, "DEGREES")}, "${block.getFieldValue("DIRECTION")}");\n`,
+  );
+  javascriptGenerator.forBlock.minidrone_flip = (block) => activeStatement(
+    block,
+    `await drone.flip("${block.getFieldValue("DIRECTION")}");\n`,
+  );
+  javascriptGenerator.forBlock.minidrone_set_direction = (block) => activeStatement(
+    block,
+    `drone.setAxis("${block.getFieldValue("AXIS")}", ${value(block, "POWER")});\n`,
+  );
+  javascriptGenerator.forBlock.minidrone_reset = (block) =>
+    activeStatement(block, "drone.reset();\n");
+  javascriptGenerator.forBlock.minidrone_take_picture = (block) =>
+    activeStatement(block, "await drone.takePicture();\n");
+  javascriptGenerator.forBlock.minidrone_fire_bb = (block) =>
+    activeStatement(block, "await drone.fireGun();\n");
+  javascriptGenerator.forBlock.minidrone_grabber = (block) => activeStatement(
+    block,
+    `await drone.grabber("${block.getFieldValue("ACTION")}");\n`,
+  );
   javascriptGenerator.forBlock.minidrone_get_battery_level = () => [
     "drone.getBatteryLevel()",
     Order.FUNCTION_CALL,
@@ -467,35 +493,35 @@ export function registerHopperBlocks() {
     block.getFieldValue("STATE") === "flying" ? "drone.isFlying()" : "drone.isLanded()",
     Order.FUNCTION_CALL,
   ];
-  javascriptGenerator.forBlock.minidrone_wait_until_battery_changes = () =>
-    "await drone.waitUntilBatteryLevelChanges();\n";
+  javascriptGenerator.forBlock.minidrone_wait_until_battery_changes = (block) =>
+    activeStatement(block, "await drone.waitUntilBatteryLevelChanges();\n");
   javascriptGenerator.forBlock.event_when_minidrone_state = (block, generator) => {
     const state = block.getFieldValue("STATE");
     const statements = generator.statementToCode(block, "DO");
     return `runtime.registerDrone("${state}", async () => {\n${statements}});\n`;
   };
-  javascriptGenerator.forBlock.vision_sees_color = (block) => [
+  javascriptGenerator.forBlock.vision_sees_color = (block) => activeExpression(
+    block,
     `await vision.seesColor("${block.getFieldValue("PROFILE")}", ${value(block, "COVERAGE", "12")})`,
-    Order.AWAIT,
-  ];
-  javascriptGenerator.forBlock.vision_color_coverage = (block) => [
+  );
+  javascriptGenerator.forBlock.vision_color_coverage = (block) => activeExpression(
+    block,
     `vision.colorCoverage("${block.getFieldValue("PROFILE")}")`,
-    Order.FUNCTION_CALL,
-  ];
-  javascriptGenerator.forBlock.vision_detect_objects = () =>
-    "await vision.detectObjects();\n";
-  javascriptGenerator.forBlock.vision_sees_object = (block) => [
+  );
+  javascriptGenerator.forBlock.vision_detect_objects = (block) =>
+    activeStatement(block, "await vision.detectObjects();\n");
+  javascriptGenerator.forBlock.vision_sees_object = (block) => activeExpression(
+    block,
     `await vision.seesObject(${value(block, "LABEL", '"bottle"')}, ${value(block, "CONFIDENCE", "55")} / 100)`,
-    Order.AWAIT,
-  ];
-  javascriptGenerator.forBlock.vision_object_coordinate = (block) => [
+  );
+  javascriptGenerator.forBlock.vision_object_coordinate = (block) => activeExpression(
+    block,
     `await vision.objectCoordinate(${value(block, "LABEL", '"apple"')}, "${block.getFieldValue("AXIS")}", ${value(block, "CONFIDENCE", "55")} / 100)`,
-    Order.AWAIT,
-  ];
-  javascriptGenerator.forBlock.vision_sees_custom_label = (block) => [
+  );
+  javascriptGenerator.forBlock.vision_sees_custom_label = (block) => activeExpression(
+    block,
     `await vision.seesCustomLabel(${value(block, "LABEL", '"my label"')}, ${value(block, "CONFIDENCE", "75")} / 100)`,
-    Order.AWAIT,
-  ];
+  );
 
   const asyncProcedureDefinition = (
     block: Blockly.Block,

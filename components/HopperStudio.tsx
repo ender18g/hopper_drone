@@ -513,6 +513,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
       () => {
         controller.cancelRunFlag = true;
       },
+      (blockId) => workspaceRef.current?.highlightBlock(blockId),
     );
     runtimeRef.current = runtime;
     setRunning(true);

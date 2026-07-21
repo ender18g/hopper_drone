@@ -1,6 +1,7 @@
 import type { DroneEventName } from "./drone";
 
 type AsyncHandler = () => void | Promise<void>;
+type ActiveBlockHandler = (blockId: string | null) => void;
 
 export class ExecutionRuntime {
   stopped = false;
@@ -8,6 +9,7 @@ export class ExecutionRuntime {
 
   private pressedKeys = new Set<string>();
   private cleanupCallbacks: Array<() => void> = [];
+  private activeBlocks: Array<{ token: symbol; blockId: string }> = [];
   private stopResolver: (() => void) | null = null;
   private stopPromise = new Promise<void>((resolve) => {
     this.stopResolver = resolve;
@@ -16,6 +18,7 @@ export class ExecutionRuntime {
   constructor(
     private readonly onError: (error: unknown) => void,
     private readonly onStop: () => void,
+    private readonly onActiveBlock: ActiveBlockHandler = () => undefined,
   ) {
     const keyDown = (event: KeyboardEvent) => this.pressedKeys.add(this.normalizeKey(event.key));
     const keyUp = (event: KeyboardEvent) => this.pressedKeys.delete(this.normalizeKey(event.key));
@@ -53,6 +56,20 @@ export class ExecutionRuntime {
     return this.pressedKeys.has(key);
   }
 
+  async runBlock<T>(blockId: string, handler: () => T | Promise<T>) {
+    if (this.stopped) throw new Error("Program stopped");
+    const active = { token: Symbol(blockId), blockId };
+    this.activeBlocks.push(active);
+    this.onActiveBlock(blockId);
+    try {
+      return await handler();
+    } finally {
+      const activeIndex = this.activeBlocks.findIndex((entry) => entry.token === active.token);
+      if (activeIndex >= 0) this.activeBlocks.splice(activeIndex, 1);
+      this.onActiveBlock(this.activeBlocks.at(-1)?.blockId ?? null);
+    }
+  }
+
   async repeatForSeconds(seconds: number, handler: AsyncHandler) {
     const endAt = performance.now() + Math.max(0, Number(seconds) || 0) * 1000;
     while (!this.stopped && performance.now() < endAt) {
@@ -73,6 +90,8 @@ export class ExecutionRuntime {
   stop() {
     if (this.stopped) return;
     this.stopped = true;
+    this.activeBlocks = [];
+    this.onActiveBlock(null);
     this.cleanupCallbacks.splice(0).forEach((cleanup) => cleanup());
     this.onStop();
     this.stopResolver?.();

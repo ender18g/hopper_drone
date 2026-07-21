@@ -42,6 +42,12 @@ const radians = (angle: number) => (angle * Math.PI) / 180;
 const clamp = (value: number, minimum: number, maximum: number) =>
   Math.max(minimum, Math.min(maximum, value));
 
+export const powerToTiltDegrees = (power: number) => {
+  const normalizedPower = clamp(Number(power) || 0, -100, 100);
+  const direction = Math.sign(normalizedPower);
+  return direction * 15 * Math.pow(Math.abs(normalizedPower) / 100, 0.78);
+};
+
 export function projectObjectToCamera(
   snapshot: SimulationSnapshot,
   object: SimulationObject,
@@ -364,8 +370,8 @@ export class SimulatedDroneController implements DroneController {
     const airborne = current.z > 0.035;
     const emergency = current.flyingState === "emergency";
 
-    let targetPitch = this.axes.pitch * 0.15;
-    let targetRoll = this.axes.roll * 0.15;
+    let targetPitch = powerToTiltDegrees(this.axes.pitch);
+    let targetRoll = powerToTiltDegrees(this.axes.roll);
     if (now < this.manualOverrideUntil) {
       targetPitch = this.manualPitch ?? targetPitch;
       targetRoll = this.manualRoll ?? targetRoll;

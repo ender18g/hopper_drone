@@ -8,6 +8,7 @@ Hopper Studio is a fully local block-coding, JavaScript, Bluetooth flight-contro
 - JavaScript editor for advanced students.
 - Web Bluetooth control for Hopper, FTW, Mambo, Travis, and Mars device names.
 - A 10 m × 7 m simulated flight room with damped pitch/roll physics, wall crashes, a flight-path trail, side-view attitude, and a downward camera that uses the same blocks as the real Hopper.
+- A live execution glow that follows each active flight, wait, accessory, and camera-vision block on both simulated and physical Hopper runs.
 - Drag, duplicate, delete, upload, and resize floor targets for search-pattern and computer-vision labs.
 - Simultaneous Bluetooth flight control and Wi-Fi camera display.
 - Separate Bluetooth and Hopper Wi-Fi indicators. The Wi-Fi indicator checks whether `192.168.2.1` actually responds; select it to check again immediately.
@@ -69,6 +70,8 @@ The local camera proxy accepts only `192.168.2.1`; it cannot be used as a genera
 Select **Connect simulated drone** beside the Bluetooth button. The flight room opens in a separate browser window that you can move beside the coding workspace. If the browser blocks it, allow pop-ups for Hopper Studio and select the button again. The blue connected state means **Run Program** is sending the current Blockly or JavaScript program to the simulator. Switching between the simulator and a real Hopper never clears the workspace.
 
 The room starts with airplane, car, banana, and apple targets. Drag them anywhere on the floor, select one to resize, duplicate, or delete it, or upload a local image. Drag the Hopper marker itself whenever you want to reposition its starting point; the simulator stops its horizontal motion and continues from the new location. The simulated downward camera feeds the same RGB coverage, object label, coordinate, and custom-model blocks used by the physical camera. Object-detection calls draw labeled confidence boxes over the camera feed, while color calls draw the matching-color bounds and coverage percentage. The 5°, 10°, and 15° manual attitude checks are useful for demonstrating acceleration and damping before students encode a lawnmower search in blocks.
+
+Flight power uses a classroom-friendly response curve: 5% produces a visible slow crawl, 20% gives roughly 4.3° of pitch or roll for a more useful search speed, and 100% still tops out at 15°. While a program runs, the active action block has a cyan glowing border for the full command duration. Vision blocks take over that glow while an image is being processed, then the glow returns to the surrounding flight action when appropriate. Loop containers remain unhighlighted so students can follow the concrete drone and camera operations.
 
 The included transparent floor-object PNGs are by [OpenMoji](https://openmoji.org/), the open-source emoji and icon project, and are distributed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
 
