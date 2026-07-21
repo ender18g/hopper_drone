@@ -77,6 +77,14 @@ The side-view instrument updates directly from every simulation frame, independe
 
 The included transparent floor-object PNGs are by [OpenMoji](https://openmoji.org/), the open-source emoji and icon project, and are distributed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
 
+## Use Hopper Studio offline
+
+Open Hopper Studio once while the computer can reach its hosting site or local server. The app saves the complete current page, generated JavaScript and CSS bundles, Blockly media, simulator images, and the local object-detection model. When the computer later joins the Hopper camera Wi-Fi, refreshing the page first checks the server briefly and then opens the saved copy when that server is unavailable. Camera proxy requests are never cached.
+
+The circular arrow on the WRC logo is the **hard refresh** control. Select it while the hosting site or local server is reachable to download a complete fresh set of application files before joining the drone Wi-Fi. If the site is unavailable, the hard refresh leaves the existing saved version intact and reopens it instead. Projects remain in local storage throughout either refresh.
+
+Offline caching requires HTTPS or `http://localhost`, as required by browser service-worker security. The first offline save includes the approximately 18 MB local COCO-SSD model, so keep the page open until the console reports that the offline app copy is ready.
+
 ## How Color Tracker controls the color blocks
 
 Telemetry is both a live sensor panel **and** the configuration panel used by the purple camera blocks.

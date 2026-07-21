@@ -31,8 +31,8 @@ test("server-renders Hopper Studio metadata and product shell", async () => {
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
 });
 
-test("ships the local flight, simulation, vision, and student-build surfaces", async () => {
-  const [component, simulatorComponent, drone, simulation, runtime, vision, blockly, styles, readme, packageJson] = await Promise.all([
+test("ships the local flight, simulation, vision, offline cache, and student-build surfaces", async () => {
+  const [component, simulatorComponent, drone, simulation, runtime, vision, blockly, serviceWorker, offlineManifestScript, builtOfflineManifest, styles, readme, packageJson] = await Promise.all([
     readFile(new URL("../components/HopperStudio.tsx", import.meta.url), "utf8"),
     readFile(new URL("../components/SimulatedDroneArea.tsx", import.meta.url), "utf8"),
     readFile(new URL("../lib/drone.ts", import.meta.url), "utf8"),
@@ -40,6 +40,9 @@ test("ships the local flight, simulation, vision, and student-build surfaces", a
     readFile(new URL("../lib/runtime.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/vision.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/blockly.ts", import.meta.url), "utf8"),
+    readFile(new URL("../public/sw.js", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/write-offline-manifest.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../dist/client/offline-assets.json", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../README.md", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
@@ -67,6 +70,9 @@ test("ships the local flight, simulation, vision, and student-build surfaces", a
   assert.match(component, /detection\.confidence/);
   assert.match(component, /batteryTone/);
   assert.match(component, /highlightBlock/);
+  assert.match(component, /requestOfflineCacheRefresh/);
+  assert.match(component, /serviceWorker\.register/);
+  assert.match(component, /Hard refresh Hopper Studio/);
   assert.match(drone, /9a66fa00-0800-9191-11e4-012d1540cb8e/);
   assert.match(drone, /HOPPER/);
   assert.match(drone, /interface DroneController/);
@@ -100,14 +106,27 @@ test("ships the local flight, simulation, vision, and student-build surfaces", a
   assert.match(blockly, /activeStatement/);
   assert.match(blockly, /activeExpression/);
   assert.match(blockly, /new URL\("blockly\/media\/", document\.baseURI\)/);
+  assert.doesNotThrow(() => new Function(serviceWorker));
+  assert.match(serviceWorker, /HARD_REFRESH/);
+  assert.match(serviceWorker, /request\.mode === "navigate"/);
+  assert.match(serviceWorker, /refreshAppCache/);
+  assert.match(serviceWorker, /models\/coco-ssd\/group1-shard5of5/);
+  assert.match(serviceWorker, /url\.pathname\.startsWith\("\/api\/"\)/);
+  assert.match(offlineManifestScript, /offline-assets\.json/);
+  const offlineManifest = JSON.parse(builtOfflineManifest);
+  assert.ok(offlineManifest.assets.some((asset) => /^assets\/HopperStudio-.+\.js$/.test(asset)));
+  assert.ok(offlineManifest.assets.includes("models/coco-ssd/model.json"));
+  assert.ok(offlineManifest.assets.includes("sw.js"));
   assert.match(styles, /activeBlockGlow/);
   assert.match(styles, /sim-pitch-reference/);
+  assert.match(styles, /wrcRefreshSpin/);
   assert.match(readme, /start-windows\.bat/);
   assert.match(readme, /local-network access prompt/i);
   assert.match(readme, /Bluetooth flight control is independent/);
   assert.match(readme, /hair drier/);
   assert.match(readme, /Altitude telemetry/);
   assert.match(readme, /Use the simulated drone/);
+  assert.match(readme, /Use Hopper Studio offline/);
   assert.match(readme, /OpenMoji/);
   assert.match(readme, /Standard model versus embedded model/);
   assert.match(packageJson, /"build:student"/);
@@ -124,6 +143,8 @@ test("ships the local flight, simulation, vision, and student-build surfaces", a
     access(new URL("../public/sim-assets/car.png", import.meta.url)),
     access(new URL("../public/sim-assets/banana.png", import.meta.url)),
     access(new URL("../public/sim-assets/apple.png", import.meta.url)),
+    access(new URL("../public/sw.js", import.meta.url)),
+    access(new URL("../scripts/write-offline-manifest.mjs", import.meta.url)),
   ]);
   await assert.rejects(access(new URL("app/_sites-preview", root)));
 });

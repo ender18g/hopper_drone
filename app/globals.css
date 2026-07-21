@@ -86,6 +86,50 @@ textarea:focus-visible {
   min-width: 0;
 }
 
+.wrc-refresh-button {
+  position: relative;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.wrc-refresh-button:focus-visible {
+  outline: 3px solid #39dcff;
+  outline-offset: 3px;
+}
+
+.wrc-refresh-button:hover .wrc-logo {
+  box-shadow: 0 0 0 2px #39dcff, 0 0 13px rgba(57, 220, 255, 0.55);
+}
+
+.wrc-refresh-button:disabled { cursor: wait; }
+
+.wrc-refresh-button > span {
+  width: 17px;
+  height: 17px;
+  position: absolute;
+  right: -5px;
+  bottom: -4px;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--header);
+  border-radius: 50%;
+  background: #39dcff;
+  color: #10212b;
+  font-size: 12px;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.wrc-refresh-button.refreshing > span {
+  animation: wrcRefreshSpin 700ms linear infinite;
+}
+
+@keyframes wrcRefreshSpin { to { rotate: 1turn; } }
+
 .wrc-logo {
   width: 98px;
   height: 48px;
@@ -95,6 +139,7 @@ textarea:focus-visible {
   object-fit: contain;
   object-position: center;
   filter: none;
+  transition: box-shadow 140ms ease;
 }
 
 .brand-divider {

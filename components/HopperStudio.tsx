@@ -47,6 +47,22 @@ const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as
   ...args: string[]
 ) => (...values: unknown[]) => Promise<void>;
 
+type OfflineRefreshResult = {
+  status: "updated" | "offline";
+  assets?: number;
+};
+
+const requestOfflineCacheRefresh = (worker: ServiceWorker) =>
+  new Promise<OfflineRefreshResult>((resolve) => {
+    const channel = new MessageChannel();
+    const timeout = window.setTimeout(() => resolve({ status: "offline" }), 90_000);
+    channel.port1.onmessage = (event: MessageEvent<OfflineRefreshResult>) => {
+      window.clearTimeout(timeout);
+      resolve(event.data);
+    };
+    worker.postMessage({ type: "HARD_REFRESH" }, [channel.port2]);
+  });
+
 const formatLogValue = (value: unknown) => {
   if (typeof value === "string") return value;
   if (value instanceof Error) return value.message;
@@ -121,6 +137,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   ]);
   const [showConsole, setShowConsole] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [hardRefreshing, setHardRefreshing] = useState(false);
 
   const [cameraAddress, setCameraAddress] = useState("http://192.168.2.1/");
   const [cameraSource, setCameraSource] = useState<string | null>(null);
@@ -218,9 +235,62 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     [notify],
   );
 
+  const hardRefresh = useCallback(async () => {
+    if (hardRefreshing) return;
+    persistProject(false);
+    setHardRefreshing(true);
+    notify("Checking for the newest Hopper Studio files…");
+    try {
+      if (!("serviceWorker" in navigator) || !window.isSecureContext) {
+        window.location.reload();
+        return;
+      }
+      const serviceWorkerUrl = new URL("sw.js", document.baseURI);
+      const scopeUrl = new URL("./", document.baseURI);
+      let registration = await navigator.serviceWorker.getRegistration(scopeUrl.href);
+      registration ??= await navigator.serviceWorker.register(serviceWorkerUrl.href, {
+        scope: scopeUrl.pathname,
+        updateViaCache: "none",
+      });
+      await registration.update().catch(() => undefined);
+      const worker = registration.active || registration.waiting || navigator.serviceWorker.controller;
+      if (!worker) {
+        window.location.reload();
+        return;
+      }
+      const result = await requestOfflineCacheRefresh(worker);
+      notify(
+        result.status === "updated"
+          ? `Newest Hopper Studio files saved${result.assets ? ` · ${result.assets} assets` : ""}. Reloading…`
+          : "Site unavailable — reopening the saved offline copy.",
+      );
+      window.setTimeout(() => window.location.reload(), 650);
+    } catch {
+      notify("Site unavailable — reopening the saved offline copy.");
+      window.setTimeout(() => window.location.reload(), 650);
+    }
+  }, [hardRefreshing, notify, persistProject]);
+
   useEffect(() => {
     projectNameRef.current = projectName;
   }, [projectName]);
+
+  useEffect(() => {
+    if (!("serviceWorker" in navigator) || !window.isSecureContext) return;
+    const registerOfflineApp = () => {
+      const serviceWorkerUrl = new URL("sw.js", document.baseURI);
+      const scopeUrl = new URL("./", document.baseURI);
+      void navigator.serviceWorker.register(serviceWorkerUrl.href, {
+        scope: scopeUrl.pathname,
+        updateViaCache: "none",
+      }).then(() => navigator.serviceWorker.ready)
+        .then(() => appendLog("Offline app copy ready. The WRC logo checks for a fresh version."))
+        .catch(() => appendLog("Offline app copy could not be prepared in this browser."));
+    };
+    if (document.readyState === "complete") registerOfflineApp();
+    else window.addEventListener("load", registerOfflineApp, { once: true });
+    return () => window.removeEventListener("load", registerOfflineApp);
+  }, [appendLog]);
 
   useEffect(() => {
     javascriptCodeRef.current = javascriptCode;
@@ -874,7 +944,17 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     <main className="studio-shell">
       <header className="topbar">
         <div className="brand-lockup">
-          <img src={wrcLogo} alt="World Robotics Championship" className="wrc-logo" />
+          <button
+            type="button"
+            className={`wrc-refresh-button ${hardRefreshing ? "refreshing" : ""}`}
+            onClick={() => void hardRefresh()}
+            disabled={hardRefreshing}
+            aria-label="Hard refresh Hopper Studio and update its offline files"
+            title="Hard refresh: check for and save the newest Hopper Studio files"
+          >
+            <img src={wrcLogo} alt="World Robotics Championship" className="wrc-logo" />
+            <span aria-hidden="true">↻</span>
+          </button>
           <span className="brand-divider" />
           <div>
             <div className="brand-name">HOPPER STUDIO</div>
