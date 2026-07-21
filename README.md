@@ -73,6 +73,8 @@ The room starts with airplane, car, banana, and apple targets. Drag them anywher
 
 Flight power uses a classroom-friendly response curve: 5% produces a visible slow crawl, 20% gives roughly 4.3° of pitch or roll for a more useful search speed, and 100% still tops out at 15°. While a program runs, the active action block has a cyan glowing border for the full command duration. Vision blocks take over that glow while an image is being processed, then the glow returns to the surrounding flight action when appropriate. Loop containers remain unhighlighted so students can follow the concrete drone and camera operations.
 
+The side-view instrument updates directly from every simulation frame, independently of the heavier room and camera rendering. Its altitude, vertical-speed readout, shadow, pitch, roll, and heading stay tied to the same physics snapshot. The red nose marker identifies the front of the drone: forward pitch visibly lowers that nose, backward pitch raises it, and the status label states the current attitude.
+
 The included transparent floor-object PNGs are by [OpenMoji](https://openmoji.org/), the open-source emoji and icon project, and are distributed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
 
 ## How Color Tracker controls the color blocks

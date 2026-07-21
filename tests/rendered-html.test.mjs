@@ -77,9 +77,12 @@ test("ships the local flight, simulation, vision, and student-build surfaces", a
   assert.match(simulatorComponent, /createPortal/);
   assert.match(simulatorComponent, /Drag Hopper drone to reposition it/);
   assert.match(simulatorComponent, /sim-vision-box/);
+  assert.match(simulatorComponent, /sideDroneRef/);
+  assert.match(simulatorComponent, /FRONT/);
   assert.match(simulation, /SIMULATION_ROOM = \{ width: 10, height: 7 \}/);
   assert.match(simulation, /Math\.tan\(radians\(pitch\)\)/);
   assert.match(simulation, /powerToTiltDegrees/);
+  assert.match(simulation, /getSimulationSideViewPose/);
   assert.match(simulation, /Wall impact/);
   assert.match(simulation, /placeDrone/);
   assert.match(runtime, /runBlock/);
@@ -98,6 +101,7 @@ test("ships the local flight, simulation, vision, and student-build surfaces", a
   assert.match(blockly, /activeExpression/);
   assert.match(blockly, /new URL\("blockly\/media\/", document\.baseURI\)/);
   assert.match(styles, /activeBlockGlow/);
+  assert.match(styles, /sim-pitch-reference/);
   assert.match(readme, /start-windows\.bat/);
   assert.match(readme, /local-network access prompt/i);
   assert.match(readme, /Bluetooth flight control is independent/);
@@ -186,6 +190,15 @@ test("projects simulated floor targets into the downward camera frame", async ()
   assert.equal(north.visible, true);
   assert.ok(north.centerY < 180, "north/forward targets appear above frame center");
   assert.ok(east.centerX > 320, "east/right targets appear right of frame center");
+
+  const groundedPose = simulationMath.getSimulationSideViewPose({ z: 0, vz: 0, pitch: 0 });
+  assert.equal(groundedPose.heightPixels, 0);
+  assert.equal(groundedPose.pitchLabel, "LEVEL");
+  const forwardPose = simulationMath.getSimulationSideViewPose({ z: 1.25, vz: 0.42, pitch: 4.3 });
+  assert.equal(forwardPose.heightPixels, 92.5);
+  assert.equal(forwardPose.pitchDegrees, 4.3);
+  assert.equal(forwardPose.pitchLabel, "FORWARD · NOSE DOWN");
+  assert.equal(forwardPose.verticalSpeedLabel, "↑ +0.42 m/s");
 });
 
 test("tracks nested active action and vision blocks without highlighting loop blocks", async () => {

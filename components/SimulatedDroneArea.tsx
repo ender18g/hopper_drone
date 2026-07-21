@@ -13,6 +13,7 @@ import { createPortal } from "react-dom";
 import {
   SIMULATION_ROOM,
   SimulatedDroneController,
+  getSimulationSideViewPose,
   projectObjectToCamera,
   type SimulationObject,
   type SimulationSnapshot,
@@ -73,11 +74,51 @@ export default function SimulatedDroneArea({
   const uploadInputRef = useRef<HTMLInputElement>(null);
   const dragIdRef = useRef<string | null>(null);
   const draggingDroneRef = useRef(false);
+  const sideDroneRef = useRef<HTMLDivElement>(null);
+  const sideShadowRef = useRef<HTMLDivElement>(null);
+  const sideAltitudeRef = useRef<HTMLSpanElement>(null);
+  const sideVerticalSpeedRef = useRef<HTMLSpanElement>(null);
+  const sidePitchStateRef = useRef<HTMLSpanElement>(null);
+  const sidePitchValueRef = useRef<HTMLElement>(null);
+  const sideRollValueRef = useRef<HTMLElement>(null);
+  const sideHeadingValueRef = useRef<HTMLElement>(null);
+  const sideBankRef = useRef<HTMLSpanElement>(null);
   const imageCacheRef = useRef(new Map<string, HTMLImageElement>());
   const nextObjectIdRef = useRef(1);
   const selectedObject = objects.find((object) => object.id === selectedId) ?? null;
+  const sidePose = useMemo(() => getSimulationSideViewPose(snapshot), [snapshot]);
 
-  useEffect(() => controller.subscribe(setSnapshot), [controller]);
+  useEffect(() => {
+    let lastReactUpdate = Number.NEGATIVE_INFINITY;
+    let lastFlightState = "";
+    let lastCrashState = false;
+    return controller.subscribe((nextSnapshot) => {
+      const pose = getSimulationSideViewPose(nextSnapshot);
+      sideDroneRef.current?.style.setProperty("--sim-side-height", `${pose.heightPixels}px`);
+      sideDroneRef.current?.style.setProperty("--sim-pitch", `${pose.pitchDegrees}deg`);
+      if (sideShadowRef.current) {
+        sideShadowRef.current.style.opacity = String(pose.shadowOpacity);
+        sideShadowRef.current.style.scale = `${pose.shadowScale} 1`;
+      }
+      if (sideAltitudeRef.current) sideAltitudeRef.current.textContent = `${round(nextSnapshot.z, 2)} m`;
+      if (sideVerticalSpeedRef.current) sideVerticalSpeedRef.current.textContent = pose.verticalSpeedLabel;
+      if (sidePitchStateRef.current) sidePitchStateRef.current.textContent = pose.pitchLabel;
+      if (sidePitchValueRef.current) sidePitchValueRef.current.textContent = `${round(nextSnapshot.pitch)}°`;
+      if (sideRollValueRef.current) sideRollValueRef.current.textContent = `${round(nextSnapshot.roll)}°`;
+      if (sideHeadingValueRef.current) sideHeadingValueRef.current.textContent = `${Math.round(nextSnapshot.heading)}°`;
+      if (sideBankRef.current) sideBankRef.current.style.rotate = `${nextSnapshot.roll}deg`;
+
+      const now = performance.now();
+      const importantStateChange =
+        nextSnapshot.flyingState !== lastFlightState || nextSnapshot.crashed !== lastCrashState;
+      if (importantStateChange || now - lastReactUpdate >= 30) {
+        lastReactUpdate = now;
+        lastFlightState = nextSnapshot.flyingState;
+        lastCrashState = nextSnapshot.crashed;
+        setSnapshot(nextSnapshot);
+      }
+    });
+  }, [controller, popupWindow]);
 
   useEffect(() => {
     controller.setSceneObjects(objects);
@@ -303,8 +344,8 @@ export default function SimulatedDroneArea({
     "--sim-altitude": `${Math.min(1, snapshot.z / 2.5)}`,
   } as CSSProperties;
   const sideDroneStyle = {
-    "--sim-side-height": `${Math.min(128, snapshot.z * 72)}px`,
-    "--sim-pitch": `${-snapshot.pitch}deg`,
+    "--sim-side-height": `${sidePose.heightPixels}px`,
+    "--sim-pitch": `${sidePose.pitchDegrees}deg`,
   } as CSSProperties;
 
   if (minimized || !popupWindow || popupWindow.closed) {
@@ -454,21 +495,31 @@ export default function SimulatedDroneArea({
               <div className="sim-cloud cloud-one" />
               <div className="sim-cloud cloud-two" />
               <div className="sim-bank-indicator">
-                <span style={{ rotate: `${snapshot.roll}deg` }} /><b>ROLL {round(snapshot.roll)}°</b>
+                <span ref={sideBankRef} style={{ rotate: `${snapshot.roll}deg` }} /><b>ROLL {round(snapshot.roll)}°</b>
               </div>
-              <div className="sim-side-shadow" style={{ opacity: Math.max(0.12, 0.55 - snapshot.z * 0.17) }} />
-              <div className={`sim-drone-side ${snapshot.crashed ? "crashed" : ""}`} style={sideDroneStyle}>
+              <div
+                ref={sideShadowRef}
+                className="sim-side-shadow"
+                style={{
+                  opacity: sidePose.shadowOpacity,
+                  scale: `${sidePose.shadowScale} 1`,
+                }}
+              />
+              <div ref={sideDroneRef} className={`sim-drone-side ${snapshot.crashed ? "crashed" : ""}`} style={sideDroneStyle}>
                 <i className="side-rotor left" /><i className="side-rotor right" />
                 <span className="side-arm" /><span className="side-body"><b>HOPPER</b></span>
                 <i className="side-leg left" /><i className="side-leg right" />
+                <i className="side-nose" /><span className="side-front-label">FRONT</span>
               </div>
+              <div className="sim-pitch-reference"><i /><span ref={sidePitchStateRef}>{sidePose.pitchLabel}</span></div>
               <div className="sim-side-ground"><i /></div>
-              <span className="sim-altitude-ruler">{round(snapshot.z, 2)} m</span>
+              <span ref={sideAltitudeRef} className="sim-altitude-ruler">{round(snapshot.z, 2)} m</span>
+              <span ref={sideVerticalSpeedRef} className="sim-vertical-speed">{sidePose.verticalSpeedLabel}</span>
             </div>
             <div className="sim-attitude-values">
-              <span><b>{round(snapshot.pitch)}°</b>PITCH</span>
-              <span><b>{round(snapshot.roll)}°</b>ROLL</span>
-              <span><b>{Math.round(snapshot.heading)}°</b>HEADING</span>
+              <span><b ref={sidePitchValueRef}>{round(snapshot.pitch)}°</b>PITCH</span>
+              <span><b ref={sideRollValueRef}>{round(snapshot.roll)}°</b>ROLL</span>
+              <span><b ref={sideHeadingValueRef}>{Math.round(snapshot.heading)}°</b>HEADING</span>
             </div>
           </section>
 

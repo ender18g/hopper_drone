@@ -35,6 +35,15 @@ export type SimulationSnapshot = {
   trail: Array<{ x: number; y: number }>;
 };
 
+export type SimulationSideViewPose = {
+  heightPixels: number;
+  pitchDegrees: number;
+  pitchLabel: "LEVEL" | "FORWARD · NOSE DOWN" | "BACK · NOSE UP";
+  shadowOpacity: number;
+  shadowScale: number;
+  verticalSpeedLabel: string;
+};
+
 type Axis = "pitch" | "roll" | "yaw" | "gaz";
 type FrameListener = (snapshot: SimulationSnapshot) => void;
 
@@ -46,6 +55,28 @@ export const powerToTiltDegrees = (power: number) => {
   const normalizedPower = clamp(Number(power) || 0, -100, 100);
   const direction = Math.sign(normalizedPower);
   return direction * 15 * Math.pow(Math.abs(normalizedPower) / 100, 0.78);
+};
+
+export const getSimulationSideViewPose = (
+  snapshot: Pick<SimulationSnapshot, "z" | "vz" | "pitch">,
+): SimulationSideViewPose => {
+  const altitude = Math.max(0, Number(snapshot.z) || 0);
+  const verticalSpeed = Number(snapshot.vz) || 0;
+  const pitchDegrees = Number(snapshot.pitch) || 0;
+  return {
+    heightPixels: Math.min(116, altitude * 74),
+    pitchDegrees,
+    pitchLabel: pitchDegrees > 0.45
+      ? "FORWARD · NOSE DOWN"
+      : pitchDegrees < -0.45
+        ? "BACK · NOSE UP"
+        : "LEVEL",
+    shadowOpacity: Math.max(0.1, 0.58 - altitude * 0.2),
+    shadowScale: Math.max(0.34, 1 - altitude * 0.18),
+    verticalSpeedLabel: Math.abs(verticalSpeed) < 0.02
+      ? "HOLD 0.00 m/s"
+      : `${verticalSpeed > 0 ? "↑ +" : "↓ "}${verticalSpeed.toFixed(2)} m/s`,
+  };
 };
 
 export function projectObjectToCamera(
