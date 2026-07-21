@@ -96,6 +96,7 @@ export default function SimulatedDroneArea({
       const pose = getSimulationSideViewPose(nextSnapshot);
       sideDroneRef.current?.style.setProperty("--sim-side-height", `${pose.heightPixels}px`);
       sideDroneRef.current?.style.setProperty("--sim-pitch", `${pose.pitchDegrees}deg`);
+      sideDroneRef.current?.style.setProperty("--sim-roll-flip", `${pose.rollFlipDegrees}deg`);
       if (sideShadowRef.current) {
         sideShadowRef.current.style.opacity = String(pose.shadowOpacity);
         sideShadowRef.current.style.scale = `${pose.shadowScale} 1`;
@@ -103,10 +104,10 @@ export default function SimulatedDroneArea({
       if (sideAltitudeRef.current) sideAltitudeRef.current.textContent = `${round(nextSnapshot.z, 2)} m`;
       if (sideVerticalSpeedRef.current) sideVerticalSpeedRef.current.textContent = pose.verticalSpeedLabel;
       if (sidePitchStateRef.current) sidePitchStateRef.current.textContent = pose.pitchLabel;
-      if (sidePitchValueRef.current) sidePitchValueRef.current.textContent = `${round(nextSnapshot.pitch)}°`;
-      if (sideRollValueRef.current) sideRollValueRef.current.textContent = `${round(nextSnapshot.roll)}°`;
+      if (sidePitchValueRef.current) sidePitchValueRef.current.textContent = `${round(pose.pitchDegrees)}°`;
+      if (sideRollValueRef.current) sideRollValueRef.current.textContent = `${round(nextSnapshot.roll + pose.rollFlipDegrees)}°`;
       if (sideHeadingValueRef.current) sideHeadingValueRef.current.textContent = `${Math.round(nextSnapshot.heading)}°`;
-      if (sideBankRef.current) sideBankRef.current.style.rotate = `${nextSnapshot.roll}deg`;
+      if (sideBankRef.current) sideBankRef.current.style.rotate = `${nextSnapshot.roll + pose.rollFlipDegrees}deg`;
 
       const now = performance.now();
       const importantStateChange =
@@ -342,10 +343,13 @@ export default function SimulatedDroneArea({
     top: `${(1 - snapshot.y / SIMULATION_ROOM.height) * 100}%`,
     "--sim-heading": `${snapshot.heading}deg`,
     "--sim-altitude": `${Math.min(1, snapshot.z / 2.5)}`,
+    "--sim-flip-pitch": `${snapshot.flipAxis === "pitch" ? snapshot.flipAngle : 0}deg`,
+    "--sim-flip-roll": `${snapshot.flipAxis === "roll" ? snapshot.flipAngle : 0}deg`,
   } as CSSProperties;
   const sideDroneStyle = {
     "--sim-side-height": `${sidePose.heightPixels}px`,
     "--sim-pitch": `${sidePose.pitchDegrees}deg`,
+    "--sim-roll-flip": `${sidePose.rollFlipDegrees}deg`,
   } as CSSProperties;
 
   if (minimized || !popupWindow || popupWindow.closed) {
@@ -368,7 +372,11 @@ export default function SimulatedDroneArea({
         </div>
         <div className="sim-title-actions">
           <span className={`sim-state-badge ${snapshot.crashed ? "crashed" : ""}`}>
-            <i /> {snapshot.crashed ? "CRASHED" : snapshot.flyingState.toUpperCase()}
+            <i /> {snapshot.crashed
+              ? "CRASHED"
+              : snapshot.flipDirection
+                ? `FLIPPING ${snapshot.flipDirection.toUpperCase()}`
+                : snapshot.flyingState.toUpperCase()}
           </span>
           <button onClick={onMinimize} aria-label="Minimize simulator">—</button>
           <button onClick={onDisconnect} aria-label="Disconnect simulator">×</button>
@@ -495,7 +503,7 @@ export default function SimulatedDroneArea({
               <div className="sim-cloud cloud-one" />
               <div className="sim-cloud cloud-two" />
               <div className="sim-bank-indicator">
-                <span ref={sideBankRef} style={{ rotate: `${snapshot.roll}deg` }} /><b>ROLL {round(snapshot.roll)}°</b>
+                <span ref={sideBankRef} style={{ rotate: `${snapshot.roll + sidePose.rollFlipDegrees}deg` }} /><b>ROLL {round(snapshot.roll + sidePose.rollFlipDegrees)}°</b>
               </div>
               <div
                 ref={sideShadowRef}
@@ -517,8 +525,8 @@ export default function SimulatedDroneArea({
               <span ref={sideVerticalSpeedRef} className="sim-vertical-speed">{sidePose.verticalSpeedLabel}</span>
             </div>
             <div className="sim-attitude-values">
-              <span><b ref={sidePitchValueRef}>{round(snapshot.pitch)}°</b>PITCH</span>
-              <span><b ref={sideRollValueRef}>{round(snapshot.roll)}°</b>ROLL</span>
+              <span><b ref={sidePitchValueRef}>{round(sidePose.pitchDegrees)}°</b>PITCH</span>
+              <span><b ref={sideRollValueRef}>{round(snapshot.roll + sidePose.rollFlipDegrees)}°</b>ROLL</span>
               <span><b ref={sideHeadingValueRef}>{Math.round(snapshot.heading)}°</b>HEADING</span>
             </div>
           </section>

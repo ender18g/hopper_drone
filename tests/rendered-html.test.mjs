@@ -89,6 +89,8 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(simulation, /SIMULATION_ROOM = \{ width: 10, height: 7 \}/);
   assert.match(simulation, /Math\.tan\(radians\(pitch\)\)/);
   assert.match(simulation, /powerToTiltDegrees/);
+  assert.match(simulation, /getSimulationFlipTransform/);
+  assert.doesNotMatch(simulation, /forwardImpulse/);
   assert.match(simulation, /getSimulationSideViewPose/);
   assert.match(simulation, /Wall impact/);
   assert.match(simulation, /placeDrone/);
@@ -120,6 +122,8 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.ok(offlineManifest.assets.includes("sw.js"));
   assert.match(styles, /activeBlockGlow/);
   assert.match(styles, /sim-pitch-reference/);
+  assert.match(styles, /rotateX\(var\(--sim-flip-pitch/);
+  assert.match(styles, /height: 232px/);
   assert.match(styles, /wrcRefreshSpin/);
   assert.match(styles, /local-pill\.saving/);
   assert.match(readme, /start-windows\.bat/);
@@ -203,6 +207,7 @@ test("projects simulated floor targets into the downward camera frame", async ()
   const snapshot = {
     x: 5, y: 3, z: 1.25, vx: 0, vy: 0, vz: 0,
     heading: 0, pitch: 0, roll: 0, yawRate: 0,
+    flipAxis: null, flipAngle: 0, flipDirection: null,
     flyingState: "hovering", connected: true, crashed: false,
     crashReason: null, crashSequence: 0, batteryLevel: 100, trail: [],
   };
@@ -218,10 +223,31 @@ test("projects simulated floor targets into the downward camera frame", async ()
   assert.equal(groundedPose.heightPixels, 0);
   assert.equal(groundedPose.pitchLabel, "LEVEL");
   const forwardPose = simulationMath.getSimulationSideViewPose({ z: 1.25, vz: 0.42, pitch: 4.3 });
-  assert.equal(forwardPose.heightPixels, 92.5);
+  assert.ok(Math.abs(forwardPose.heightPixels - 64.48) < 0.01);
   assert.equal(forwardPose.pitchDegrees, 4.3);
   assert.equal(forwardPose.pitchLabel, "FORWARD · NOSE DOWN");
   assert.equal(forwardPose.verticalSpeedLabel, "↑ +0.42 m/s");
+
+  const highPose = simulationMath.getSimulationSideViewPose({ z: 5, vz: 0, pitch: 0 });
+  assert.ok(highPose.heightPixels > 140 && highPose.heightPixels < 160, "five metres retains visible headroom");
+  const forwardFlip = simulationMath.getSimulationFlipTransform("forward", 0.5);
+  const backwardFlip = simulationMath.getSimulationFlipTransform("backward", 0.5);
+  const leftFlip = simulationMath.getSimulationFlipTransform("left", 0.5);
+  const rightFlip = simulationMath.getSimulationFlipTransform("right", 0.5);
+  assert.deepEqual(forwardFlip, { axis: "pitch", angle: 180 });
+  assert.deepEqual(backwardFlip, { axis: "pitch", angle: -180 });
+  assert.deepEqual(leftFlip, { axis: "roll", angle: -180 });
+  assert.deepEqual(rightFlip, { axis: "roll", angle: 180 });
+  const flipPose = simulationMath.getSimulationSideViewPose({
+    z: 1.25,
+    vz: 0,
+    pitch: 0,
+    flipAxis: "pitch",
+    flipAngle: 180,
+    flipDirection: "forward",
+  });
+  assert.equal(flipPose.pitchDegrees, 180);
+  assert.equal(flipPose.pitchLabel, "FORWARD FLIP · 180°");
 });
 
 test("tracks nested active action and vision blocks without highlighting loop blocks", async () => {
@@ -339,6 +365,22 @@ test("simulated takeoff, tilt acceleration, and damping behave as a flight contr
       controller.step(0.016, simulatedTime);
     }
     assert.ok(Math.abs(controller.getSnapshot().pitch) < 1, "attitude damps back to level");
+
+    controller.placeDrone(5, 3);
+    const flipPromise = controller.flip("left");
+    const flipStart = controller.getSnapshot();
+    assert.equal(flipStart.flyingState, "flipping");
+    assert.equal(flipStart.flipAxis, "roll");
+    assert.equal(flipStart.vx, 0);
+    assert.equal(flipStart.vy, 0);
+    controller.step(0.016, performance.now() + 410);
+    const flipMiddle = controller.getSnapshot();
+    assert.ok(flipMiddle.flipAngle < -170 && flipMiddle.flipAngle > -190, "left flip reaches half rotation");
+    assert.equal(flipMiddle.x, 5, "flip holds horizontal position");
+    assert.equal(flipMiddle.y, 3, "flip holds horizontal position");
+    controller.cancelRunFlag = true;
+    await flipPromise;
+    assert.equal(controller.getSnapshot().flipAxis, null);
     controller.disconnect();
   } finally {
     globalThis.window = previousWindow;

@@ -15,6 +15,9 @@ export type SimulationObject = {
   uploaded?: boolean;
 };
 
+export type SimulationFlipDirection = "forward" | "backward" | "left" | "right";
+export type SimulationFlipAxis = "pitch" | "roll";
+
 export type SimulationSnapshot = {
   x: number;
   y: number;
@@ -25,6 +28,9 @@ export type SimulationSnapshot = {
   heading: number;
   pitch: number;
   roll: number;
+  flipAxis: SimulationFlipAxis | null;
+  flipAngle: number;
+  flipDirection: SimulationFlipDirection | null;
   yawRate: number;
   flyingState: string;
   connected: boolean;
@@ -38,7 +44,8 @@ export type SimulationSnapshot = {
 export type SimulationSideViewPose = {
   heightPixels: number;
   pitchDegrees: number;
-  pitchLabel: "LEVEL" | "FORWARD · NOSE DOWN" | "BACK · NOSE UP";
+  rollFlipDegrees: number;
+  pitchLabel: string;
   shadowOpacity: number;
   shadowScale: number;
   verticalSpeedLabel: string;
@@ -57,20 +64,39 @@ export const powerToTiltDegrees = (power: number) => {
   return direction * 15 * Math.pow(Math.abs(normalizedPower) / 100, 0.78);
 };
 
+export const getSimulationFlipTransform = (
+  direction: SimulationFlipDirection,
+  progress: number,
+) => ({
+  axis: direction === "forward" || direction === "backward" ? "pitch" as const : "roll" as const,
+  angle: (direction === "backward" || direction === "left" ? -1 : 1) * clamp(progress, 0, 1) * 360,
+});
+
+export const simulationAltitudeToPixels = (altitude: number) => {
+  const safeAltitude = Math.max(0, Number(altitude) || 0);
+  return 174 * (1 - Math.exp(-safeAltitude / 2.7));
+};
+
 export const getSimulationSideViewPose = (
-  snapshot: Pick<SimulationSnapshot, "z" | "vz" | "pitch">,
+  snapshot: Pick<SimulationSnapshot, "z" | "vz" | "pitch"> &
+    Partial<Pick<SimulationSnapshot, "flipAxis" | "flipAngle" | "flipDirection">>,
 ): SimulationSideViewPose => {
   const altitude = Math.max(0, Number(snapshot.z) || 0);
   const verticalSpeed = Number(snapshot.vz) || 0;
-  const pitchDegrees = Number(snapshot.pitch) || 0;
+  const flipAngle = Number(snapshot.flipAngle) || 0;
+  const pitchDegrees = (Number(snapshot.pitch) || 0) + (snapshot.flipAxis === "pitch" ? flipAngle : 0);
+  const rollFlipDegrees = snapshot.flipAxis === "roll" ? flipAngle : 0;
   return {
-    heightPixels: Math.min(116, altitude * 74),
+    heightPixels: simulationAltitudeToPixels(altitude),
     pitchDegrees,
-    pitchLabel: pitchDegrees > 0.45
-      ? "FORWARD · NOSE DOWN"
-      : pitchDegrees < -0.45
-        ? "BACK · NOSE UP"
-        : "LEVEL",
+    rollFlipDegrees,
+    pitchLabel: snapshot.flipDirection
+      ? `${snapshot.flipDirection.toUpperCase()} FLIP · ${Math.round(Math.abs(flipAngle))}°`
+      : pitchDegrees > 0.45
+        ? "FORWARD · NOSE DOWN"
+        : pitchDegrees < -0.45
+          ? "BACK · NOSE UP"
+          : "LEVEL",
     shadowOpacity: Math.max(0.1, 0.58 - altitude * 0.2),
     shadowScale: Math.max(0.34, 1 - altitude * 0.18),
     verticalSpeedLabel: Math.abs(verticalSpeed) < 0.02
@@ -132,6 +158,13 @@ export class SimulatedDroneController implements DroneController {
   private manualPitch: number | null = null;
   private manualRoll: number | null = null;
   private manualOverrideUntil = 0;
+  private flipAnimation: {
+    direction: SimulationFlipDirection;
+    startedAt: number;
+    durationMs: number;
+    anchorX: number;
+    anchorY: number;
+  } | null = null;
   private snapshot: SimulationSnapshot = this.initialSnapshot();
 
   connect() {
@@ -149,6 +182,7 @@ export class SimulatedDroneController implements DroneController {
     if (this.animationFrame !== null) window.cancelAnimationFrame(this.animationFrame);
     this.animationFrame = null;
     this.axes = { pitch: 0, roll: 0, yaw: 0, gaz: 0 };
+    this.clearFlip();
     this.snapshot = { ...this.snapshot, connected: false };
     this.emitTelemetry();
     this.emitFrame();
@@ -202,6 +236,10 @@ export class SimulatedDroneController implements DroneController {
     this.targetAltitude = null;
     this.pitchVelocity = 0;
     this.rollVelocity = 0;
+    this.manualPitch = null;
+    this.manualRoll = null;
+    this.manualOverrideUntil = 0;
+    this.flipAnimation = null;
     this.snapshot = { ...this.initialSnapshot(), connected };
     this.emitTelemetry();
     this.emitFrame();
@@ -209,6 +247,7 @@ export class SimulatedDroneController implements DroneController {
 
   placeDrone(x: number, y: number) {
     if (this.snapshot.crashed) return;
+    this.clearFlip();
     const droneRadius = 0.064;
     this.snapshot = {
       ...this.snapshot,
@@ -294,6 +333,7 @@ export class SimulatedDroneController implements DroneController {
     this.manualPitch = null;
     this.manualRoll = null;
     this.manualOverrideUntil = 0;
+    this.clearFlip();
     if (this.snapshot.z > 0.08 && !this.snapshot.crashed) {
       this.targetAltitude = this.snapshot.z;
     }
@@ -332,23 +372,36 @@ export class SimulatedDroneController implements DroneController {
     if (normalizedAxis === "gaz") this.targetAltitude = null;
   }
 
-  async flip(direction: "forward" | "backward" | "left" | "right") {
+  async flip(direction: SimulationFlipDirection) {
     if (this.snapshot.z < 0.55 || this.snapshot.crashed) return;
-    const pitch = direction === "forward" ? 34 : direction === "backward" ? -34 : 0;
-    const roll = direction === "right" ? 34 : direction === "left" ? -34 : 0;
-    this.manualPitch = pitch;
-    this.manualRoll = roll;
-    this.manualOverrideUntil = performance.now() + 520;
-    const heading = radians(this.snapshot.heading);
-    const forwardImpulse = pitch / 34 * 0.65;
-    const rightImpulse = roll / 34 * 0.65;
+    this.reset();
+    const transform = getSimulationFlipTransform(direction, 0);
+    const animation = {
+      direction,
+      startedAt: performance.now(),
+      durationMs: 820,
+      anchorX: this.snapshot.x,
+      anchorY: this.snapshot.y,
+    };
+    this.flipAnimation = animation;
+    this.pitchVelocity = 0;
+    this.rollVelocity = 0;
+    this.targetAltitude = this.snapshot.z;
     this.snapshot = {
       ...this.snapshot,
-      vx: this.snapshot.vx + Math.sin(heading) * forwardImpulse + Math.cos(heading) * rightImpulse,
-      vy: this.snapshot.vy + Math.cos(heading) * forwardImpulse - Math.sin(heading) * rightImpulse,
-      vz: this.snapshot.vz + 0.45,
+      vx: 0,
+      vy: 0,
+      pitch: 0,
+      roll: 0,
+      flipAxis: transform.axis,
+      flipAngle: transform.angle,
+      flipDirection: direction,
+      flyingState: "flipping",
     };
-    await this.wait(1.2);
+    this.emitTelemetry();
+    this.emitFrame();
+    await this.wait(animation.durationMs / 1000);
+    if (this.flipAnimation === animation) this.finishFlip();
   }
 
   async waitUntilBatteryLevelChanges() {
@@ -400,6 +453,7 @@ export class SimulatedDroneController implements DroneController {
     const current = this.snapshot;
     const airborne = current.z > 0.035;
     const emergency = current.flyingState === "emergency";
+    const activeFlip = this.flipAnimation;
 
     let targetPitch = powerToTiltDegrees(this.axes.pitch);
     let targetRoll = powerToTiltDegrees(this.axes.roll);
@@ -428,6 +482,24 @@ export class SimulatedDroneController implements DroneController {
     let x = current.x;
     let y = current.y;
     let flyingState = current.flyingState;
+    let flipAxis = current.flipAxis;
+    let flipAngle = current.flipAngle;
+    let flipDirection = current.flipDirection;
+
+    if (activeFlip) {
+      const progress = clamp((now - activeFlip.startedAt) / activeFlip.durationMs, 0, 1);
+      const transform = getSimulationFlipTransform(activeFlip.direction, progress);
+      flipAxis = transform.axis;
+      flipAngle = transform.angle;
+      flipDirection = activeFlip.direction;
+      if (progress >= 1) {
+        this.flipAnimation = null;
+        flipAxis = null;
+        flipAngle = 0;
+        flipDirection = null;
+        flyingState = airborne ? "hovering" : "landed";
+      }
+    }
 
     if ((airborne || flyingState === "takingoff" || flyingState === "landing") && !emergency) {
       const forwardAcceleration = 9.81 * Math.tan(radians(pitch));
@@ -464,6 +536,13 @@ export class SimulatedDroneController implements DroneController {
     x += vx * elapsed;
     y += vy * elapsed;
     z = Math.max(0, z + vz * elapsed);
+
+    if (activeFlip) {
+      x = activeFlip.anchorX;
+      y = activeFlip.anchorY;
+      vx = 0;
+      vy = 0;
+    }
 
     const droneRadius = 0.064;
     const hitLeft = x < droneRadius;
@@ -529,6 +608,9 @@ export class SimulatedDroneController implements DroneController {
       vz,
       pitch,
       roll,
+      flipAxis,
+      flipAngle,
+      flipDirection,
       heading,
       yawRate,
       flyingState,
@@ -552,10 +634,14 @@ export class SimulatedDroneController implements DroneController {
     if (this.snapshot.crashed) return;
     this.axes = { pitch: 0, roll: 0, yaw: 0, gaz: 0 };
     this.targetAltitude = null;
+    this.flipAnimation = null;
     this.snapshot = {
       ...this.snapshot,
       z: 0,
       vz: 0,
+      flipAxis: null,
+      flipAngle: 0,
+      flipDirection: null,
       crashed: true,
       flyingState: "emergency",
       crashReason: reason,
@@ -563,6 +649,26 @@ export class SimulatedDroneController implements DroneController {
     };
     this.emitTelemetry();
     this.emitEvent("crashed");
+    this.emitFrame();
+  }
+
+  private clearFlip() {
+    this.flipAnimation = null;
+    if (this.snapshot.flipAxis === null && this.snapshot.flipDirection === null) return;
+    this.snapshot = {
+      ...this.snapshot,
+      flipAxis: null,
+      flipAngle: 0,
+      flipDirection: null,
+      flyingState: this.snapshot.flyingState === "flipping"
+        ? this.snapshot.z > 0.08 ? "hovering" : "landed"
+        : this.snapshot.flyingState,
+    };
+  }
+
+  private finishFlip() {
+    this.clearFlip();
+    this.emitTelemetry();
     this.emitFrame();
   }
 
@@ -584,6 +690,9 @@ export class SimulatedDroneController implements DroneController {
       heading: 0,
       pitch: 0,
       roll: 0,
+      flipAxis: null,
+      flipAngle: 0,
+      flipDirection: null,
       yawRate: 0,
       flyingState: "landed",
       connected: false,

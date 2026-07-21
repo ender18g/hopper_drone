@@ -2152,10 +2152,14 @@ body.resizing-vision * {
   z-index: 8;
   translate: -50% -50%;
   rotate: var(--sim-heading, 0deg);
+  transform: perspective(240px) rotateX(var(--sim-flip-pitch, 0deg)) rotateY(var(--sim-flip-roll, 0deg));
+  transform-origin: center;
+  transform-style: preserve-3d;
   padding: 0;
   border: 0;
   background: transparent;
   transition: filter 100ms linear;
+  will-change: left, top, rotate, transform;
   filter: drop-shadow(0 calc(3px + var(--sim-altitude) * 8px) calc(2px + var(--sim-altitude) * 5px) rgba(0, 0, 0, 0.58));
   cursor: grab;
   touch-action: none;
@@ -2392,7 +2396,7 @@ body.resizing-vision * {
 }
 
 .sim-side-field {
-  height: 158px;
+  height: 232px;
   position: relative;
   overflow: hidden;
   background: linear-gradient(#a9dbf4 0%, #d7edf7 72%, #e8f4f7 100%);
@@ -2442,9 +2446,11 @@ body.resizing-vision * {
   bottom: calc(21px + var(--sim-side-height));
   translate: -50% 0;
   rotate: var(--sim-pitch);
+  transform: perspective(280px) rotateX(var(--sim-roll-flip, 0deg));
   transform-origin: center;
+  transform-style: preserve-3d;
   transition: none;
-  will-change: bottom, rotate;
+  will-change: bottom, rotate, transform;
   filter: drop-shadow(0 4px 3px rgba(20, 38, 47, 0.35));
 }
 
