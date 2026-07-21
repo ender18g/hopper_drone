@@ -71,6 +71,7 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(component, /batteryTone/);
   assert.match(component, /highlightBlock/);
   assert.match(component, /requestOfflineCacheRefresh/);
+  assert.match(component, /waitForServiceWorkerActivation/);
   assert.match(component, /serviceWorker\.register/);
   assert.match(component, /Hard refresh Hopper Studio/);
   assert.match(component, /OFFLINE READY/);
@@ -113,6 +114,11 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(serviceWorker, /HARD_REFRESH/);
   assert.match(serviceWorker, /request\.mode === "navigate"/);
   assert.match(serviceWorker, /refreshAppCache/);
+  assert.match(serviceWorker, /text\/css,\*\/\*;q=0\.1/);
+  assert.match(serviceWorker, /promoteCache/);
+  assert.match(serviceWorker, /ACTIVE_CACHE_POINTER_URL/);
+  assert.match(serviceWorker, /ignoreVary: true/);
+  assert.match(serviceWorker, /isLocalDevelopmentAsset/);
   assert.match(serviceWorker, /models\/coco-ssd\/group1-shard5of5/);
   assert.match(serviceWorker, /url\.pathname\.startsWith\("\/api\/"\)/);
   assert.match(offlineManifestScript, /offline-assets\.json/);
@@ -153,6 +159,109 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
     access(new URL("../scripts/write-offline-manifest.mjs", import.meta.url)),
   ]);
   await assert.rejects(access(new URL("app/_sites-preview", root)));
+});
+
+test("refreshes local CSS as a stylesheet and promotes offline caches atomically", async () => {
+  const source = await readFile(new URL("../public/sw.js", import.meta.url), "utf8");
+  class MemoryCache {
+    entries = new Map();
+
+    async match(request) {
+      const response = this.entries.get(new Request(request).url);
+      return response?.clone();
+    }
+
+    async put(request, response) {
+      this.entries.set(new Request(request).url, response.clone());
+    }
+
+    async keys() {
+      return [...this.entries.keys()].map((url) => new Request(url));
+    }
+  }
+
+  const stores = new Map();
+  const cacheStorage = {
+    async open(name) {
+      if (!stores.has(name)) stores.set(name, new MemoryCache());
+      return stores.get(name);
+    },
+    async has(name) {
+      return stores.has(name);
+    },
+    async keys() {
+      return [...stores.keys()];
+    },
+    async delete(name) {
+      return stores.delete(name);
+    },
+  };
+  let unavailablePath = null;
+  const requestedCssAcceptHeaders = [];
+  const mockFetch = async (request) => {
+    const normalizedRequest = new Request(request);
+    const url = new URL(normalizedRequest.url);
+    if (url.pathname === unavailablePath) return new Response("missing", { status: 503 });
+    if (url.pathname === "/") {
+      return new Response(
+        '<link rel="stylesheet" href="/app/globals.css"><script src="/assets/app.js"></script>',
+        { status: 200, headers: { "content-type": "text/html" } },
+      );
+    }
+    if (url.pathname === "/offline-assets.json") {
+      return new Response(JSON.stringify({ assets: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (url.pathname === "/app/globals.css") {
+      const accept = normalizedRequest.headers.get("accept") || "";
+      requestedCssAcceptHeaders.push(accept);
+      return accept.includes("text/css")
+        ? new Response(".studio-shell { display: grid; }", { status: 200, headers: { "content-type": "text/css" } })
+        : new Response("export default {};", { status: 200, headers: { "content-type": "text/javascript" } });
+    }
+    if (url.pathname === "/assets/app.js") {
+      return new Response('import "/assets/chunk.js";', {
+        status: 200,
+        headers: { "content-type": "text/javascript" },
+      });
+    }
+    return new Response("asset", { status: 200, headers: { "content-type": "application/octet-stream" } });
+  };
+  const serviceWorkerSelf = {
+    registration: { scope: "https://hopper.test/" },
+    clients: { claim: async () => undefined },
+    skipWaiting: async () => undefined,
+    addEventListener() {},
+  };
+  const createWorker = new Function(
+    "self",
+    "caches",
+    "fetch",
+    `${source}\nreturn { performAppCacheRefresh, readActiveCacheName };`,
+  );
+  const worker = createWorker(serviceWorkerSelf, cacheStorage, mockFetch);
+
+  const legacyCache = await cacheStorage.open("hopper-studio-offline-v1");
+  await legacyCache.put(new Request("https://hopper.test/"), new Response("old complete shell"));
+  const refreshed = await worker.performAppCacheRefresh({ strict: true });
+  assert.equal(refreshed.status, "updated");
+  assert.ok(requestedCssAcceptHeaders.length > 0);
+  assert.ok(requestedCssAcceptHeaders.every((header) => header.includes("text/css")));
+  const activeName = await worker.readActiveCacheName();
+  assert.match(activeName, /^hopper-studio-offline-v2-snapshot-/);
+  const activeCache = await cacheStorage.open(activeName);
+  const cachedCss = await activeCache.match(new Request("https://hopper.test/app/globals.css"));
+  assert.equal(cachedCss.headers.get("content-type"), "text/css");
+  assert.match(await cachedCss.text(), /display: grid/);
+  assert.equal(await cacheStorage.has("hopper-studio-offline-v1"), false);
+
+  unavailablePath = "/sim-assets/car.png";
+  const failedRefresh = await worker.performAppCacheRefresh({ strict: true });
+  assert.equal(failedRefresh.status, "offline");
+  assert.equal(await worker.readActiveCacheName(), activeName, "failed refresh keeps the prior complete cache active");
+  assert.match(await (await activeCache.match(new Request("https://hopper.test/"))).text(), /app\/globals\.css/);
 });
 
 test("calculates inclusive RGB coverage and centered object coordinates", async () => {

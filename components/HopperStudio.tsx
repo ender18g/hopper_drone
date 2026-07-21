@@ -64,6 +64,28 @@ const requestOfflineCacheRefresh = (worker: ServiceWorker) =>
     worker.postMessage({ type: "HARD_REFRESH" }, [channel.port2]);
   });
 
+const waitForServiceWorkerActivation = (worker: ServiceWorker) => {
+  if (worker.state === "activated") return Promise.resolve(worker);
+  return new Promise<ServiceWorker>((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      worker.removeEventListener("statechange", handleStateChange);
+      reject(new Error("The updated offline worker did not activate in time."));
+    }, 90_000);
+    const handleStateChange = () => {
+      if (worker.state === "activated") {
+        window.clearTimeout(timeout);
+        worker.removeEventListener("statechange", handleStateChange);
+        resolve(worker);
+      } else if (worker.state === "redundant") {
+        window.clearTimeout(timeout);
+        worker.removeEventListener("statechange", handleStateChange);
+        reject(new Error("The updated offline worker could not activate."));
+      }
+    };
+    worker.addEventListener("statechange", handleStateChange);
+  });
+};
+
 const formatLogValue = (value: unknown) => {
   if (typeof value === "string") return value;
   if (value instanceof Error) return value.message;
@@ -257,7 +279,11 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
         updateViaCache: "none",
       });
       await registration.update().catch(() => undefined);
-      const worker = registration.active || registration.waiting || navigator.serviceWorker.controller;
+      const updatingWorker = registration.installing || registration.waiting;
+      const activatedUpdate = updatingWorker
+        ? await waitForServiceWorkerActivation(updatingWorker).catch(() => undefined)
+        : undefined;
+      const worker = activatedUpdate || registration.active || navigator.serviceWorker.controller;
       if (!worker) {
         window.location.reload();
         return;
