@@ -16,7 +16,7 @@ export type ThresholdResult = {
   binaryData: Uint8ClampedArray;
 };
 
-export type VisionScanKind = "threshold" | "object" | "apriltag";
+export type VisionScanKind = "threshold" | "object" | "apriltag" | "custom";
 
 export type VisionScanEvent = {
   kind: VisionScanKind;
@@ -223,9 +223,10 @@ export class VisionRuntime {
     });
   }
 
-  seesObject(label: string, minimumConfidence = 0.55) {
+  async seesObject(label: string, minimumConfidence = 0.55) {
     const wanted = String(label).trim().toLowerCase();
-    return this.lastObjectDetections.some(
+    const detections = await this.detectObjects(minimumConfidence);
+    return detections.some(
       (detection) => detection.class.toLowerCase() === wanted && detection.score >= Number(minimumConfidence),
     );
   }
@@ -266,23 +267,26 @@ export class VisionRuntime {
     });
   }
 
-  seesAprilTag(id: number | "any" | string = "any") {
-    if (String(id).toLowerCase() === "any") return this.lastAprilTagDetections.length > 0;
+  async seesAprilTag(id: number | "any" | string = "any") {
+    const detections = await this.scanAprilTags();
+    if (String(id).toLowerCase() === "any") return detections.length > 0;
     const wanted = Math.round(Number(id));
-    return this.lastAprilTagDetections.some((detection) => detection.id === wanted);
+    return detections.some((detection) => detection.id === wanted);
   }
 
   async centerOnAprilTag(
     drone: DroneController,
     id: number | "any" | string = "any",
-    power = 5,
+    translationPower = 10,
     centerSlack = 5,
     angleSlack = 5,
+    lostTagSearches = 3,
   ) {
     const wanted = String(id).toLowerCase() === "any" ? "any" : Math.round(Number(id));
-    const safePower = clampPercent(power);
+    const safeTranslationPower = clampPercent(translationPower);
     const safeCenterSlack = Math.max(1, Math.min(35, Number(centerSlack) || 5));
     const safeAngleSlack = Math.max(1, Math.min(45, Number(angleSlack) || 5));
+    const safeLostTagSearches = Math.max(1, Math.min(20, Math.round(Number(lostTagSearches) || 3)));
     const deadline = performance.now() + 30_000;
     let misses = 0;
 
@@ -296,11 +300,11 @@ export class VisionRuntime {
       )[0];
       if (!target) {
         misses += 1;
-        if (misses >= 3) {
+        if (misses >= safeLostTagSearches) {
           drone.reset();
           return false;
         }
-        await drone.wait(0.25);
+        await drone.wait(0.45);
         continue;
       }
       misses = 0;
@@ -308,18 +312,18 @@ export class VisionRuntime {
       const verticalError = target.centerY;
       if (Math.abs(horizontalError) > safeCenterSlack || Math.abs(verticalError) > safeCenterSlack) {
         if (Math.abs(horizontalError) >= Math.abs(verticalError)) {
-          drone.setAxis("roll", horizontalError > 0 ? safePower : -safePower);
+          drone.setAxis("roll", horizontalError > 0 ? safeTranslationPower : -safeTranslationPower);
         } else {
-          drone.setAxis("pitch", verticalError > 0 ? safePower : -safePower);
+          drone.setAxis("pitch", verticalError > 0 ? safeTranslationPower : -safeTranslationPower);
         }
-        await drone.wait(0.16);
+        await drone.wait(0.3);
         drone.reset();
-        await drone.wait(0.28);
+        await drone.wait(0.65);
         continue;
       }
       if (Math.abs(target.yaw) > safeAngleSlack) {
         await drone.rotate(
-          Math.min(25, Math.abs(target.yaw)),
+          Math.abs(target.yaw),
           target.yaw > 0 ? "clockwise" : "counterclockwise",
         );
         continue;
@@ -352,16 +356,18 @@ export class VisionRuntime {
     }
   }
 
-  async classifyCustomModel() {
-    if (!this.customModel) {
-      throw new Error(
-        "Load a standard Teachable Machine image model in Vision Testing first.",
-      );
-    }
-    const frame = this.captureCanvas(420, true);
-    const predictions = await this.customModel.predict(frame, false);
-    this.onCustomPredictions(predictions);
-    return predictions;
+  async classifyCustomModel(announceScan = true) {
+    return this.scanned("custom", announceScan, async () => {
+      if (!this.customModel) {
+        throw new Error(
+          "Load a standard Teachable Machine image model in Vision Testing first.",
+        );
+      }
+      const frame = this.captureCanvas(420, true);
+      const predictions = await this.customModel.predict(frame, false);
+      this.onCustomPredictions(predictions);
+      return predictions;
+    });
   }
 
   async seesCustomLabel(label: string, minimumConfidence = 0.75) {

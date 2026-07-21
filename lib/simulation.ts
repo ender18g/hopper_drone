@@ -148,6 +148,7 @@ export class SimulatedDroneController implements DroneController {
   onEvent?: (eventName: DroneEventName) => void;
 
   private connected = false;
+  private runGeneration = 0;
   private animationFrame: number | null = null;
   private previousFrame = 0;
   private telemetryElapsed = 0;
@@ -181,11 +182,10 @@ export class SimulatedDroneController implements DroneController {
   }
 
   disconnect() {
+    this.abortRun();
     this.connected = false;
     if (this.animationFrame !== null) window.cancelAnimationFrame(this.animationFrame);
     this.animationFrame = null;
-    this.axes = { pitch: 0, roll: 0, yaw: 0, gaz: 0 };
-    this.clearFlip();
     this.snapshot = { ...this.snapshot, connected: false };
     this.emitTelemetry();
     this.emitFrame();
@@ -315,13 +315,20 @@ export class SimulatedDroneController implements DroneController {
     await this.wait(duration);
   }
 
+  abortRun() {
+    this.runGeneration += 1;
+    this.cancelRunFlag = true;
+    this.reset();
+  }
+
   async startRun() {
+    this.runGeneration += 1;
     this.cancelRunFlag = false;
     this.reset();
   }
 
   async stopRun() {
-    this.reset();
+    this.abortRun();
     await this.landNoWait();
   }
 
@@ -352,9 +359,12 @@ export class SimulatedDroneController implements DroneController {
 
   async forceLand() {
     if (this.snapshot.crashed) return;
-    this.cancelRunFlag = false;
+    this.abortRun();
     await this.landNoWait();
-    await this.waitFor(() => this.snapshot.z <= 0.01 || this.snapshot.crashed, 3.5);
+    const endAt = performance.now() + 3500;
+    while (this.snapshot.z > 0.01 && !this.snapshot.crashed && performance.now() < endAt) {
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 25));
+    }
   }
 
   async cutoff() {
@@ -386,10 +396,13 @@ export class SimulatedDroneController implements DroneController {
   }
 
   async rotate(degreesToTurn = 0, direction: "clockwise" | "counterclockwise" = "clockwise") {
+    const generation = this.runGeneration;
+    if (!this.isRunActive(generation)) return;
     const safeDegrees = Math.max(0, Number(degreesToTurn) || 0);
     const seconds = safeDegrees / 180;
     this.axes.yaw = direction === "clockwise" ? 100 : -100;
     await this.wait(seconds);
+    if (!this.isRunActive(generation)) return;
     this.axes.yaw = 0;
     await this.wait(0.55);
   }
@@ -399,6 +412,8 @@ export class SimulatedDroneController implements DroneController {
     seconds = 0,
     power = 0,
   ) {
+    const generation = this.runGeneration;
+    if (!this.isRunActive(generation)) return;
     const safeSeconds = Math.max(0, Number(seconds) || 0);
     let safePower = clamp(Number(power) || 0, -100, 100);
     let axis: Axis;
@@ -408,18 +423,20 @@ export class SimulatedDroneController implements DroneController {
     if (["down", "left", "backward"].includes(direction)) safePower *= -1;
     this.setAxis(axis, safePower);
     await this.wait(safeSeconds);
+    if (!this.isRunActive(generation)) return;
     this.setAxis(axis, 0);
     await this.wait(2);
   }
 
   setAxis(axis: "pitch" | "roll" | "yaw" | "gaz" | "altitude", power: number) {
+    if (this.cancelRunFlag) return;
     const normalizedAxis = axis === "altitude" ? "gaz" : axis;
     this.axes[normalizedAxis] = clamp(Number(power) || 0, -100, 100);
     if (normalizedAxis === "gaz") this.targetAltitude = null;
   }
 
   async flip(direction: SimulationFlipDirection) {
-    if (this.snapshot.z < 0.55 || this.snapshot.crashed) return;
+    if (this.cancelRunFlag || this.snapshot.z < 0.55 || this.snapshot.crashed) return;
     this.reset();
     const transform = getSimulationFlipTransform(direction, 0);
     const animation = {
@@ -456,8 +473,9 @@ export class SimulatedDroneController implements DroneController {
   }
 
   async wait(seconds: number) {
+    const generation = this.runGeneration;
     const endAt = performance.now() + Math.max(0, Number(seconds) || 0) * 1000;
-    while (!this.cancelRunFlag && performance.now() < endAt) {
+    while (this.isRunActive(generation) && performance.now() < endAt) {
       await new Promise<void>((resolve) => window.setTimeout(resolve, 25));
     }
   }
@@ -719,10 +737,15 @@ export class SimulatedDroneController implements DroneController {
   }
 
   private async waitFor(predicate: () => boolean, timeoutSeconds: number) {
+    const generation = this.runGeneration;
     const endAt = performance.now() + timeoutSeconds * 1000;
-    while (!this.cancelRunFlag && !predicate() && performance.now() < endAt) {
+    while (this.isRunActive(generation) && !predicate() && performance.now() < endAt) {
       await new Promise<void>((resolve) => window.setTimeout(resolve, 25));
     }
+  }
+
+  private isRunActive(generation: number) {
+    return !this.cancelRunFlag && generation === this.runGeneration;
   }
 
   private initialSnapshot(): SimulationSnapshot {

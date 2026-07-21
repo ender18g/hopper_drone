@@ -85,6 +85,9 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(drone, /9a66fa00-0800-9191-11e4-012d1540cb8e/);
   assert.match(drone, /HOPPER/);
   assert.match(drone, /interface DroneController/);
+  assert.match(drone, /abortRun/);
+  assert.match(drone, /runGeneration/);
+  assert.match(drone, /isRunActive/);
   assert.doesNotMatch(drone, /sensorHealth|linkRssi/);
   assert.match(simulatorComponent, /SIMULATED DRONE ROOM/);
   assert.match(simulatorComponent, /UPLOAD IMAGE/);
@@ -112,6 +115,9 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(vision, /analyzeThreshold/);
   assert.match(vision, /scanAprilTags/);
   assert.match(vision, /centerOnAprilTag/);
+  assert.match(vision, /this\.scanned\("custom"/);
+  assert.match(vision, /safeLostTagSearches/);
+  assert.match(vision, /await drone\.rotate/);
   assert.match(vision, /detectionCenterCoordinate/);
   assert.match(vision, /lastObjectCoordinates/);
   assert.match(vision, /loadCustomModel/);
@@ -125,6 +131,8 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(blockly, /vision_scan_apriltags/);
   assert.match(blockly, /vision_sees_apriltag/);
   assert.match(blockly, /vision_center_apriltag/);
+  assert.doesNotMatch(blockly, /YAW_POWER/);
+  assert.match(blockly, /LOST_SEARCHES/);
   assert.doesNotMatch(blockly, /vision_sees_color/);
   assert.match(blockly, /vision_sees_custom_label/);
   assert.match(blockly, /vision_object_coordinate/);
@@ -329,6 +337,56 @@ test("calculates binary threshold coverage and centered object coordinates", asy
     x: -100,
     y: -100,
   });
+
+  const noOp = () => undefined;
+  const runtime = new visionMath.VisionRuntime(
+    () => null,
+    () => null,
+    noOp,
+    noOp,
+    noOp,
+    noOp,
+    noOp,
+    noOp,
+    noOp,
+  );
+  let objectScans = 0;
+  runtime.detectObjects = async () => {
+    objectScans += 1;
+    return [{ class: "bottle", score: 0.97 }];
+  };
+  assert.equal(await runtime.seesObject("bottle", 0.55), true);
+  assert.equal(objectScans, 1, "camera sees object performs its own scan");
+
+  let aprilScans = 0;
+  runtime.scanAprilTags = async () => {
+    aprilScans += 1;
+    return [{ id: 7, centerX: 0, centerY: 0, yaw: 0 }];
+  };
+  assert.equal(await runtime.seesAprilTag(7), true);
+  assert.equal(aprilScans, 1, "camera sees AprilTag performs its own scan");
+
+  const scanSequence = [
+    [{ id: 7, centerX: 18, centerY: 0, yaw: 0 }],
+    [],
+    [],
+    [{ id: 7, centerX: 0, centerY: 0, yaw: 20 }],
+    [{ id: 7, centerX: 0, centerY: 0, yaw: 0 }],
+  ];
+  runtime.scanAprilTags = async () => scanSequence.shift() ?? [];
+  const commands = [];
+  const drone = {
+    cancelRunFlag: false,
+    setAxis(axis, power) { commands.push(["axis", axis, power]); },
+    reset() { commands.push(["reset"]); },
+    async wait(seconds) { commands.push(["wait", seconds]); },
+    async rotate(degrees, direction) { commands.push(["rotate", degrees, direction]); },
+  };
+  assert.equal(await runtime.centerOnAprilTag(drone, 7, 7, 5, 5, 3), true);
+  assert.ok(commands.some((command) => command[0] === "axis" && command[1] === "roll" && command[2] === 7));
+  assert.ok(commands.some((command) => command[0] === "wait" && command[1] === 0.3));
+  assert.ok(commands.some((command) => command[0] === "rotate" && command[1] === 20 && command[2] === "clockwise"));
+  assert.equal(scanSequence.length, 0, "centering rescans after movement and tolerates two missed frames");
 });
 
 test("detects tag36h11 IDs and rotated 2D pose from camera pixels", async () => {
@@ -480,6 +538,19 @@ test("tracks nested active action and vision blocks without highlighting loop bl
       "fly-forward",
       null,
     ]);
+    let releaseLongBlock;
+    const longBlock = runtime.runBlock("long-flight", () => new Promise((resolve) => {
+      releaseLongBlock = resolve;
+    }));
+    runtime.stop();
+    let idle = false;
+    const idlePromise = runtime.waitUntilIdle().then(() => { idle = true; });
+    await Promise.resolve();
+    assert.equal(idle, false, "stop waits for an already-running task to settle");
+    releaseLongBlock();
+    await Promise.all([longBlock, idlePromise]);
+    assert.equal(idle, true);
+    await assert.rejects(runtime.runBlock("stale-command", async () => undefined), /Program stopped/);
   } finally {
     globalThis.window = previousWindow;
   }
@@ -581,9 +652,26 @@ test("simulated takeoff, tilt acceleration, and damping behave as a flight contr
     assert.ok(flipMiddle.flipAngle < -170 && flipMiddle.flipAngle > -190, "left flip reaches half rotation");
     assert.equal(flipMiddle.x, 5, "flip holds horizontal position");
     assert.equal(flipMiddle.y, 3, "flip holds horizontal position");
-    controller.cancelRunFlag = true;
+    controller.abortRun();
     await flipPromise;
     assert.equal(controller.getSnapshot().flipAxis, null);
+
+    await controller.startRun();
+    const staleFly = controller.fly("forward", 1, 5);
+    controller.abortRun();
+    await controller.startRun();
+    controller.setAxis("pitch", 20);
+    await staleFly;
+    assert.equal(controller.axes.pitch, 20, "a stale command cannot clear movement from a newer run");
+
+    const forcedLanding = controller.forceLand();
+    for (let frame = 0; frame < 300; frame += 1) {
+      simulatedTime += 16;
+      controller.step(0.016, simulatedTime);
+    }
+    await forcedLanding;
+    assert.equal(controller.cancelRunFlag, true, "forced landing keeps old run tasks cancelled");
+    assert.deepEqual(controller.axes, { pitch: 0, roll: 0, yaw: 0, gaz: 0 });
     controller.disconnect();
   } finally {
     globalThis.window = previousWindow;

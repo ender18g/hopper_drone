@@ -20,6 +20,7 @@ export interface DroneController {
   onTelemetry?: (telemetry: DroneTelemetry) => void;
   onEvent?: (eventName: DroneEventName) => void;
   disconnect(): void;
+  abortRun(): void;
   startRun(): Promise<void>;
   stopRun(): Promise<void>;
   takeOff(): Promise<void>;
@@ -126,6 +127,7 @@ export class MamboController {
   private sequence = { fa0a: 0, fa0b: 0, fa0c: 0 };
   private connectionPing: number | null = null;
   private flightCommandPing: number | null = null;
+  private runGeneration = 0;
   private gunUSBID: number | null = null;
   private gunAttached = false;
   private clawUSBID: number | null = null;
@@ -189,14 +191,22 @@ export class MamboController {
   }
 
   disconnect() {
+    this.abortRun();
     this.stopConnectionPing();
-    this.stopFlightPing();
     this.gattServer?.disconnect();
     this.gattServer = null;
     this.emitTelemetry();
   }
 
+  abortRun() {
+    this.runGeneration += 1;
+    this.cancelRunFlag = true;
+    this.reset();
+    this.stopFlightPing();
+  }
+
   async startRun() {
+    this.runGeneration += 1;
     this.cancelRunFlag = false;
     this.stopConnectionPing();
     this.reset();
@@ -204,12 +214,13 @@ export class MamboController {
   }
 
   async stopRun() {
-    this.reset();
+    this.abortRun();
     await this.landNoWait();
     this.startConnectionPing();
   }
 
   async takeOff() {
+    const generation = this.runGeneration;
     if (this.cancelRunFlag) return;
     if (this.batteryLevel !== null && this.batteryLevel <= 10) {
       throw new FlightError("Low battery: charge the drone before takeoff.");
@@ -223,6 +234,7 @@ export class MamboController {
       0,
       0,
     ]);
+    if (!this.isRunActive(generation)) return;
     await this.writeCommand("fa00", "fa0b", [
       2,
       this.nextSequence("fa0b"),
@@ -231,11 +243,14 @@ export class MamboController {
       1,
       0,
     ]);
+    if (!this.isRunActive(generation)) return;
     await this.wait(3);
+    if (!this.isRunActive(generation)) return;
     this.startFlightPing();
   }
 
   async land() {
+    const generation = this.runGeneration;
     if (this.cancelRunFlag) return;
     this.reset();
     this.stopFlightPing();
@@ -248,6 +263,7 @@ export class MamboController {
       3,
       0,
     ]);
+    if (!this.isRunActive(generation)) return;
     this.startFlightPing();
     await this.wait(5);
   }
@@ -267,8 +283,7 @@ export class MamboController {
   }
 
   async forceLand() {
-    this.reset();
-    this.stopFlightPing();
+    this.abortRun();
     for (let index = 0; index < 20; index += 1) {
       await this.writeCommand("fa00", "fa0c", [
         2,
@@ -305,6 +320,8 @@ export class MamboController {
   }
 
   async rotate(degrees = 0, direction: "clockwise" | "counterclockwise" = "clockwise") {
+    const generation = this.runGeneration;
+    if (!this.isRunActive(generation)) return;
     const safeDegrees = Math.max(0, Number(degrees) || 0);
     const seconds = safeDegrees / 180;
     this.flightCommandBuffer.yaw = {
@@ -312,6 +329,7 @@ export class MamboController {
       driveStepsRemaining: seconds * 20,
     };
     await this.wait(seconds);
+    if (!this.isRunActive(generation)) return;
     await this.wait(2);
   }
 
@@ -320,6 +338,8 @@ export class MamboController {
     seconds = 0,
     power = 0,
   ) {
+    const generation = this.runGeneration;
+    if (!this.isRunActive(generation)) return;
     const safeSeconds = Math.max(0, Number(seconds) || 0);
     let safePower = Math.max(-100, Math.min(100, Number(power) || 0));
     let axis: "gaz" | "roll" | "pitch";
@@ -334,10 +354,12 @@ export class MamboController {
       driveStepsRemaining: safeSeconds * 20,
     };
     await this.wait(safeSeconds);
+    if (!this.isRunActive(generation)) return;
     await this.wait(2);
   }
 
   setAxis(axis: "pitch" | "roll" | "yaw" | "gaz" | "altitude", power: number) {
+    if (this.cancelRunFlag) return;
     const normalizedAxis = axis === "altitude" ? "gaz" : axis;
     this.flightCommandBuffer[normalizedAxis].consign = Math.max(
       -100,
@@ -347,6 +369,7 @@ export class MamboController {
   }
 
   async flip(direction: "forward" | "backward" | "left" | "right") {
+    const generation = this.runGeneration;
     if (this.cancelRunFlag) return;
     const directionEnum = { forward: 0, backward: 1, right: 2, left: 3 }[direction];
     this.stopFlightPing();
@@ -362,20 +385,23 @@ export class MamboController {
       0,
       0,
     ]);
+    if (!this.isRunActive(generation)) return;
     this.startFlightPing();
     await this.wait(2.5);
   }
 
   async waitUntilBatteryLevelChanges() {
+    const generation = this.runGeneration;
     const initialLevel = this.batteryLevel;
-    while (!this.cancelRunFlag && this.batteryLevel === initialLevel) {
+    while (this.isRunActive(generation) && this.batteryLevel === initialLevel) {
       await sleep(100);
     }
   }
 
   async wait(seconds: number) {
+    const generation = this.runGeneration;
     const endAt = performance.now() + Math.max(0, Number(seconds) || 0) * 1000;
-    while (!this.cancelRunFlag && performance.now() < endAt) {
+    while (this.isRunActive(generation) && performance.now() < endAt) {
       await sleep(Math.min(100, Math.max(0, endAt - performance.now())));
     }
   }
@@ -404,6 +430,7 @@ export class MamboController {
   }
 
   async fireGun() {
+    const generation = this.runGeneration;
     if (!this.gunAttached || this.gunUSBID === null) {
       throw new FlightError("No cannon accessory is attached.");
     }
@@ -421,11 +448,13 @@ export class MamboController {
       0,
       0,
     ]);
+    if (!this.isRunActive(generation)) return;
     this.startFlightPing();
     await this.wait(3);
   }
 
   async grabber(openOrClose: "OPEN" | "CLOSE") {
+    const generation = this.runGeneration;
     if (!this.clawAttached || this.clawUSBID === null) {
       throw new FlightError("No grabber accessory is attached.");
     }
@@ -443,6 +472,7 @@ export class MamboController {
       0,
       0,
     ]);
+    if (!this.isRunActive(generation)) return;
     this.startFlightPing();
     await this.wait(2);
   }
@@ -451,6 +481,10 @@ export class MamboController {
     const current = this.sequence[channel] % 255;
     this.sequence[channel] += 1;
     return current;
+  }
+
+  private isRunActive(generation: number) {
+    return !this.cancelRunFlag && generation === this.runGeneration;
   }
 
   private getUUID(shortUUID: string) {
@@ -490,13 +524,15 @@ export class MamboController {
   }
 
   private async sendFlightCommand() {
+    const generation = this.runGeneration;
+    if (!this.isRunActive(generation)) return;
     const buffer = this.flightCommandBuffer;
     for (const axis of Object.keys(buffer) as Array<keyof typeof buffer>) {
       buffer[axis].driveStepsRemaining -= 1;
       if (buffer[axis].driveStepsRemaining < 0) buffer[axis].consign = 0;
     }
     const moving = buffer.pitch.consign !== 0 || buffer.roll.consign !== 0;
-    await this.writeCommand("fa00", "fa0b", [
+    const values = [
       2,
       this.nextSequence("fa0b"),
       2,
@@ -512,7 +548,15 @@ export class MamboController {
       0,
       0,
       0,
-    ]).catch(() => undefined);
+    ];
+    try {
+      const characteristic = await this.getCharacteristic("fa00", "fa0b");
+      if (!this.isRunActive(generation)) return;
+      const command = Uint8Array.from(values.map((value) => (value + 256) % 256));
+      await characteristic.writeValue(command);
+    } catch {
+      // A stopped run or a transient Bluetooth write must not restart command traffic.
+    }
   }
 
   private startConnectionPing() {

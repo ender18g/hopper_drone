@@ -3214,3 +3214,4 @@ body.sim-popup-body {
 
 .sim-vision-status.threshold { color: #fff; border-color: rgba(255, 255, 255, .5); }
 .sim-vision-status.apriltag { color: #c5b7ff; border-color: rgba(170, 145, 255, .5); }
+.sim-vision-status.custom { color: #ffd884; border-color: rgba(255, 199, 89, .5); }

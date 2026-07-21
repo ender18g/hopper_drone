@@ -43,6 +43,7 @@ type CameraState = "offline" | "connecting" | "live" | "error";
 type ModelState = "off" | "loading" | "ready" | "error";
 type WifiState = "checking" | "connected" | "disconnected";
 type OfflineCacheState = "saving" | "ready" | "unavailable";
+type VisionTestingMode = Exclude<VisionScanKind, "custom">;
 
 const PROJECT_KEY = "hopper-studio-project-v1";
 const THRESHOLD_KEY = "hopper-studio-threshold-v1";
@@ -135,6 +136,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   const simulationControllerRef = useRef<SimulatedDroneController | null>(null);
   const simulatorWindowRef = useRef<Window | null>(null);
   const runtimeRef = useRef<ExecutionRuntime | null>(null);
+  const stopProgramPromiseRef = useRef<Promise<void> | null>(null);
   const imageRef = useRef<HTMLImageElement>(null);
   const simulationCameraRef = useRef<HTMLCanvasElement>(null);
   const simulationTelemetryCameraRef = useRef<HTMLCanvasElement>(null);
@@ -179,7 +181,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   const [thresholdPercent, setThresholdPercent] = useState(60);
   const [thresholdInvert, setThresholdInvert] = useState(false);
   const [thresholdResult, setThresholdResult] = useState<ThresholdResult | null>(null);
-  const [visionTestingMode, setVisionTestingMode] = useState<VisionScanKind | null>(null);
+  const [visionTestingMode, setVisionTestingMode] = useState<VisionTestingMode | null>(null);
   const [displayVisionMode, setDisplayVisionMode] = useState<VisionScanKind | null>(null);
   const [simulatorVisionMode, setSimulatorVisionMode] = useState<VisionScanKind | null>(null);
   const [scanEvent, setScanEvent] = useState<VisionScanEvent | null>(null);
@@ -548,7 +550,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     closeSimulatorWindow();
     const controller = simulationControllerRef.current;
     if (controller) {
-      controller.cancelRunFlag = true;
+      controller.abortRun();
       controller.disconnect();
     }
     simulationControllerRef.current = null;
@@ -667,7 +669,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   };
 
   const runProgram = async () => {
-    if (running) return;
+    if (running || runtimeRef.current || stopProgramPromiseRef.current) return;
     const controller = controllerRef.current;
     const vision = visionRef.current;
     if (!controller || !connectionMode || !telemetry.connected) {
@@ -688,7 +690,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     const runtime = new ExecutionRuntime(
       (error) => appendLog("Event error:", error),
       () => {
-        controller.cancelRunFlag = true;
+        controller.abortRun();
       },
       (blockId) => workspaceRef.current?.highlightBlock(blockId),
     );
@@ -702,11 +704,23 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
       warn: (...values: unknown[]) => appendLog("Warning:", ...values),
       error: (...values: unknown[]) => appendLog("Error:", ...values),
     };
+    const programDrone = new Proxy(controller, {
+      get(target, property, receiver) {
+        const member = Reflect.get(target, property, receiver);
+        if (typeof member !== "function") return member;
+        return (...argumentsList: unknown[]) => {
+          if (runtime.stopped || runtimeRef.current !== runtime) {
+            throw new Error("Program stopped");
+          }
+          return Reflect.apply(member, target, argumentsList);
+        };
+      },
+    }) as DroneController;
 
     try {
       await controller.startRun();
       const execute = new AsyncFunction("drone", "vision", "runtime", "console", code);
-      await execute(controller, vision, runtime, programConsole);
+      await execute(programDrone, vision, runtime, programConsole);
       if (runtime.hasEvents && !runtime.stopped) {
         appendLog("Listening for events. Press Stop when finished.");
         await runtime.waitUntilStopped();
@@ -723,20 +737,42 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
         await controller.forceLand().catch(() => undefined);
       }
     } finally {
-      runtimeRef.current = null;
-      setRunning(false);
+      if (runtimeRef.current === runtime) runtimeRef.current = null;
+      if (!stopProgramPromiseRef.current) setRunning(false);
     }
   };
 
   const stopProgram = async () => {
-    const controller = controllerRef.current;
-    runtimeRef.current?.stop();
-    if (controller) {
-      controller.cancelRunFlag = true;
-      appendLog("Stopping program — emergency landing…");
-      await controller.forceLand().catch((error) => appendLog("Landing:", error));
+    if (stopProgramPromiseRef.current) {
+      await stopProgramPromiseRef.current;
+      return;
     }
-    setRunning(false);
+    const controller = controllerRef.current;
+    const runtime = runtimeRef.current;
+    const stopTask = Promise.resolve().then(async () => {
+      runtime?.stop();
+      controller?.abortRun();
+      setVisionTestingMode(null);
+      if (controller) {
+        appendLog("Stopping program — cancelling all tasks and landing…");
+        await controller.forceLand().catch((error) => appendLog("Landing:", error));
+      }
+      if (runtime) {
+        await Promise.race([
+          runtime.waitUntilIdle(),
+          new Promise<void>((resolve) => window.setTimeout(resolve, 2000)),
+        ]);
+      }
+      if (runtimeRef.current === runtime) runtimeRef.current = null;
+      setRunning(false);
+      appendLog("■ All program tasks stopped and flight commands cleared");
+    });
+    stopProgramPromiseRef.current = stopTask;
+    try {
+      await stopTask;
+    } finally {
+      if (stopProgramPromiseRef.current === stopTask) stopProgramPromiseRef.current = null;
+    }
   };
 
   const emergencyCutoff = async () => {
@@ -744,7 +780,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     if (!controller) return;
     if (!window.confirm("Emergency only: stop the motors immediately?")) return;
     runtimeRef.current?.stop();
-    controller.cancelRunFlag = true;
+    controller.abortRun();
     await controller.cutoff().catch((error) => appendLog("Motor cutoff:", error));
     setRunning(false);
     appendLog("⚠ Emergency motor cutoff sent");
@@ -817,7 +853,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     }
   }, [appendLog]);
 
-  const toggleVisionTesting = async (mode: VisionScanKind) => {
+  const toggleVisionTesting = async (mode: VisionTestingMode) => {
     if (visionTestingMode === mode) {
       setVisionTestingMode(null);
       setDisplayVisionMode(null);

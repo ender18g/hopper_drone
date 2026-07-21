@@ -703,6 +703,8 @@ export default function SimulatedDroneArea({
                     ? `BINARY SCAN · ${thresholdResult?.whiteCoverage.toFixed(1) ?? "0.0"}% WHITE`
                     : visionMode === "apriltag"
                       ? `APRILTAG SCAN · ${aprilTagDetections.length} FOUND`
+                      : visionMode === "custom"
+                        ? "CUSTOM MODEL SCAN"
                     : "VISION IDLE"}
               </span>
             </div>

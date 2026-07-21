@@ -383,7 +383,7 @@ export function registerHopperBlocks() {
       output: "Boolean",
       inputsInline: true,
       colour: VISION,
-      tooltip: "Checks the objects saved by the latest scan for objects block.",
+      tooltip: "Scans a fresh camera frame, then checks it for the requested object.",
     },
     {
       type: "vision_object_coordinate",
@@ -438,7 +438,7 @@ export function registerHopperBlocks() {
       ],
       output: "Boolean",
       colour: VISION,
-      tooltip: "Checks the results from the latest scan for AprilTags block.",
+      tooltip: "Scans a fresh camera frame, then checks it for the requested tag36h11 ID.",
     },
   ]);
 
@@ -451,13 +451,15 @@ export function registerHopperBlocks() {
         .appendField("center on april tag")
         .appendField(new Blockly.FieldDropdown(APRIL_TAG_OPTIONS as [string, string][]), "TAG_ID")
         .appendField("at");
-      this.appendValueInput("POWER").setCheck("Number").appendField("% power");
+      this.appendValueInput("POWER").setCheck("Number").appendField("roll/pitch %");
       this.appendDummyInput("SLACK_SETTINGS")
         .appendField("finish within")
         .appendField(new Blockly.FieldNumber(5, 1, 35, 1), "CENTER_SLACK")
         .appendField("% center and")
         .appendField(new Blockly.FieldNumber(5, 1, 45, 1), "ANGLE_SLACK")
-        .appendField("° alignment")
+        .appendField("° alignment; give up after")
+        .appendField(new Blockly.FieldNumber(3, 1, 20, 1), "LOST_SEARCHES")
+        .appendField("lost tag searches")
         .setVisible(false);
       this.appendDummyInput()
         .appendField(new Blockly.FieldImage(settingsIcon, 18, 18, "Alignment settings", (field) => {
@@ -471,7 +473,7 @@ export function registerHopperBlocks() {
       this.setNextStatement(true);
       this.setInputsInline(true);
       this.setColour(DRONE);
-      this.setTooltip("Centers the tag within the chosen percentage, then aligns the drone forward axis with the tag x axis. The gear changes both exit tolerances.");
+      this.setTooltip("Scans after every movement, centers the tag, then aligns the drone forward axis with the tag x axis. The gear changes exit tolerances and missed-scan limit.");
     },
   };
 
@@ -589,11 +591,11 @@ export function registerHopperBlocks() {
     activeStatement(block, "await vision.scanAprilTags();\n");
   javascriptGenerator.forBlock.vision_sees_apriltag = (block) => activeExpression(
     block,
-    `vision.seesAprilTag(${JSON.stringify(block.getFieldValue("TAG_ID"))})`,
+    `await vision.seesAprilTag(${JSON.stringify(block.getFieldValue("TAG_ID"))})`,
   );
   javascriptGenerator.forBlock.vision_center_apriltag = (block) => activeStatement(
     block,
-    `await vision.centerOnAprilTag(drone, ${JSON.stringify(block.getFieldValue("TAG_ID"))}, ${value(block, "POWER", "5")}, ${Number(block.getFieldValue("CENTER_SLACK")) || 5}, ${Number(block.getFieldValue("ANGLE_SLACK")) || 5});\n`,
+    `await vision.centerOnAprilTag(drone, ${JSON.stringify(block.getFieldValue("TAG_ID"))}, ${value(block, "POWER", "10")}, ${Number(block.getFieldValue("CENTER_SLACK")) || 5}, ${Number(block.getFieldValue("ANGLE_SLACK")) || 5}, ${Number(block.getFieldValue("LOST_SEARCHES")) || 3});\n`,
   );
 
   const asyncProcedureDefinition = (
@@ -680,7 +682,7 @@ export const hopperToolbox: Blockly.utils.toolbox.ToolboxDefinition = {
             {
               kind: "block",
               type: "vision_center_apriltag",
-              inputs: { POWER: numberShadow(5) },
+              inputs: { POWER: numberShadow(10) },
             },
             {
               kind: "block",

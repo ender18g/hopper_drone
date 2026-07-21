@@ -17,7 +17,7 @@ Hopper Studio is a fully local block-coding, JavaScript, Bluetooth flight-contro
 - `camera sees binary white/black` frame-coverage and center-pixel blocks.
 - A local tag36h11 AprilTag generator/detector with ID, centered X/Y coordinates, tag-axis overlays, and yaw alignment.
 - A full-page printable US Letter PDF generator for every tag36h11 ID; the PDF opens in a separate browser tab and remains vector-sharp when printed.
-- `scan for april tags`, `camera sees april tag with ID`, and `center on april tag` blocks. The centering block gear edits its center and angle exit tolerances.
+- `scan for april tags`, `camera sees april tag with ID`, and `center on april tag` blocks. The centering block has adjustable roll/pitch power, while its gear edits center/angle tolerances and the missed-scan limit.
 - Optional local COCO-SSD blocks and live labels. The neural network is stored locally and loads only when requested.
 - Object results include confidence and centered X/Y coordinates on a signed `-100` to `+100` scale. `(0, 0)` is the frame center; right and up are positive.
 - A local file loader and block for standard Teachable Machine image classifiers.
@@ -99,10 +99,11 @@ The three Vision Testing toggles are mutually exclusive: thresholding, object de
 - `camera sees binary white with threshold at 60%, invert false, in 10% of frame` scans once and returns true when at least 10% of the processed frame is white. Its dropdown can check black instead.
 - `camera sees binary white/black at center pixel` performs the same scan but checks only the reticle pixel.
 - On a dark carpet, tune the threshold in the panel until a white sheet remains cleanly white, then use the binary coverage or center-pixel block to decide when to land.
-- `scan for objects` is the operation that refreshes COCO results. The object-presence and X/Y-coordinate blocks read the latest saved scan instead of silently running another model pass.
-- `scan for april tags` refreshes tag36h11 IDs and 2D poses. `camera sees april tag with ID` reads those saved results; the ID dropdown includes `any`.
+- `scan for objects` refreshes COCO results explicitly. The `camera sees [object]` predicate also performs a fresh object scan every time it is evaluated; the X/Y-coordinate block reads the most recently detected position.
+- `scan for april tags` refreshes tag36h11 IDs and 2D poses. `camera sees april tag with ID` also performs a fresh AprilTag scan every time it is evaluated, so it works directly inside an `if` without a preceding scan block; the ID dropdown includes `any`.
 - In AprilTag Detection, choose an ID under **Print a real tag** and select **Generate PDF**. Hopper Studio opens a full-page US Letter PDF in a new tab for printing; allow pop-ups if the browser asks.
-- `center on april tag at 5% power` rescans while it centers X/Y, then turns until the drone's forward axis matches the tag x axis. It succeeds inside ±5% of frame center and ±5° by default. Select its gear to loosen or tighten either exit tolerance. It exits if the requested tag is lost for three scans or after 30 seconds, so a real drone program cannot remain trapped forever.
+- `center on april tag` rescans after every movement while it centers X/Y and aligns the drone's forward axis with the tag x axis. Roll/pitch defaults to 10% power and uses a 0.30-second correction pulse before stabilizing and rescanning. Yaw uses the measured tag angle as a complete clockwise or counterclockwise `rotate` command, then scans the tag again. It succeeds inside ±5% of frame center and ±5° by default. Select its gear to adjust both tolerances and how many consecutive lost-tag scans are allowed; the lost limit defaults to three and can be raised when the real camera temporarily loses the tag during movement. A 30-second overall timeout still prevents the block from becoming trapped forever.
+- Every `camera sees`, `custom model sees`, and explicit `scan` block captures a fresh frame and shows the scan sweep. Saved detection state is still available to coordinate blocks after that scan.
 
 Lighting, camera auto-exposure, shadows, print quality, and target size affect vision. Tune with the real target and classroom lighting before flight. For AprilTags, print tag36h11 markers with a clean white margin and keep them flat.
 
@@ -199,7 +200,7 @@ The COCO-SSD model:
 
 - never loads during ordinary block coding or threshold/AprilTag testing;
 - loads from `public/models/coco-ssd`, not from the internet;
-- runs once when the purple `scan for objects` block is evaluated; or
+- runs once when either the purple `scan for objects` or `camera sees [object]` block is evaluated; or
 - runs at a deliberately slow 1.8-second interval only when the Object Detector toggle is enabled.
 
 ## Use a custom Teachable Machine image model
@@ -279,7 +280,7 @@ The direct feed is cross-origin, so the hosted page cannot safely read its pixel
 
 - Test new programs with propellers removed or the drone restrained.
 - Keep students, faces, loose clothing, and fragile objects out of the flight area.
-- The normal red Stop button stops the program and repeatedly sends an emergency landing command.
+- The normal red Stop button invalidates the entire run, unregisters its keyboard/drone events, clears buffered movement and flight pings, waits briefly for active vision/actions to settle, and repeatedly sends an emergency landing command. A new run cannot begin while this cleanup is in progress.
 - The warning-triangle button immediately cuts motor power and asks for confirmation first. Use it only when landing would be less safe.
 - Programs automatically send a landing command when their main sequence finishes.
 - Treat camera classifications as uncertain sensor readings. Require multiple consistent readings and conservative confidence thresholds before changing flight.
