@@ -41,6 +41,8 @@ next-env.d.ts
 # generated site bundles
 /dist/
 /student-build/
+/desktop/student-build/
+/desktop-release/
 /.wrangler/
 /outputs/
 /work/

@@ -2,6 +2,42 @@
 
 Hopper Studio is a fully local block-coding, JavaScript, Bluetooth flight-control, and camera-vision app for the FTW Hopper drone. It preserves the FTW Code / Parrot Mambo command protocol and adds binary thresholding, tag36h11 AprilTag detection and 2D pose alignment, local COCO-SSD object detection, and support for custom Teachable Machine image classifiers.
 
+## Download the desktop app
+
+Every push to `main` runs `.github/workflows/release-desktop.yml` and creates a
+new GitHub Release with both student downloads:
+
+- `Hopper-Studio-Windows-x64-*.exe` is a portable Windows app. It does not
+  install anything and does not ask for administrator access.
+- `Hopper-Studio-macOS-arm64-*.zip` contains the Hopper Studio `.app` for
+  Apple Silicon Macs.
+- `Hopper-Studio-macOS-x64-*.zip` contains the Hopper Studio `.app` for Intel
+  Macs.
+
+The desktop app includes the complete website, local vision models, Blockly
+media, and the restricted Hopper camera proxy. Students do not need Node.js or
+a browser. **Connect drone** opens a Hopper-only Bluetooth chooser, and
+**Connect simulated drone** opens the flight room in its own desktop window.
+
+The desktop shell is sandboxed and has no Node.js or Electron API in the web
+page. It denies generic browser permissions and external navigation, binds its
+local server only to `127.0.0.1`, and permits the camera proxy to contact only
+`http://192.168.2.1:80`. See `desktop/SECURITY.md` for the school IT review
+profile.
+
+Unsigned apps can still trigger Windows SmartScreen or macOS Gatekeeper even
+when they request minimal permissions. To publish trusted builds, add these
+GitHub Actions repository secrets:
+
+- Windows: `WIN_CSC_LINK` and `WIN_CSC_KEY_PASSWORD`
+- macOS signing: `MAC_CSC_LINK` and `MAC_CSC_KEY_PASSWORD`
+- macOS notarization: `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and
+  `APPLE_TEAM_ID`
+
+Certificates and passwords belong only in GitHub Actions secrets; never commit
+them to the repository. If the secrets are absent, the workflow deliberately
+builds unsigned downloads instead of failing.
+
 ## What is included
 
 - Blockly workspace with the original flight, battery, event, logic, loop, math, variable, function, and accessory capabilities. Newly dragged `fly forward` blocks default to 15% power.

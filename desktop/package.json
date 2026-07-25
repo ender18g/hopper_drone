@@ -1,0 +1,71 @@
+{
+  "name": "hopper-studio",
+  "version": "0.1.0",
+  "description": "Local flight, coding, simulation, and computer-vision studio for the FTW Hopper drone",
+  "author": "WRC",
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "main.mjs",
+  "build": {
+    "appId": "org.wrc.hopperstudio",
+    "productName": "Hopper Studio",
+    "asar": true,
+    "afterPack": "desktop/build/after-pack.mjs",
+    "electronLanguages": [
+      "en"
+    ],
+    "electronVersion": "43.2.0",
+    "directories": {
+      "output": "../desktop-release",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.mjs",
+      "server.mjs",
+      "student-build/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "target": [
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Hopper-Studio-macOS-${arch}-${version}.${ext}",
+      "category": "public.app-category.education",
+      "hardenedRuntime": false,
+      "icon": "build/icon.png",
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "NSAudioCaptureUsageDescription": null,
+        "NSBluetoothAlwaysUsageDescription": "Hopper Studio uses Bluetooth only when a student chooses a compatible Hopper classroom drone.",
+        "NSBluetoothPeripheralUsageDescription": null,
+        "NSCameraUsageDescription": null,
+        "NSMicrophoneUsageDescription": null
+      }
+    },
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Hopper-Studio-Windows-x64-${version}.${ext}",
+      "icon": "build/icon.png",
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "portable": {
+      "artifactName": "Hopper-Studio-Windows-x64-${version}.${ext}",
+      "requestExecutionLevel": "user",
+      "unpackDirName": false
+    }
+  }
+}

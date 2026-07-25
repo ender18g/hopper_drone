@@ -6,7 +6,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const incomingHeaders = await headers();
   const host = incomingHeaders.get("x-forwarded-host") || incomingHeaders.get("host") || "localhost:3000";
   const protocol = incomingHeaders.get("x-forwarded-proto") || "http";
-  const title = "Hopper Studio · Flight + Vision Lab";
+  const title = "USNA Hopper Studio · Flight + Vision Lab";
   const description =
     "A private, local block-coding and computer-vision studio for FTW Hopper drones.";
 
