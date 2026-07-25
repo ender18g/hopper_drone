@@ -631,7 +631,7 @@ textarea:focus-visible {
 .workspace-grid {
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(520px, 1fr) 9px var(--vision-width, 390px);
+  grid-template-columns: minmax(340px, 1fr) 9px var(--vision-width, 390px);
 }
 
 .vision-resize-handle {
@@ -1597,7 +1597,6 @@ body.resizing-vision * {
 .sim-titlebar > div,
 .sim-title-actions,
 .sim-toolbar,
-.sim-object-adders,
 .sim-side-card header,
 .sim-camera-card header,
 .sim-flight-controls,
@@ -1782,21 +1781,8 @@ body.resizing-vision * {
   flex: 1 0 12px;
 }
 
-.sim-object-adders {
-  gap: 3px;
-}
-
-.sim-object-adders button {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  text-transform: uppercase;
-}
-
-.sim-object-adders img {
-  width: 18px;
-  height: 18px;
-  object-fit: contain;
+.sim-object-picker select {
+  min-width: 154px;
 }
 
 .sim-delete-button {
@@ -1930,6 +1916,7 @@ body.resizing-vision * {
   aspect-ratio: 1;
   position: absolute;
   z-index: 3;
+  container-type: inline-size;
   translate: -50% -50%;
   display: grid;
   place-items: center;
@@ -1955,6 +1942,15 @@ body.resizing-vision * {
   width: 100%;
   height: 100%;
   object-fit: contain;
+  user-select: none;
+  filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.42));
+}
+
+.sim-object-emoji {
+  display: block;
+  font-size: 30px;
+  font-size: 80cqi;
+  line-height: 1;
   user-select: none;
   filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.42));
 }
@@ -3053,6 +3049,14 @@ body.sim-popup-body {
   height: 22px;
   margin: 4px 0 0;
   accent-color: #313c43;
+}
+
+.confidence-control {
+  margin-top: 8px;
+}
+
+.confidence-control input[type="range"] {
+  accent-color: var(--green);
 }
 
 .threshold-scale {

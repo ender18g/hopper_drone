@@ -14,6 +14,7 @@ export type SimulationObject = {
   id: string;
   label: string;
   src?: string;
+  emoji?: string;
   x: number;
   y: number;
   size: number;

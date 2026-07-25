@@ -33,7 +33,7 @@ jobs:
         run: npm run build:desktop
 
       - name: Package Windows executable
-        run: npx electron-builder --projectDir desktop --win portable --x64
+        run: npx electron-builder --projectDir desktop --config electron-builder.config.cjs --win portable --x64
         env:
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
@@ -69,20 +69,20 @@ jobs:
 
       - name: Package unsigned macOS app
         if: env.HAS_MAC_CERT != 'true'
-        run: npx electron-builder --projectDir desktop --mac zip --x64 --arm64
+        run: npx electron-builder --projectDir desktop --config electron-builder.config.cjs --mac zip --x64 --arm64
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
 
       - name: Package signed macOS app
         if: env.HAS_MAC_CERT == 'true' && env.HAS_MAC_NOTARY != 'true'
-        run: npx electron-builder --projectDir desktop --mac zip --x64 --arm64 -c.mac.hardenedRuntime=true
+        run: npx electron-builder --projectDir desktop --config electron-builder.config.cjs --mac zip --x64 --arm64 -c.mac.hardenedRuntime=true
         env:
           CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
 
       - name: Package signed and notarized macOS app
         if: env.HAS_MAC_NOTARY == 'true'
-        run: npx electron-builder --projectDir desktop --mac zip --x64 --arm64 -c.mac.hardenedRuntime=true -c.mac.notarize=true
+        run: npx electron-builder --projectDir desktop --config electron-builder.config.cjs --mac zip --x64 --arm64 -c.mac.hardenedRuntime=true -c.mac.notarize=true
         env:
           CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
@@ -102,6 +102,13 @@ jobs:
     needs: [windows, macos]
     runs-on: ubuntu-latest
     steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Load shared app name
+        shell: bash
+        run: echo "STUDIO_NAME=$(jq -r .studioName config/branding.json)" >> "$GITHUB_ENV"
+
       - name: Download packaged apps
         uses: actions/download-artifact@v7
         with:
@@ -125,6 +132,6 @@ jobs:
           gh release create "$tag" release-assets/* \
             --repo "$REPOSITORY" \
             --target "$COMMIT_SHA" \
-            --title "Hopper Studio Desktop ${RUN_NUMBER}.${RUN_ATTEMPT}" \
-            --notes "Windows: download the portable .exe (no installation or administrator access). macOS: download the arm64 ZIP for Apple Silicon or the x64 ZIP for Intel, then open the Hopper Studio .app inside. Builds are signed when the repository signing secrets are configured." \
+            --title "${STUDIO_NAME} Desktop ${RUN_NUMBER}.${RUN_ATTEMPT}" \
+            --notes "Windows: download the portable .exe (no installation or administrator access). macOS: download the arm64 ZIP for Apple Silicon or the x64 ZIP for Intel, then open the ${STUDIO_NAME} .app inside. Builds are signed when the repository signing secrets are configured." \
             --latest

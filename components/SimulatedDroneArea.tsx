@@ -26,14 +26,49 @@ import {
   type AprilTagDetection,
 } from "../lib/apriltags";
 
-const DEFAULT_OBJECTS: SimulationObject[] = [
-  { id: "airplane-1", label: "airplane", src: "sim-assets/airplane.png", x: 3.1, y: 5.7, size: 0.7, rotation: 28, kind: "object" },
-  { id: "car-1", label: "car", src: "sim-assets/car.png", x: 7.9, y: 5.25, size: 0.72, rotation: -20, kind: "object" },
-  { id: "banana-1", label: "banana", src: "sim-assets/banana.png", x: 6.35, y: 2.0, size: 0.58, rotation: 8, kind: "object" },
-  { id: "apple-1", label: "apple", src: "sim-assets/apple.png", x: 3.8, y: 3.2, size: 0.56, rotation: 0, kind: "object" },
-  { id: "white-paper-1", label: "white paper", x: 5, y: 3.5, size: 0.72, rotation: 0, kind: "paper" },
-  { id: "apriltag-0-default", label: "AprilTag 0", x: 5.65, y: 4.15, size: 0.62, rotation: 22, kind: "apriltag", tagId: 0 },
+type ObjectTemplate = Pick<
+  SimulationObject,
+  "label" | "src" | "emoji" | "size" | "kind"
+> & {
+  menuLabel: string;
+};
+
+const OBJECT_LIBRARY: ObjectTemplate[] = [
+  { label: "person", menuLabel: "Person (soldier)", emoji: "💂", size: 0.82, kind: "object" },
+  { label: "knife", menuLabel: "Knife", emoji: "🔪", size: 0.68, kind: "object" },
+  { label: "stop sign", menuLabel: "Stop sign", emoji: "🛑", size: 0.72, kind: "object" },
+  { label: "laptop", menuLabel: "Computer (laptop)", emoji: "💻", size: 0.76, kind: "object" },
+  { label: "truck", menuLabel: "Truck", emoji: "🚚", size: 0.82, kind: "object" },
+  { label: "car", menuLabel: "Car", src: "sim-assets/car.png", size: 0.72, kind: "object" },
+  { label: "airplane", menuLabel: "Airplane", src: "sim-assets/airplane.png", size: 0.7, kind: "object" },
+  { label: "banana", menuLabel: "Banana", src: "sim-assets/banana.png", size: 0.58, kind: "object" },
+  { label: "apple", menuLabel: "Apple", src: "sim-assets/apple.png", size: 0.56, kind: "object" },
+  { label: "white paper", menuLabel: "White paper", size: 0.72, kind: "paper" },
 ];
+
+const SCATTER_LOCATIONS = [
+  { x: 2.1, y: 5.55 },
+  { x: 7.95, y: 5.4 },
+  { x: 7.6, y: 1.45 },
+  { x: 2.25, y: 1.55 },
+];
+
+const createDefaultObjects = (): SimulationObject[] => {
+  const locations = [...SCATTER_LOCATIONS];
+  for (let index = locations.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [locations[index], locations[swapIndex]] = [locations[swapIndex], locations[index]];
+  }
+  const randomRotation = () => Math.round(Math.random() * 100 - 50);
+  return [
+    { id: "person-soldier-default", label: "person", emoji: "💂", x: 5, y: 3.5, size: 0.82, rotation: 0, kind: "object" },
+    { id: "apriltag-7-left", label: "AprilTag 7", x: 2.7, y: 3.5, size: 0.62, rotation: 0, kind: "apriltag", tagId: 7 },
+    { id: "apriltag-19-right", label: "AprilTag 19", x: 7.3, y: 3.5, size: 0.62, rotation: 180, kind: "apriltag", tagId: 19 },
+    { id: "knife-default", label: "knife", emoji: "🔪", ...locations[0], size: 0.68, rotation: randomRotation(), kind: "object" },
+    { id: "truck-default", label: "truck", emoji: "🚚", ...locations[1], size: 0.82, rotation: randomRotation(), kind: "object" },
+    { id: "car-default", label: "car", src: "sim-assets/car.png", ...locations[2], size: 0.72, rotation: randomRotation(), kind: "object" },
+  ];
+};
 
 const FLOOR_PRESETS = [
   { name: "Midnight blue", value: "#122747" },
@@ -79,8 +114,8 @@ export default function SimulatedDroneArea({
   onDisconnect,
 }: SimulatedDroneAreaProps) {
   const [snapshot, setSnapshot] = useState(() => controller.getSnapshot());
-  const [objects, setObjects] = useState<SimulationObject[]>(DEFAULT_OBJECTS);
-  const [selectedId, setSelectedId] = useState(DEFAULT_OBJECTS[0].id);
+  const [objects, setObjects] = useState<SimulationObject[]>(createDefaultObjects);
+  const [selectedId, setSelectedId] = useState("person-soldier-default");
   const [floorColor, setFloorColor] = useState(FLOOR_PRESETS[0].value);
   const [manualAngle, setManualAngle] = useState(10);
   const [tagIdToAdd, setTagIdToAdd] = useState(0);
@@ -222,6 +257,11 @@ export default function SimulatedDroneArea({
         context.strokeRect(-projection.size / 2, -projection.size / 2, projection.size, projection.size * 0.78);
       } else if (object.kind === "apriltag" && object.tagId !== undefined) {
         drawAprilTag(context, object.tagId, projection.size);
+      } else if (object.emoji) {
+        context.font = `${projection.size * 0.78}px "Apple Color Emoji", "Segoe UI Emoji", sans-serif`;
+        context.textAlign = "center";
+        context.textBaseline = "middle";
+        context.fillText(object.emoji, 0, projection.size * 0.04);
       } else if (image?.complete && image.naturalWidth > 0) {
         context.drawImage(
           image,
@@ -274,31 +314,26 @@ export default function SimulatedDroneArea({
     );
   }, [thresholdResult]);
 
-  const objectTypes = useMemo(
-    () => DEFAULT_OBJECTS
-      .filter((object) => object.kind === "object" && object.src)
-      .map(({ label, src, size }) => ({ label, src: src!, size })),
-    [],
-  );
+  const objectTypes = OBJECT_LIBRARY;
 
   const addObject = (label: string) => {
     const template = objectTypes.find((item) => item.label === label);
     if (!template) return;
-    const id = `${label}-copy-${nextObjectIdRef.current}`;
+    const id = `${label.replace(/\s+/g, "-")}-copy-${nextObjectIdRef.current}`;
     nextObjectIdRef.current += 1;
     setObjects((current) => [
       ...current,
-      { ...template, id, x: 5, y: 3.5, rotation: 0 },
-    ]);
-    setSelectedId(id);
-  };
-
-  const addWhitePaper = () => {
-    const id = `white-paper-${nextObjectIdRef.current}`;
-    nextObjectIdRef.current += 1;
-    setObjects((current) => [
-      ...current,
-      { id, label: "white paper", x: 5, y: 3.5, size: 0.72, rotation: 0, kind: "paper" },
+      {
+        id,
+        label: template.label,
+        src: template.src,
+        emoji: template.emoji,
+        x: 5,
+        y: 3.5,
+        size: template.size,
+        rotation: 0,
+        kind: template.kind,
+      },
     ]);
     setSelectedId(id);
   };
@@ -475,14 +510,20 @@ export default function SimulatedDroneArea({
           aria-label="Custom floor color"
         />
         <span className="sim-toolbar-divider" />
-        <div className="sim-object-adders" aria-label="Add floor objects">
-          {objectTypes.map((object) => (
-            <button onClick={() => addObject(object.label)} key={object.label}>
-              <img src={object.src} alt="" /> + {object.label}
-            </button>
-          ))}
-          <button onClick={addWhitePaper}>▱ + white paper</button>
-        </div>
+        <label className="sim-object-picker">ADD OBJECT
+          <select
+            value=""
+            onChange={(event) => {
+              addObject(event.target.value);
+            }}
+            aria-label="Choose an object to add to the simulation room"
+          >
+            <option value="" disabled>Choose item…</option>
+            {objectTypes.map((object) => (
+              <option value={object.label} key={object.label}>{object.menuLabel}</option>
+            ))}
+          </select>
+        </label>
         <label className="sim-tag-picker">APRILTAG ID
           <select value={tagIdToAdd} onChange={(event) => setTagIdToAdd(Number(event.target.value))}>
             {APRIL_TAG_IDS.map((id) => <option value={id} key={id}>{id}</option>)}
@@ -559,6 +600,8 @@ export default function SimulatedDroneArea({
                 >
                   {object.kind === "paper" ? (
                     <span className="sim-paper-sheet">WHITE PAPER</span>
+                  ) : object.emoji ? (
+                    <span className="sim-object-emoji" aria-hidden="true">{object.emoji}</span>
                   ) : (
                     <>
                       <img

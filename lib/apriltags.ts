@@ -1,5 +1,6 @@
 import { AprilTagFamily, type Pixel } from "apriltag";
 import tag36h11 from "apriltag/families/36h11.json";
+import { STUDIO_NAME } from "./branding";
 
 export const APRIL_TAG_FAMILY = "tag36h11" as const;
 export const APRIL_TAG_IDS = tag36h11.codes.map((_, id) => id);
@@ -117,7 +118,7 @@ export const buildAprilTagPdf = (id: number) => {
     "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
     `<< /Length ${pdfByteLength(drawing)} >>\nstream\n${drawing}\nendstream`,
     "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-    `<< /Title (Hopper Studio AprilTag tag36h11 ID ${safeId}) /Creator (Hopper Studio) >>`,
+    `<< /Title (${STUDIO_NAME} AprilTag tag36h11 ID ${safeId}) /Creator (${STUDIO_NAME}) >>`,
   ];
   let pdf = "%PDF-1.4\n";
   const offsets = [0];

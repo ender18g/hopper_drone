@@ -2,6 +2,11 @@
 
 Hopper Studio is a fully local block-coding, JavaScript, Bluetooth flight-control, and camera-vision app for the FTW Hopper drone. It preserves the FTW Code / Parrot Mambo command protocol and adds binary thresholding, tag36h11 AprilTag detection and 2D pose alignment, local COCO-SSD object detection, and support for custom Teachable Machine image classifiers.
 
+To rename the app and its subtitle everywhere in the web and desktop builds,
+edit `config/branding.json`. The desktop executable/app name, window titles,
+web metadata, visible header, simulator title, and release title all read from
+that shared file.
+
 ## Download the desktop app
 
 Every push to `main` runs `.github/workflows/release-desktop.yml` and creates a

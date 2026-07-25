@@ -271,7 +271,7 @@ self.addEventListener("fetch", (event) => {
         // The router/server is unavailable; use the complete saved app shell.
       }
       const cachedShell = await matchActiveCache(canonicalRequest(APP_SHELL_URL));
-      return cachedShell || new Response("Hopper Studio has not finished saving its offline copy yet.", {
+      return cachedShell || new Response("The app has not finished saving its offline copy yet.", {
         status: 503,
         headers: { "content-type": "text/plain; charset=utf-8" },
       });

@@ -98,6 +98,10 @@ type BluetoothApi = {
 };
 
 const FULL_UUID_SUFFIX = "-0800-9191-11e4-012d1540cb8e";
+const ACK_PACKET_TYPE = 0x01;
+const DATA_WITH_ACK_PACKET_TYPE = 0x04;
+const COMMAND_ACK_TIMEOUT_MS = 180;
+const COMMAND_ACK_ATTEMPTS = 5;
 
 const sleep = (milliseconds: number) =>
   new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
@@ -142,6 +146,10 @@ export class MamboController {
   private gunAttached = false;
   private clawUSBID: number | null = null;
   private clawAttached = false;
+  private pendingCommandAcks = new Map<number, {
+    acknowledge(): void;
+    cancel(): void;
+  }>();
   private flightCommandBuffer = this.emptyFlightBuffer();
 
   constructor(device: BluetoothDeviceLike) {
@@ -404,21 +412,24 @@ export class MamboController {
     const generation = this.runGeneration;
     if (this.cancelRunFlag) return;
     const directionEnum = { forward: 0, backward: 1, right: 2, left: 3 }[direction];
+    this.reset();
     this.stopFlightPing();
-    await this.writeCommand("fa00", "fa0b", [
-      2,
-      this.nextSequence("fa0b"),
-      2,
-      4,
-      0,
-      0,
-      directionEnum,
-      0,
-      0,
-      0,
-    ]);
+    await sleep(100);
+    try {
+      await this.writeAcknowledgedCommand([
+        2,
+        4,
+        0,
+        0,
+        directionEnum,
+        0,
+        0,
+        0,
+      ]);
+    } finally {
+      if (this.isRunActive(generation)) this.startFlightPing();
+    }
     if (!this.isRunActive(generation)) return;
-    this.startFlightPing();
     await this.wait(2.5);
   }
 
@@ -535,6 +546,52 @@ export class MamboController {
     await characteristic.writeValue(command);
   }
 
+  private async writeAcknowledgedCommand(payload: number[]) {
+    const sequence = this.nextSequence("fa0b");
+    const packet = [DATA_WITH_ACK_PACKET_TYPE, sequence, ...payload];
+    let lastError: unknown = null;
+
+    for (let attempt = 0; attempt < COMMAND_ACK_ATTEMPTS; attempt += 1) {
+      const acknowledged = this.waitForCommandAck(sequence);
+      try {
+        await this.writeCommand("fa00", "fa0b", packet);
+      } catch (error) {
+        lastError = error;
+        this.pendingCommandAcks.get(sequence)?.cancel();
+        await acknowledged;
+        continue;
+      }
+      if (await acknowledged) return;
+    }
+
+    throw new FlightError(
+      lastError instanceof Error
+        ? `The drone did not accept the flip command: ${lastError.message}`
+        : "The drone did not acknowledge the flip command. Keep it hovering, check the battery, and try again.",
+    );
+  }
+
+  private waitForCommandAck(sequence: number) {
+    return new Promise<boolean>((resolve) => {
+      let finished = false;
+      const finish = (acknowledged: boolean) => {
+        if (finished) return;
+        finished = true;
+        window.clearTimeout(timer);
+        if (this.pendingCommandAcks.get(sequence) === pending) {
+          this.pendingCommandAcks.delete(sequence);
+        }
+        resolve(acknowledged);
+      };
+      const pending = {
+        acknowledge: () => finish(true),
+        cancel: () => finish(false),
+      };
+      const timer = window.setTimeout(() => finish(false), COMMAND_ACK_TIMEOUT_MS);
+      this.pendingCommandAcks.set(sequence, pending);
+    });
+  }
+
   private async startNotifications(serviceID: string, characteristicID: string) {
     const characteristic = await this.getCharacteristic(serviceID, characteristicID);
     await characteristic.startNotifications();
@@ -628,6 +685,10 @@ export class MamboController {
 
   private receivePacket(view: DataView) {
     const packet = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+    if (packet[0] === ACK_PACKET_TYPE && packet.length >= 3) {
+      this.pendingCommandAcks.get(packet[2])?.acknowledge();
+      return;
+    }
     const command = packet.slice(2, 6);
 
     if (arraysEqual(command, [0, 5, 1, 0])) {

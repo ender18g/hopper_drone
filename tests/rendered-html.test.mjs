@@ -4,6 +4,9 @@ import test from "node:test";
 import ts from "typescript";
 
 const root = new URL("../", import.meta.url);
+const branding = JSON.parse(
+  await readFile(new URL("../config/branding.json", import.meta.url), "utf8"),
+);
 
 async function render() {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
@@ -19,20 +22,23 @@ async function render() {
   );
 }
 
-test("server-renders Hopper Studio metadata and product shell", async () => {
+test("server-renders shared branding metadata and product shell", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /Hopper Studio · Flight \+ Vision Lab/i);
+  assert.match(html, new RegExp(
+    `${branding.studioName} · ${branding.labName}`.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+    "i",
+  ));
   assert.match(html, /private, local block-coding and computer-vision studio/i);
   assert.match(html, /og\.png/i);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
 });
 
 test("ships the local flight, simulation, vision, offline cache, and student-build surfaces", async () => {
-  const [component, simulatorComponent, drone, simulation, runtime, vision, aprilTags, blockly, serviceWorker, offlineManifestScript, builtOfflineManifest, styles, readme, packageJson] = await Promise.all([
+  const [component, simulatorComponent, drone, simulation, runtime, vision, aprilTags, blockly, serviceWorker, offlineManifestScript, builtOfflineManifest, styles, readme, packageJson, brandingModule, desktopBuilder] = await Promise.all([
     readFile(new URL("../components/HopperStudio.tsx", import.meta.url), "utf8"),
     readFile(new URL("../components/SimulatedDroneArea.tsx", import.meta.url), "utf8"),
     readFile(new URL("../lib/drone.ts", import.meta.url), "utf8"),
@@ -47,6 +53,8 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../README.md", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
+    readFile(new URL("../lib/branding.ts", import.meta.url), "utf8"),
+    readFile(new URL("../desktop/electron-builder.config.cjs", import.meta.url), "utf8"),
   ]);
 
   assert.match(component, /VISION TESTING/);
@@ -60,6 +68,8 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(component, /STOP &amp; LAND/);
   assert.match(component, /Wi-Fi ready/);
   assert.match(component, /Resize Vision Testing panel/);
+  assert.match(component, /EDITOR_MIN_WIDTH = 340/);
+  assert.match(component, /visionMaximumWidth/);
   assert.match(component, /ALLAN ELSBERRY/);
   assert.match(component, /TEACHABLE MACHINE/);
   assert.match(component, /CENTER PIXEL/);
@@ -74,13 +84,16 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(component, /Bluetooth permission is blocked/);
   assert.match(component, /useState<WifiState>\("disconnected"\)/);
   assert.match(component, /type="range"/);
+  assert.match(component, /MINIMUM CONFIDENCE/);
+  assert.match(component, /objectConfidencePercent \/ 100/);
+  assert.match(component, /visibleDetections/);
   assert.match(component, /detection\.confidence/);
   assert.match(component, /batteryTone/);
   assert.match(component, /highlightBlock/);
   assert.match(component, /requestOfflineCacheRefresh/);
   assert.match(component, /waitForServiceWorkerActivation/);
   assert.match(component, /serviceWorker\.register/);
-  assert.match(component, /Hard refresh Hopper Studio/);
+  assert.match(component, /Hard refresh \$\{STUDIO_NAME\}/);
   assert.match(component, /OFFLINE READY/);
   assert.match(component, /MANUAL OVERRIDE/);
   assert.match(component, /manualNudge/);
@@ -111,6 +124,9 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(drone, /isRunActive/);
   assert.match(drone, /manualFlightOverride/);
   assert.match(drone, /manualNudge/);
+  assert.match(drone, /DATA_WITH_ACK_PACKET_TYPE/);
+  assert.match(drone, /writeAcknowledgedCommand/);
+  assert.match(drone, /pendingCommandAcks/);
   assert.doesNotMatch(drone, /sensorHealth|linkRssi/);
   assert.match(simulatorComponent, /SIMULATED DRONE ROOM/);
   assert.match(simulatorComponent, /UPLOAD IMAGE/);
@@ -118,9 +134,16 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(simulatorComponent, /createPortal/);
   assert.match(simulatorComponent, /Drag Hopper drone to reposition it/);
   assert.match(simulatorComponent, /sim-vision-box/);
-  assert.match(simulatorComponent, /white-paper-1/);
-  assert.match(simulatorComponent, /apriltag-0-default/);
-  assert.match(simulatorComponent, /rotation: 22/);
+  assert.match(simulatorComponent, /Person \(soldier\)/);
+  assert.match(simulatorComponent, /menuLabel: "Knife"/);
+  assert.match(simulatorComponent, /menuLabel: "Stop sign"/);
+  assert.match(simulatorComponent, /Computer \(laptop\)/);
+  assert.match(simulatorComponent, /menuLabel: "Truck"/);
+  assert.match(simulatorComponent, /person-soldier-default/);
+  assert.match(simulatorComponent, /apriltag-7-left/);
+  assert.match(simulatorComponent, /apriltag-19-right/);
+  assert.match(simulatorComponent, /rotation: 180/);
+  assert.match(simulatorComponent, /Choose an object to add/);
   assert.match(simulatorComponent, /ADD TAG/);
   assert.match(simulatorComponent, /sim-tag-x-axis-arrow/);
   assert.match(simulatorComponent, /sim-scan-line/);
@@ -207,6 +230,9 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(packageJson, /"build:student"/);
   assert.match(packageJson, /"build:pages"/);
   assert.match(packageJson, /"apriltag"/);
+  assert.match(brandingModule, /config\/branding\.json/);
+  assert.match(desktopBuilder, /config\/branding\.json/);
+  assert.match(desktopBuilder, /productName: studioName/);
   assert.doesNotMatch(packageJson, /WRANGLER_LOG_PATH=.*vinext/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
 
@@ -444,6 +470,10 @@ test("detects tag36h11 IDs and rotated 2D pose from camera pixels", async () => 
       .replace(
         /^import tag36h11 from "apriltag\/families\/36h11\.json";$/m,
         "const tag36h11 = globalThis.__hopperAprilTagTest.tagConfig;",
+      )
+      .replace(
+        /^import \{ STUDIO_NAME \} from "\.\/branding";$/m,
+        `const STUDIO_NAME = ${JSON.stringify(branding.studioName)};`,
       );
     const aprilTags = await import(
       `data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`
@@ -592,6 +622,76 @@ test("tracks nested active action and vision blocks without highlighting loop bl
     await assert.rejects(runtime.runBlock("stale-command", async () => undefined), /Program stopped/);
   } finally {
     globalThis.window = previousWindow;
+  }
+});
+
+test("sends real-drone flips on the acknowledged BLE channel and safely retries", async () => {
+  const source = await readFile(new URL("../lib/drone.ts", import.meta.url), "utf8");
+  const compiled = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const droneModule = await import(
+    `data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`
+  );
+  const previousWindow = globalThis.window;
+  const previousCustomEvent = globalThis.CustomEvent;
+  const writes = [];
+  let controller;
+  globalThis.window = {
+    setTimeout,
+    clearTimeout,
+    setInterval,
+    clearInterval,
+    dispatchEvent() {},
+  };
+  globalThis.CustomEvent = class {
+    constructor(type, init) { this.type = type; this.detail = init?.detail; }
+  };
+
+  try {
+    const characteristic = {
+      async writeValue(value) {
+        const packet = Uint8Array.from(new Uint8Array(value));
+        writes.push([...packet]);
+        if (writes.length === 2) {
+          setTimeout(() => {
+            const ack = Uint8Array.from([1, 0, packet[1]]);
+            controller.receivePacket(new DataView(ack.buffer));
+          }, 0);
+        }
+      },
+    };
+    const gattServer = {
+      connected: true,
+      disconnect() {},
+      async connect() { return this; },
+      async getPrimaryService() {
+        return {
+          async getCharacteristic() {
+            return characteristic;
+          },
+        };
+      },
+    };
+    controller = new droneModule.MamboController({
+      id: "test-hopper",
+      name: "Hopper test",
+      gatt: gattServer,
+      addEventListener() {},
+    });
+    controller.gattServer = gattServer;
+    controller.wait = async () => undefined;
+
+    await controller.flip("left");
+    controller.abortRun();
+
+    assert.equal(writes.length, 2, "a missing first ACK retries the same flip packet once");
+    assert.deepEqual(writes[0], [4, 0, 2, 4, 0, 0, 3, 0, 0, 0]);
+    assert.deepEqual(writes[1], writes[0], "retries reuse the sequence so the drone can deduplicate");
+  } finally {
+    controller?.abortRun();
+    globalThis.window = previousWindow;
+    globalThis.CustomEvent = previousCustomEvent;
   }
 });
 

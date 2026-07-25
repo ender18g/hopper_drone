@@ -1,9 +1,12 @@
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, dialog, Menu } from "electron";
 import { startDesktopServer } from "./server.mjs";
 
 const moduleDirectory = dirname(fileURLToPath(import.meta.url));
+const branding = JSON.parse(readFileSync(join(moduleDirectory, "branding.json"), "utf8"));
+const STUDIO_NAME = branding.studioName || "Drone Studio";
 const ALLOWED_DRONE_NAME = /^(?:mambo_|travis_|ftw_|mars_|hopper)/i;
 const APP_ID = "org.wrc.hopperstudio";
 
@@ -12,7 +15,7 @@ let mainWindow;
 let appOrigin = "";
 
 app.enableSandbox();
-app.setName("Hopper Studio");
+app.setName(STUDIO_NAME);
 app.setAppUserModelId(APP_ID);
 
 if (!app.requestSingleInstanceLock()) {
@@ -175,7 +178,7 @@ function configureSession(window) {
     const result = await dialog.showMessageBox(window, {
       type: "question",
       title: "Confirm Bluetooth pairing",
-      message: "Allow Hopper Studio to pair with this drone?",
+      message: `Allow ${STUDIO_NAME} to pair with this drone?`,
       detail: `Device ${details.deviceId}.${pinDetail}`,
       buttons: ["Pair", "Cancel"],
       defaultId: 0,
@@ -204,7 +207,7 @@ async function createMainWindow() {
     show: false,
     autoHideMenuBar: true,
     backgroundColor: "#111a21",
-    title: "Hopper Studio",
+    title: STUDIO_NAME,
     webPreferences: {
       allowRunningInsecureContent: false,
       backgroundThrottling: false,
@@ -250,8 +253,8 @@ app.whenReady()
   .catch(async (error) => {
     await dialog.showMessageBox({
       type: "error",
-      title: "Hopper Studio could not start",
-      message: "The local Hopper Studio service could not start.",
+      title: `${STUDIO_NAME} could not start`,
+      message: `The local ${STUDIO_NAME} service could not start.`,
       detail: error instanceof Error ? error.message : String(error),
     });
     app.quit();

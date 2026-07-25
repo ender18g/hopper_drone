@@ -35,6 +35,7 @@ import {
   buildAprilTagPdf,
   type AprilTagDetection,
 } from "../lib/apriltags";
+import { LAB_NAME, STUDIO_NAME } from "../lib/branding";
 import SimulatedDroneArea from "./SimulatedDroneArea";
 import wrcLogo from "../logos/wrc_logo.png?inline";
 
@@ -48,7 +49,11 @@ type VisionTestingMode = Exclude<VisionScanKind, "custom">;
 
 const PROJECT_KEY = "hopper-studio-project-v1";
 const THRESHOLD_KEY = "hopper-studio-threshold-v1";
+const OBJECT_CONFIDENCE_KEY = "hopper-studio-object-confidence-v1";
 const VISION_WIDTH_KEY = "hopper-studio-vision-width-v1";
+const VISION_MIN_WIDTH = 330;
+const EDITOR_MIN_WIDTH = 340;
+const VISION_SPLITTER_WIDTH = 9;
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (
   ...args: string[]
 ) => (...values: unknown[]) => Promise<void>;
@@ -102,6 +107,7 @@ const formatLogValue = (value: unknown) => {
 };
 
 const clampPercent = (value: number) => Math.max(0, Math.min(100, Number(value) || 0));
+const clampConfidencePercent = (value: number) => Math.max(1, clampPercent(value));
 
 const formatDetectionLabel = (label: string) =>
   label.replace(/\b\w/g, (character) => character.toUpperCase());
@@ -169,7 +175,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   const [running, setRunning] = useState(false);
   const [manualOverrideDirection, setManualOverrideDirection] = useState<ManualFlightDirection | null>(null);
   const [logs, setLogs] = useState<string[]>([
-    "Hopper Studio ready. Connect Bluetooth, then connect the video feed.",
+    `${STUDIO_NAME} ready. Connect Bluetooth, then connect the video feed.`,
   ]);
   const [showConsole, setShowConsole] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -181,8 +187,10 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   const [cameraState, setCameraState] = useState<CameraState>("offline");
   const [wifiState, setWifiState] = useState<WifiState>("disconnected");
   const [visionWidth, setVisionWidth] = useState(390);
+  const [visionMaximumWidth, setVisionMaximumWidth] = useState(720);
   const [thresholdPercent, setThresholdPercent] = useState(60);
   const [thresholdInvert, setThresholdInvert] = useState(false);
+  const [objectConfidencePercent, setObjectConfidencePercent] = useState(55);
   const [thresholdResult, setThresholdResult] = useState<ThresholdResult | null>(null);
   const [visionTestingMode, setVisionTestingMode] = useState<VisionTestingMode | null>(null);
   const [displayVisionMode, setDisplayVisionMode] = useState<VisionScanKind | null>(null);
@@ -226,11 +234,11 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
       `popup=yes,width=${popupWidth},height=${popupHeight},left=${popupLeft},top=32,resizable=yes,scrollbars=yes`,
     );
     if (!popup) {
-      notify("Allow pop-ups for Hopper Studio, then connect the simulated drone again.");
+      notify(`Allow pop-ups for ${STUDIO_NAME}, then connect the simulated drone again.`);
       return null;
     }
 
-    popup.document.title = "Hopper Studio · Simulated Drone Room";
+    popup.document.title = `${STUDIO_NAME} · Simulated Drone Room`;
     popup.document.documentElement.lang = "en";
     popup.document.head.replaceChildren();
     const base = popup.document.createElement("base");
@@ -284,7 +292,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     persistProject(false);
     setHardRefreshing(true);
     setOfflineCacheState("saving");
-    notify("Checking for the newest Hopper Studio files…");
+    notify(`Checking for the newest ${STUDIO_NAME} files…`);
     try {
       if (!("serviceWorker" in navigator) || !window.isSecureContext) {
         setOfflineCacheState("unavailable");
@@ -312,7 +320,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
       setOfflineCacheState("ready");
       notify(
         result.status === "updated"
-          ? `Newest Hopper Studio files saved${result.assets ? ` · ${result.assets} assets` : ""}. Reloading…`
+          ? `Newest ${STUDIO_NAME} files saved${result.assets ? ` · ${result.assets} assets` : ""}. Reloading…`
           : "Site unavailable — reopening the saved offline copy.",
       );
       window.setTimeout(() => window.location.reload(), 650);
@@ -418,9 +426,17 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
           if (Number.isFinite(saved.threshold)) setThresholdPercent(clampPercent(saved.threshold ?? 60));
           setThresholdInvert(Boolean(saved.invert));
         }
+        const savedObjectConfidence = Number(localStorage.getItem(OBJECT_CONFIDENCE_KEY));
+        if (Number.isFinite(savedObjectConfidence)) {
+          setObjectConfidencePercent(clampConfidencePercent(savedObjectConfidence));
+        }
         const savedVisionWidth = Number(localStorage.getItem(VISION_WIDTH_KEY));
-        if (Number.isFinite(savedVisionWidth) && savedVisionWidth >= 330) {
-          setVisionWidth(Math.min(720, savedVisionWidth));
+        if (Number.isFinite(savedVisionWidth) && savedVisionWidth >= VISION_MIN_WIDTH) {
+          const available = Math.max(
+            VISION_MIN_WIDTH,
+            window.innerWidth - EDITOR_MIN_WIDTH - VISION_SPLITTER_WIDTH,
+          );
+          setVisionWidth(Math.min(available, savedVisionWidth));
         }
       } catch {
         // Keep safe defaults if prior local preferences are malformed.
@@ -473,6 +489,10 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   useEffect(() => {
     localStorage.setItem(THRESHOLD_KEY, JSON.stringify({ threshold: thresholdPercent, invert: thresholdInvert }));
   }, [thresholdInvert, thresholdPercent]);
+
+  useEffect(() => {
+    localStorage.setItem(OBJECT_CONFIDENCE_KEY, String(objectConfidencePercent));
+  }, [objectConfidencePercent]);
 
   useEffect(() => {
     const canvas = thresholdOverlayRef.current;
@@ -887,7 +907,10 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     if (objectScanBusyRef.current) return;
     objectScanBusyRef.current = true;
     try {
-      const nextDetections = await visionRef.current?.detectObjects(0.55, false);
+      const nextDetections = await visionRef.current?.detectObjects(
+        objectConfidencePercent / 100,
+        false,
+      );
       if (!nextDetections) return;
       setDisplayVisionMode("object");
       if (simulationControllerRef.current) {
@@ -900,7 +923,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     } finally {
       objectScanBusyRef.current = false;
     }
-  }, [appendLog]);
+  }, [appendLog, objectConfidencePercent]);
 
   const previewAprilTags = useCallback(async () => {
     if (aprilTagScanBusyRef.current) return;
@@ -1015,12 +1038,21 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   };
 
   const clampVisionWidth = useCallback((width: number) => {
-    const available = Math.max(330, window.innerWidth - 570);
-    return Math.round(Math.max(330, Math.min(720, available, width)));
+    const available = Math.max(
+      VISION_MIN_WIDTH,
+      window.innerWidth - EDITOR_MIN_WIDTH - VISION_SPLITTER_WIDTH,
+    );
+    return Math.round(Math.max(VISION_MIN_WIDTH, Math.min(available, width)));
   }, []);
 
   useEffect(() => {
-    const fitVisionDeck = () => setVisionWidth((current) => clampVisionWidth(current));
+    const fitVisionDeck = () => {
+      setVisionMaximumWidth(Math.max(
+        VISION_MIN_WIDTH,
+        window.innerWidth - EDITOR_MIN_WIDTH - VISION_SPLITTER_WIDTH,
+      ));
+      setVisionWidth((current) => clampVisionWidth(current));
+    };
     fitVisionDeck();
     window.addEventListener("resize", fitVisionDeck);
     return () => window.removeEventListener("resize", fitVisionDeck);
@@ -1129,16 +1161,25 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
         ? "Pairing…"
         : "Connect drone";
 
+  const objectConfidence = objectConfidencePercent / 100;
+  const visibleDetections = useMemo(
+    () => detections.filter((item) => item.score >= objectConfidence),
+    [detections, objectConfidence],
+  );
+  const visibleSimulatorDetections = useMemo(
+    () => simulatorDetections.filter((item) => item.score >= objectConfidence),
+    [objectConfidence, simulatorDetections],
+  );
   const detectionSummary = useMemo(
     () =>
-      detections.map((item, index) => ({
+      visibleDetections.map((item, index) => ({
         id: `${item.class}-${index}`,
         label: formatDetectionLabel(item.class),
         confidence: Math.round(item.score * 100),
         x: formatCoordinate(item.centerX),
         y: formatCoordinate(item.centerY),
       })),
-    [detections],
+    [visibleDetections],
   );
   const aprilTagSummary = useMemo(
     () => aprilTagDetections.map((tag) => ({
@@ -1177,16 +1218,16 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
             className={`wrc-refresh-button ${hardRefreshing ? "refreshing" : ""}`}
             onClick={() => void hardRefresh()}
             disabled={hardRefreshing}
-            aria-label="Hard refresh Hopper Studio and update its offline files"
-            title="Hard refresh: check for and save the newest Hopper Studio files"
+            aria-label={`Hard refresh ${STUDIO_NAME} and update its offline files`}
+            title={`Hard refresh: check for and save the newest ${STUDIO_NAME} files`}
           >
             <img src={wrcLogo} alt="World Robotics Championship" className="wrc-logo" />
             <span aria-hidden="true">↻</span>
           </button>
           <span className="brand-divider" />
           <div>
-            <div className="brand-name">HOPPER STUDIO</div>
-            <div className="brand-subtitle">FLIGHT + VISION LAB</div>
+            <div className="brand-name">{STUDIO_NAME.toUpperCase()}</div>
+            <div className="brand-subtitle">{LAB_NAME.toUpperCase()}</div>
           </div>
         </div>
         <div className="topbar-center">
@@ -1393,8 +1434,8 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
           role="separator"
           aria-label="Resize Vision Testing panel"
           aria-orientation="vertical"
-          aria-valuemin={330}
-          aria-valuemax={720}
+          aria-valuemin={VISION_MIN_WIDTH}
+          aria-valuemax={visionMaximumWidth}
           aria-valuenow={visionWidth}
           title="Drag left or right to resize Vision Testing"
           onPointerDown={beginVisionResize}
@@ -1441,7 +1482,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
             />
             <div className="reticle"><i /><b /></div>
             <div className="frame-corners"><i /><i /><i /><i /></div>
-            {displayVisionMode === "object" && detections.map((detection, index) => (
+            {displayVisionMode === "object" && visibleDetections.map((detection, index) => (
               <div
                 className="detection-box"
                 key={`${detection.class}-${index}`}
@@ -1579,6 +1620,27 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
               <div><b>{modelLabel}</b><small>Runs entirely on this computer</small></div>
               {modelState === "ready" && <button onClick={() => void previewObjects()}>TEST ONCE</button>}
             </div>
+            <div className="threshold-control confidence-control">
+              <div>
+                <label htmlFor="object-confidence-slider">MINIMUM CONFIDENCE</label>
+                <b>{objectConfidencePercent}%</b>
+              </div>
+              <input
+                id="object-confidence-slider"
+                type="range"
+                min="1"
+                max="100"
+                step="1"
+                value={objectConfidencePercent}
+                onChange={(event) => setObjectConfidencePercent(
+                  clampConfidencePercent(Number(event.target.value)),
+                )}
+              />
+              <div className="threshold-scale">
+                <span>MORE RESULTS · 1%</span>
+                <span>STRICTER · 100%</span>
+              </div>
+            </div>
             {detectionSummary.length > 0 ? (
               <div className="detection-chips object-detections">
                 {detectionSummary.map((detection) => (
@@ -1589,7 +1651,9 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
                 ))}
               </div>
             ) : (
-              <p className="empty-detections">No labels yet. Enable the model or use a purple vision block.</p>
+              <p className="empty-detections">
+                No objects at or above {objectConfidencePercent}%. Lower the confidence or test again.
+              </p>
             )}
             <p className="coordinate-legend">
               X/Y BOX CENTER · FRAME CENTER 0,0 · RIGHT/UP POSITIVE · −100 TO +100
@@ -1696,7 +1760,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
           telemetryCanvasRef={simulationTelemetryCameraRef}
           popupWindow={simulatorWindow}
           minimized={simulatorMinimized}
-          detections={simulatorDetections}
+          detections={visibleSimulatorDetections}
           thresholdResult={simulatorThresholdResult}
           aprilTagDetections={simulatorAprilTags}
           visionMode={simulatorVisionMode}
