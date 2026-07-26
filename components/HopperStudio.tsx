@@ -18,19 +18,30 @@ import {
   MamboController,
   type DroneController,
   type DroneTelemetry,
+  type ManualFlightDirection,
 } from "../lib/drone";
 import { ExecutionRuntime } from "../lib/runtime";
 import { SimulatedDroneController } from "../lib/simulation";
 import {
-  DEFAULT_COLOR_PROFILES,
   VisionRuntime,
-  type ColorDetectionResult,
-  type ColorProfile,
-  type ColorProfiles,
   type CustomPrediction,
-  type RgbPixel,
+  type ThresholdResult,
+  type VisionScanEvent,
+  type VisionScanKind,
   type VisionDetection,
 } from "../lib/vision";
+import {
+  APRIL_TAG_IDS,
+  buildAprilTagPdf,
+  type AprilTagDetection,
+} from "../lib/apriltags";
+import {
+  DEFAULT_EDITOR_MODE,
+  LAB_NAME,
+  STUDIO_NAME,
+  type EditorMode,
+} from "../lib/branding";
+import { tokenizeJavaScript } from "../lib/javascript-highlighting";
 import SimulatedDroneArea from "./SimulatedDroneArea";
 import wrcLogo from "../logos/wrc_logo.png?inline";
 
@@ -40,10 +51,57 @@ type CameraState = "offline" | "connecting" | "live" | "error";
 type ModelState = "off" | "loading" | "ready" | "error";
 type WifiState = "checking" | "connected" | "disconnected";
 type OfflineCacheState = "saving" | "ready" | "unavailable";
+type VisionTestingMode = Exclude<VisionScanKind, "custom">;
 
 const PROJECT_KEY = "hopper-studio-project-v1";
-const COLOR_KEY = "hopper-studio-colors-v1";
+const THRESHOLD_KEY = "hopper-studio-threshold-v1";
+const OBJECT_CONFIDENCE_KEY = "hopper-studio-object-confidence-v1";
 const VISION_WIDTH_KEY = "hopper-studio-vision-width-v1";
+const VISION_MIN_WIDTH = 330;
+const EDITOR_MIN_WIDTH = 340;
+const VISION_SPLITTER_WIDTH = 9;
+const INFORMATION_SLIDE_DECKS = [
+  {
+    title: "The Hopper sensor suite",
+    description: "Indoor sensors, camera, and why Hopper does not use GPS",
+    path: "information/01-hopper-sensor-suite.pdf",
+  },
+  {
+    title: "How a quadrotor flies",
+    description: "Aerodynamics, linear and angular motion, and a simple model",
+    path: "information/02-quadrotor-aerodynamics.pdf",
+  },
+  {
+    title: "Coding blocks reference",
+    description: "The available Blockly categories and what each block does",
+    path: "information/03-coding-blocks-reference.pdf",
+  },
+  {
+    title: "JavaScript API reference",
+    description: "Student-facing functions, variables, and examples",
+    path: "information/04-javascript-api-reference.pdf",
+  },
+  {
+    title: "Thresholding with Hopper",
+    description: "Binary vision and finding white paper in an indoor room",
+    path: "information/05-thresholding-with-hopper.pdf",
+  },
+  {
+    title: "Object detection and COCO",
+    description: "Object detection, the COCO dataset, and Hopper's built-in network",
+    path: "information/06-object-detection-and-coco.pdf",
+  },
+  {
+    title: "Teachable Machine models",
+    description: "Train, export, and load a custom image model",
+    path: "information/07-teachable-machine-models.pdf",
+  },
+  {
+    title: "AprilTags with Hopper",
+    description: "How AprilTags work and classroom drone activities",
+    path: "information/08-apriltags-with-hopper.pdf",
+  },
+] as const;
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (
   ...args: string[]
 ) => (...values: unknown[]) => Promise<void>;
@@ -96,7 +154,8 @@ const formatLogValue = (value: unknown) => {
   }
 };
 
-const clampChannel = (value: number) => Math.max(0, Math.min(255, Number(value) || 0));
+const clampPercent = (value: number) => Math.max(0, Math.min(100, Number(value) || 0));
+const clampConfidencePercent = (value: number) => Math.max(1, clampPercent(value));
 
 const formatDetectionLabel = (label: string) =>
   label.replace(/\b\w/g, (character) => character.toUpperCase());
@@ -123,40 +182,64 @@ type HopperStudioProps = {
   cameraProxyAvailable?: boolean;
 };
 
+type SessionPhoto = {
+  id: number;
+  url: string;
+  capturedAt: number;
+  source: "real" | "simulated";
+  width: number;
+  height: number;
+};
+
 export default function HopperStudio({ cameraProxyAvailable = false }: HopperStudioProps) {
   const workspaceHostRef = useRef<HTMLDivElement>(null);
   const workspaceRef = useRef<WorkspaceSvg | null>(null);
   const blocklyRef = useRef<BlocklyToolkit | null>(null);
   const autosaveTimerRef = useRef<number | null>(null);
+  const javascriptAutosaveTimerRef = useRef<number | null>(null);
   const controllerRef = useRef<DroneController | null>(null);
   const simulationControllerRef = useRef<SimulatedDroneController | null>(null);
   const simulatorWindowRef = useRef<Window | null>(null);
   const runtimeRef = useRef<ExecutionRuntime | null>(null);
+  const stopProgramPromiseRef = useRef<Promise<void> | null>(null);
   const imageRef = useRef<HTMLImageElement>(null);
   const simulationCameraRef = useRef<HTMLCanvasElement>(null);
   const simulationTelemetryCameraRef = useRef<HTMLCanvasElement>(null);
   const analysisCanvasRef = useRef<HTMLCanvasElement>(null);
+  const thresholdOverlayRef = useRef<HTMLCanvasElement>(null);
+  const javascriptHighlightRef = useRef<HTMLPreElement>(null);
+  const javascriptLineNumbersRef = useRef<HTMLDivElement>(null);
+  const informationMenuRef = useRef<HTMLDetailsElement>(null);
   const visionRef = useRef<VisionRuntime | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
   const customModelInputRef = useRef<HTMLInputElement>(null);
   const objectScanBusyRef = useRef(false);
-  const projectNameRef = useRef("Color Landing Lab");
+  const aprilTagScanBusyRef = useRef(false);
+  const latestDetectionsRef = useRef<VisionDetection[]>([]);
+  const latestThresholdRef = useRef<ThresholdResult | null>(null);
+  const latestAprilTagsRef = useRef<AprilTagDetection[]>([]);
+  const manualNudgeSequenceRef = useRef(0);
+  const photoSequenceRef = useRef(0);
+  const photoUrlsRef = useRef(new Set<string>());
+  const projectNameRef = useRef("Binary Landing Lab");
   const javascriptCodeRef = useRef("");
 
-  const [editorMode, setEditorMode] = useState<"blocks" | "javascript">("blocks");
+  const [editorMode, setEditorMode] = useState<EditorMode>(DEFAULT_EDITOR_MODE);
   const [generatedCode, setGeneratedCode] = useState("");
   const [javascriptCode, setJavascriptCode] = useState("");
-  const [projectName, setProjectName] = useState("Color Landing Lab");
+  const [projectName, setProjectName] = useState("Binary Landing Lab");
   const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected");
   const [connectionMode, setConnectionMode] = useState<"real" | "simulated" | null>(null);
   const [simulationController, setSimulationController] = useState<SimulatedDroneController | null>(null);
   const [simulatorWindow, setSimulatorWindow] = useState<Window | null>(null);
+  const [simulatorInline, setSimulatorInline] = useState(false);
   const [simulatorMinimized, setSimulatorMinimized] = useState(false);
   const [droneName, setDroneName] = useState("No drone selected");
   const [telemetry, setTelemetry] = useState<DroneTelemetry>(createEmptyDroneTelemetry);
   const [running, setRunning] = useState(false);
+  const [manualOverrideDirection, setManualOverrideDirection] = useState<ManualFlightDirection | null>(null);
   const [logs, setLogs] = useState<string[]>([
-    "Hopper Studio ready. Connect Bluetooth, then connect the video feed.",
+    `${STUDIO_NAME} ready. Connect Bluetooth, then connect the video feed.`,
   ]);
   const [showConsole, setShowConsole] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -168,21 +251,35 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   const [cameraState, setCameraState] = useState<CameraState>("offline");
   const [wifiState, setWifiState] = useState<WifiState>("disconnected");
   const [visionWidth, setVisionWidth] = useState(390);
-  const [profiles, setProfiles] = useState<ColorProfiles>(DEFAULT_COLOR_PROFILES);
-  const [activeProfile, setActiveProfile] = useState<keyof ColorProfiles>("red");
-  const [coverage, setCoverage] = useState<number | null>(null);
-  const [colorDetection, setColorDetection] = useState<ColorDetectionResult | null>(null);
-  const [simulatorVisionMode, setSimulatorVisionMode] = useState<"object" | "color" | null>(null);
-  const [centerPixel, setCenterPixel] = useState<RgbPixel | null>(null);
-  const [colorScanEnabled, setColorScanEnabled] = useState(false);
+  const [visionMaximumWidth, setVisionMaximumWidth] = useState(720);
+  const [thresholdPercent, setThresholdPercent] = useState(60);
+  const [thresholdInvert, setThresholdInvert] = useState(false);
+  const [objectConfidencePercent, setObjectConfidencePercent] = useState(55);
+  const [thresholdResult, setThresholdResult] = useState<ThresholdResult | null>(null);
+  const [visionTestingMode, setVisionTestingMode] = useState<VisionTestingMode | null>(null);
+  const [displayVisionMode, setDisplayVisionMode] = useState<VisionScanKind | null>(null);
+  const [simulatorVisionMode, setSimulatorVisionMode] = useState<VisionScanKind | null>(null);
+  const [scanEvent, setScanEvent] = useState<VisionScanEvent | null>(null);
   const [modelState, setModelState] = useState<ModelState>("off");
-  const [objectScanEnabled, setObjectScanEnabled] = useState(false);
   const [detections, setDetections] = useState<VisionDetection[]>([]);
+  const [aprilTagDetections, setAprilTagDetections] = useState<AprilTagDetection[]>([]);
+  const [pdfTagId, setPdfTagId] = useState(0);
+  const [simulatorDetections, setSimulatorDetections] = useState<VisionDetection[]>([]);
+  const [simulatorThresholdResult, setSimulatorThresholdResult] = useState<ThresholdResult | null>(null);
+  const [simulatorAprilTags, setSimulatorAprilTags] = useState<AprilTagDetection[]>([]);
   const [customModelState, setCustomModelState] = useState<ModelState>("off");
   const [customLabels, setCustomLabels] = useState<string[]>([]);
   const [customPredictions, setCustomPredictions] = useState<CustomPrediction[]>([]);
+  const [missionPhotos, setMissionPhotos] = useState<SessionPhoto[]>([]);
+  const javascriptTokens = useMemo(
+    () => tokenizeJavaScript(javascriptCode),
+    [javascriptCode],
+  );
   const simulationConnected = connectionMode === "simulated";
   const cameraLive = cameraState === "live" || simulationConnected;
+  const manualControlsAvailable = running
+    && telemetry.connected
+    && ["hovering", "flying", "flipping"].includes(telemetry.flyingState ?? "");
 
   const appendLog = useCallback((...values: unknown[]) => {
     const line = values.map(formatLogValue).join(" ");
@@ -194,7 +291,54 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     window.setTimeout(() => setToast(null), 3200);
   }, []);
 
+  const syncJavaScriptScroll = useCallback(
+    (target: HTMLTextAreaElement) => {
+      if (javascriptHighlightRef.current) {
+        javascriptHighlightRef.current.scrollTop = target.scrollTop;
+        javascriptHighlightRef.current.scrollLeft = target.scrollLeft;
+      }
+      if (javascriptLineNumbersRef.current) {
+        javascriptLineNumbersRef.current.scrollTop = target.scrollTop;
+      }
+    },
+    [],
+  );
+
+  const openInformationSlideDeck = useCallback(
+    (path: string, title: string) => {
+      const pdfWindow = window.open("about:blank", "_blank");
+      if (!pdfWindow) {
+        notify(`Allow pop-ups to open “${title}”.`);
+        return;
+      }
+      pdfWindow.opener = null;
+      pdfWindow.location.href = new URL(path, document.baseURI).href;
+      if (informationMenuRef.current) informationMenuRef.current.open = false;
+    },
+    [notify],
+  );
+
+  const clearMissionPhotos = useCallback(() => {
+    if (missionPhotos.length === 0) return;
+    if (!window.confirm(`Clear all ${missionPhotos.length} mission photos from this session?`)) return;
+    photoUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    photoUrlsRef.current.clear();
+    setMissionPhotos([]);
+    appendLog("Mission photo gallery cleared.");
+  }, [appendLog, missionPhotos]);
+
   const openSimulatorWindow = useCallback(() => {
+    const useInlineSimulator = window.matchMedia(
+      "(max-width: 900px), (pointer: coarse) and (max-width: 1180px)",
+    ).matches;
+    if (useInlineSimulator) {
+      simulatorWindowRef.current = null;
+      setSimulatorWindow(null);
+      setSimulatorInline(true);
+      setSimulatorMinimized(false);
+      return true;
+    }
+
     const availableWidth = window.screen.availWidth || 1440;
     const availableHeight = window.screen.availHeight || 900;
     const popupWidth = Math.min(1280, Math.max(760, Math.round(availableWidth * 0.68)));
@@ -206,13 +350,17 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
       `popup=yes,width=${popupWidth},height=${popupHeight},left=${popupLeft},top=32,resizable=yes,scrollbars=yes`,
     );
     if (!popup) {
-      notify("Allow pop-ups for Hopper Studio, then connect the simulated drone again.");
+      notify(`Allow pop-ups for ${STUDIO_NAME}, then connect the simulated drone again.`);
       return null;
     }
 
-    popup.document.title = "Hopper Studio · Simulated Drone Room";
+    popup.document.title = `${STUDIO_NAME} · Simulated Drone Room`;
     popup.document.documentElement.lang = "en";
     popup.document.head.replaceChildren();
+    const viewport = popup.document.createElement("meta");
+    viewport.name = "viewport";
+    viewport.content = "width=device-width, initial-scale=1, viewport-fit=cover";
+    popup.document.head.appendChild(viewport);
     const base = popup.document.createElement("base");
     base.href = document.baseURI;
     popup.document.head.appendChild(base);
@@ -230,6 +378,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     popup.focus();
     simulatorWindowRef.current = popup;
     setSimulatorWindow(popup);
+    setSimulatorInline(false);
     setSimulatorMinimized(false);
     return popup;
   }, [notify]);
@@ -238,8 +387,18 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     const popup = simulatorWindowRef.current;
     simulatorWindowRef.current = null;
     setSimulatorWindow(null);
+    setSimulatorInline(false);
     if (popup && !popup.closed) popup.close();
   }, []);
+
+  useEffect(() => {
+    if (!simulatorInline || simulatorMinimized) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [simulatorInline, simulatorMinimized]);
 
   const persistProject = useCallback(
     (showConfirmation = false) => {
@@ -264,7 +423,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     persistProject(false);
     setHardRefreshing(true);
     setOfflineCacheState("saving");
-    notify("Checking for the newest Hopper Studio files…");
+    notify(`Checking for the newest ${STUDIO_NAME} files…`);
     try {
       if (!("serviceWorker" in navigator) || !window.isSecureContext) {
         setOfflineCacheState("unavailable");
@@ -292,7 +451,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
       setOfflineCacheState("ready");
       notify(
         result.status === "updated"
-          ? `Newest Hopper Studio files saved${result.assets ? ` · ${result.assets} assets` : ""}. Reloading…`
+          ? `Newest ${STUDIO_NAME} files saved${result.assets ? ` · ${result.assets} assets` : ""}. Reloading…`
           : "Site unavailable — reopening the saved offline copy.",
       );
       window.setTimeout(() => window.location.reload(), 650);
@@ -335,7 +494,26 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
 
   useEffect(() => {
     javascriptCodeRef.current = javascriptCode;
-  }, [javascriptCode]);
+    if (!workspaceRef.current) return;
+    if (javascriptAutosaveTimerRef.current !== null) {
+      window.clearTimeout(javascriptAutosaveTimerRef.current);
+    }
+    javascriptAutosaveTimerRef.current = window.setTimeout(
+      () => persistProject(false),
+      500,
+    );
+    return () => {
+      if (javascriptAutosaveTimerRef.current !== null) {
+        window.clearTimeout(javascriptAutosaveTimerRef.current);
+        javascriptAutosaveTimerRef.current = null;
+      }
+    };
+  }, [javascriptCode, persistProject]);
+
+  useEffect(() => () => {
+    photoUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    photoUrlsRef.current.clear();
+  }, []);
 
   useEffect(() => {
     let disposed = false;
@@ -346,6 +524,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
       blocklyRef.current = toolkit;
       const workspace = toolkit.createHopperWorkspace(workspaceHostRef.current);
       workspaceRef.current = workspace;
+      let seedJavascriptFromBlocks = true;
 
       const savedProject = localStorage.getItem(PROJECT_KEY);
       if (savedProject) {
@@ -357,7 +536,11 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
           };
           if (project.workspace) toolkit.restoreWorkspace(workspace, project.workspace);
           if (project.name) setProjectName(project.name);
-          if (project.javascriptCode) setJavascriptCode(project.javascriptCode);
+          if (typeof project.javascriptCode === "string") {
+            javascriptCodeRef.current = project.javascriptCode;
+            setJavascriptCode(project.javascriptCode);
+            seedJavascriptFromBlocks = false;
+          }
         } catch {
           appendLog("Saved project could not be read; opened a fresh workspace.");
         }
@@ -365,7 +548,13 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
 
       const refreshCode = () => {
         try {
-          setGeneratedCode(toolkit.generateWorkspaceCode(workspace));
+          const nextGeneratedCode = toolkit.generateWorkspaceCode(workspace);
+          setGeneratedCode(nextGeneratedCode);
+          if (seedJavascriptFromBlocks) {
+            javascriptCodeRef.current = nextGeneratedCode;
+            setJavascriptCode(nextGeneratedCode);
+            seedJavascriptFromBlocks = false;
+          }
           if (autosaveTimerRef.current !== null) window.clearTimeout(autosaveTimerRef.current);
           autosaveTimerRef.current = window.setTimeout(() => persistProject(false), 500);
         } catch (error) {
@@ -384,6 +573,9 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     return () => {
       disposed = true;
       if (autosaveTimerRef.current !== null) window.clearTimeout(autosaveTimerRef.current);
+      if (javascriptAutosaveTimerRef.current !== null) {
+        window.clearTimeout(javascriptAutosaveTimerRef.current);
+      }
       workspaceRef.current?.dispose();
       workspaceRef.current = null;
     };
@@ -392,11 +584,23 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   useEffect(() => {
     const restorePreferences = window.setTimeout(() => {
       try {
-        const saved = localStorage.getItem(COLOR_KEY);
-        if (saved) setProfiles(JSON.parse(saved) as ColorProfiles);
+        const savedThreshold = localStorage.getItem(THRESHOLD_KEY);
+        if (savedThreshold) {
+          const saved = JSON.parse(savedThreshold) as { threshold?: number; invert?: boolean };
+          if (Number.isFinite(saved.threshold)) setThresholdPercent(clampPercent(saved.threshold ?? 60));
+          setThresholdInvert(Boolean(saved.invert));
+        }
+        const savedObjectConfidence = Number(localStorage.getItem(OBJECT_CONFIDENCE_KEY));
+        if (Number.isFinite(savedObjectConfidence)) {
+          setObjectConfidencePercent(clampConfidencePercent(savedObjectConfidence));
+        }
         const savedVisionWidth = Number(localStorage.getItem(VISION_WIDTH_KEY));
-        if (Number.isFinite(savedVisionWidth) && savedVisionWidth >= 330) {
-          setVisionWidth(Math.min(720, savedVisionWidth));
+        if (Number.isFinite(savedVisionWidth) && savedVisionWidth >= VISION_MIN_WIDTH) {
+          const available = Math.max(
+            VISION_MIN_WIDTH,
+            window.innerWidth - EDITOR_MIN_WIDTH - VISION_SPLITTER_WIDTH,
+          );
+          setVisionWidth(Math.min(available, savedVisionWidth));
         }
       } catch {
         // Keep safe defaults if prior local preferences are malformed.
@@ -408,15 +612,33 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
       () => analysisCanvasRef.current,
       setModelState,
       (nextDetections) => {
+        latestDetectionsRef.current = nextDetections;
         setDetections(nextDetections);
-        setSimulatorVisionMode("object");
       },
       setCustomModelState,
       setCustomPredictions,
       (result) => {
-        setColorDetection(result);
-        setSimulatorVisionMode("color");
+        latestThresholdRef.current = result;
+        setThresholdResult(result);
       },
+      (tags) => {
+        latestAprilTagsRef.current = tags;
+        setAprilTagDetections(tags);
+      },
+      (event) => {
+        setScanEvent(event);
+        if (event.phase === "start") {
+          setDisplayVisionMode(event.kind);
+          if (simulationControllerRef.current) setSimulatorVisionMode(null);
+        }
+        if (event.phase === "complete" && simulationControllerRef.current) {
+          setSimulatorVisionMode(event.kind);
+          if (event.kind === "threshold") setSimulatorThresholdResult(latestThresholdRef.current);
+          if (event.kind === "object") setSimulatorDetections(latestDetectionsRef.current);
+          if (event.kind === "apriltag") setSimulatorAprilTags(latestAprilTagsRef.current);
+        }
+      },
+      (message) => appendLog(message),
     );
     visionRef.current = vision;
     return () => {
@@ -426,12 +648,33 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
       vision.dispose();
       visionRef.current = null;
     };
-  }, []);
+  }, [appendLog]);
 
   useEffect(() => {
-    localStorage.setItem(COLOR_KEY, JSON.stringify(profiles));
-    visionRef.current?.setProfiles(profiles);
-  }, [profiles]);
+    localStorage.setItem(THRESHOLD_KEY, JSON.stringify({ threshold: thresholdPercent, invert: thresholdInvert }));
+  }, [thresholdInvert, thresholdPercent]);
+
+  useEffect(() => {
+    localStorage.setItem(OBJECT_CONFIDENCE_KEY, String(objectConfidencePercent));
+  }, [objectConfidencePercent]);
+
+  useEffect(() => {
+    const canvas = thresholdOverlayRef.current;
+    if (!canvas || !thresholdResult) return;
+    canvas.width = thresholdResult.frameWidth;
+    canvas.height = thresholdResult.frameHeight;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    context.putImageData(
+      new ImageData(
+        new Uint8ClampedArray(thresholdResult.binaryData),
+        thresholdResult.frameWidth,
+        thresholdResult.frameHeight,
+      ),
+      0,
+      0,
+    );
+  }, [thresholdResult]);
 
   useEffect(() => {
     if (!simulatorWindow) return;
@@ -497,21 +740,27 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     closeSimulatorWindow();
     const controller = simulationControllerRef.current;
     if (controller) {
-      controller.cancelRunFlag = true;
+      controller.abortRun();
       controller.disconnect();
     }
     simulationControllerRef.current = null;
     setSimulationController(null);
     if (controllerRef.current === controller) controllerRef.current = null;
     visionRef.current?.setSyntheticDetectionProvider(null);
+    visionRef.current?.setSyntheticAprilTagProvider(null);
     setConnectionMode(null);
     setSimulatorMinimized(false);
     setTelemetry(createEmptyDroneTelemetry());
     setCameraState("offline");
     setDetections([]);
-    setColorDetection(null);
+    setAprilTagDetections([]);
+    setThresholdResult(null);
+    setSimulatorDetections([]);
+    setSimulatorAprilTags([]);
+    setSimulatorThresholdResult(null);
+    setVisionTestingMode(null);
+    setDisplayVisionMode(null);
     setSimulatorVisionMode(null);
-    setCenterPixel(null);
     setRunning(false);
     appendLog("Simulated drone disconnected. Your blocks are unchanged and ready for a real Hopper.");
   }, [appendLog, closeSimulatorWindow]);
@@ -538,11 +787,20 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     visionRef.current?.setSyntheticDetectionProvider((width, height) =>
       controller.getSyntheticDetections(width, height)
     );
+    visionRef.current?.setSyntheticAprilTagProvider((width, height) =>
+      controller.getSyntheticAprilTags(width, height)
+    );
     controller.connect();
     setConnectionMode("simulated");
     setSimulatorMinimized(false);
     setDetections([]);
-    setColorDetection(null);
+    setAprilTagDetections([]);
+    setThresholdResult(null);
+    setSimulatorDetections([]);
+    setSimulatorAprilTags([]);
+    setSimulatorThresholdResult(null);
+    setVisionTestingMode(null);
+    setDisplayVisionMode(null);
     setSimulatorVisionMode(null);
     setCameraState("live");
     setDroneName("Hopper Simulator");
@@ -600,8 +858,32 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     appendLog("Drone disconnected.");
   };
 
+  const captureAndStorePhoto = useCallback(async () => {
+    const vision = visionRef.current;
+    if (!vision) throw new Error("Camera capture is not ready yet.");
+    const captured = await vision.capturePhoto();
+    const url = URL.createObjectURL(captured.blob);
+    const id = ++photoSequenceRef.current;
+    const source = simulationControllerRef.current ? "simulated" : "real";
+    photoUrlsRef.current.add(url);
+    setMissionPhotos((current) => [
+      ...current,
+      {
+        id,
+        url,
+        capturedAt: Date.now(),
+        source,
+        width: captured.width,
+        height: captured.height,
+      },
+    ]);
+    appendLog(
+      `📷 Photo ${String(id).padStart(2, "0")} stored from the ${source === "simulated" ? "simulator" : "drone camera"}.`,
+    );
+  }, [appendLog]);
+
   const runProgram = async () => {
-    if (running) return;
+    if (running || runtimeRef.current || stopProgramPromiseRef.current) return;
     const controller = controllerRef.current;
     const vision = visionRef.current;
     if (!controller || !connectionMode || !telemetry.connected) {
@@ -622,7 +904,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     const runtime = new ExecutionRuntime(
       (error) => appendLog("Event error:", error),
       () => {
-        controller.cancelRunFlag = true;
+        controller.abortRun();
       },
       (blockId) => workspaceRef.current?.highlightBlock(blockId),
     );
@@ -636,11 +918,31 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
       warn: (...values: unknown[]) => appendLog("Warning:", ...values),
       error: (...values: unknown[]) => appendLog("Error:", ...values),
     };
+    const programDrone = new Proxy(controller, {
+      get(target, property, receiver) {
+        if (property === "takePicture") {
+          return async () => {
+            if (runtime.stopped || runtimeRef.current !== runtime) {
+              throw new Error("Program stopped");
+            }
+            await captureAndStorePhoto();
+          };
+        }
+        const member = Reflect.get(target, property, receiver);
+        if (typeof member !== "function") return member;
+        return (...argumentsList: unknown[]) => {
+          if (runtime.stopped || runtimeRef.current !== runtime) {
+            throw new Error("Program stopped");
+          }
+          return Reflect.apply(member, target, argumentsList);
+        };
+      },
+    }) as DroneController;
 
     try {
       await controller.startRun();
       const execute = new AsyncFunction("drone", "vision", "runtime", "console", code);
-      await execute(controller, vision, runtime, programConsole);
+      await execute(programDrone, vision, runtime, programConsole);
       if (runtime.hasEvents && !runtime.stopped) {
         appendLog("Listening for events. Press Stop when finished.");
         await runtime.waitUntilStopped();
@@ -657,28 +959,93 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
         await controller.forceLand().catch(() => undefined);
       }
     } finally {
-      runtimeRef.current = null;
-      setRunning(false);
+      if (runtimeRef.current === runtime) runtimeRef.current = null;
+      if (!stopProgramPromiseRef.current) setRunning(false);
     }
   };
 
-  const stopProgram = async () => {
-    const controller = controllerRef.current;
-    runtimeRef.current?.stop();
-    if (controller) {
-      controller.cancelRunFlag = true;
-      appendLog("Stopping program — emergency landing…");
-      await controller.forceLand().catch((error) => appendLog("Landing:", error));
+  const stopProgram = useCallback(async () => {
+    if (stopProgramPromiseRef.current) {
+      await stopProgramPromiseRef.current;
+      return;
     }
-    setRunning(false);
-  };
+    const controller = controllerRef.current;
+    const runtime = runtimeRef.current;
+    const stopTask = Promise.resolve().then(async () => {
+      manualNudgeSequenceRef.current += 1;
+      setManualOverrideDirection(null);
+      runtime?.stop();
+      controller?.abortRun();
+      if (controller) {
+        appendLog("Stopping program — cancelling all tasks and landing…");
+        await controller.forceLand().catch((error) => appendLog("Landing:", error));
+      }
+      if (runtime) {
+        await Promise.race([
+          runtime.waitUntilIdle(),
+          new Promise<void>((resolve) => window.setTimeout(resolve, 2000)),
+        ]);
+      }
+      if (runtimeRef.current === runtime) runtimeRef.current = null;
+      setRunning(false);
+      appendLog("■ All program tasks stopped and flight commands cleared");
+    });
+    stopProgramPromiseRef.current = stopTask;
+    try {
+      await stopTask;
+    } finally {
+      if (stopProgramPromiseRef.current === stopTask) stopProgramPromiseRef.current = null;
+    }
+  }, [appendLog]);
+
+  const manualNudge = useCallback(async (direction: ManualFlightDirection) => {
+    const controller = controllerRef.current;
+    if (!running || editorMode !== "blocks" || !controller?.isFlying()) return;
+    const sequence = ++manualNudgeSequenceRef.current;
+    setManualOverrideDirection(direction);
+    appendLog(`Manual override: ${direction}`);
+    try {
+      await controller.manualNudge(direction);
+    } finally {
+      if (manualNudgeSequenceRef.current === sequence) setManualOverrideDirection(null);
+    }
+  }, [appendLog, editorMode, running]);
+
+  useEffect(() => {
+    if (!running) return;
+    const handleManualFlightKey = (event: KeyboardEvent) => {
+      if (event.code === "Space") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        void stopProgram();
+        return;
+      }
+      if (editorMode !== "blocks") return;
+      const directions: Partial<Record<string, ManualFlightDirection>> = {
+        ArrowUp: "forward",
+        ArrowDown: "backward",
+        ArrowLeft: "left",
+        ArrowRight: "right",
+      };
+      const direction = directions[event.key];
+      if (!direction) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      void manualNudge(direction);
+    };
+    const keyboardTargets = simulatorWindow ? [window, simulatorWindow] : [window];
+    keyboardTargets.forEach((target) => target.addEventListener("keydown", handleManualFlightKey, true));
+    return () => keyboardTargets.forEach((target) => {
+      target.removeEventListener("keydown", handleManualFlightKey, true);
+    });
+  }, [editorMode, manualNudge, running, simulatorWindow, stopProgram]);
 
   const emergencyCutoff = async () => {
     const controller = controllerRef.current;
     if (!controller) return;
     if (!window.confirm("Emergency only: stop the motors immediately?")) return;
     runtimeRef.current?.stop();
-    controller.cancelRunFlag = true;
+    controller.abortRun();
     await controller.cutoff().catch((error) => appendLog("Motor cutoff:", error));
     setRunning(false);
     appendLog("⚠ Emergency motor cutoff sent");
@@ -691,7 +1058,8 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
       setCameraState("connecting");
       setWifiState("checking");
       setDetections([]);
-      setCenterPixel(null);
+      setAprilTagDetections([]);
+      setThresholdResult(null);
       const source = cameraProxyAvailable
         ? `/api/camera?url=${encodeURIComponent(cameraUrl.href)}&t=${Date.now()}`
         : cameraUrl.href;
@@ -704,77 +1072,112 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     }
   };
 
-  const scanColor = useCallback(() => {
+  const previewThreshold = useCallback(async () => {
     try {
-      const result = visionRef.current?.colorCoverage(activeProfile) ?? null;
-      setCoverage(result);
+      const result = await visionRef.current?.scanThreshold(thresholdPercent, thresholdInvert, false);
+      if (!result) return undefined;
+      setDisplayVisionMode("threshold");
+      if (simulationControllerRef.current) {
+        setSimulatorVisionMode("threshold");
+        setSimulatorThresholdResult(result);
+      }
       return result;
     } catch (error) {
-      setColorScanEnabled(false);
-      appendLog("Color scan:", error);
-      return null;
+      setVisionTestingMode(null);
+      appendLog("Threshold scan:", error);
+      return undefined;
     }
-  }, [activeProfile, appendLog]);
+  }, [appendLog, thresholdInvert, thresholdPercent]);
 
   useEffect(() => {
-    if (!colorScanEnabled) return;
-    scanColor();
-    const interval = window.setInterval(scanColor, 750);
-    return () => window.clearInterval(interval);
-  }, [colorScanEnabled, scanColor]);
-
-  useEffect(() => {
-    if (!cameraLive) return;
-    const sample = () => {
-      try {
-        setCenterPixel(visionRef.current?.sampleCenterPixel() ?? null);
-      } catch {
-        setCenterPixel(null);
-      }
+    if (visionTestingMode !== "threshold") return;
+    const initial = window.setTimeout(() => void previewThreshold(), 0);
+    const interval = window.setInterval(() => void previewThreshold(), 650);
+    return () => {
+      window.clearTimeout(initial);
+      window.clearInterval(interval);
     };
-    sample();
-    const interval = window.setInterval(sample, 500);
-    return () => window.clearInterval(interval);
-  }, [cameraLive]);
+  }, [previewThreshold, visionTestingMode]);
 
-  useEffect(() => {
-    if (!cameraLive) return;
-    const timer = window.setTimeout(scanColor, 70);
-    return () => window.clearTimeout(timer);
-  }, [activeProfile, cameraLive, profiles, scanColor]);
-
-  const scanObjects = useCallback(async () => {
+  const previewObjects = useCallback(async () => {
     if (objectScanBusyRef.current) return;
     objectScanBusyRef.current = true;
     try {
-      await visionRef.current?.detectObjects(0.55);
+      const nextDetections = await visionRef.current?.detectObjects(
+        objectConfidencePercent / 100,
+        false,
+      );
+      if (!nextDetections) return;
+      setDisplayVisionMode("object");
+      if (simulationControllerRef.current) {
+        setSimulatorVisionMode("object");
+        setSimulatorDetections(nextDetections);
+      }
     } catch (error) {
-      setObjectScanEnabled(false);
+      setVisionTestingMode(null);
       appendLog("Object detection:", error);
     } finally {
       objectScanBusyRef.current = false;
     }
+  }, [appendLog, objectConfidencePercent]);
+
+  const previewAprilTags = useCallback(async () => {
+    if (aprilTagScanBusyRef.current) return;
+    aprilTagScanBusyRef.current = true;
+    try {
+      const nextTags = await visionRef.current?.scanAprilTags(false);
+      if (!nextTags) return;
+      setDisplayVisionMode("apriltag");
+      if (simulationControllerRef.current) {
+        setSimulatorVisionMode("apriltag");
+        setSimulatorAprilTags(nextTags);
+      }
+    } catch (error) {
+      setVisionTestingMode(null);
+      appendLog("AprilTag detection:", error);
+    } finally {
+      aprilTagScanBusyRef.current = false;
+    }
   }, [appendLog]);
 
-  const toggleObjectScan = async () => {
-    if (objectScanEnabled) {
-      setObjectScanEnabled(false);
+  const toggleVisionTesting = async (mode: VisionTestingMode) => {
+    if (visionTestingMode === mode) {
+      setVisionTestingMode(null);
+      setDisplayVisionMode(null);
+      setSimulatorVisionMode(null);
       return;
     }
     try {
-      if (!simulationControllerRef.current) await visionRef.current?.loadObjectModel();
-      setObjectScanEnabled(true);
-      await scanObjects();
+      if (mode === "object" && !simulationControllerRef.current) {
+        await visionRef.current?.loadObjectModel();
+      }
+      setDisplayVisionMode(mode);
+      if (simulationControllerRef.current) setSimulatorVisionMode(mode);
+      setVisionTestingMode(mode);
     } catch (error) {
-      appendLog("Object model:", error);
+      appendLog(`${mode} testing:`, error);
     }
   };
 
   useEffect(() => {
-    if (!objectScanEnabled) return;
-    const interval = window.setInterval(() => void scanObjects(), 1800);
-    return () => window.clearInterval(interval);
-  }, [objectScanEnabled, scanObjects]);
+    if (visionTestingMode !== "object") return;
+    const initial = window.setTimeout(() => void previewObjects(), 0);
+    const interval = window.setInterval(() => void previewObjects(), 1800);
+    return () => {
+      window.clearTimeout(initial);
+      window.clearInterval(interval);
+    };
+  }, [previewObjects, visionTestingMode]);
+
+  useEffect(() => {
+    if (visionTestingMode !== "apriltag") return;
+    const initial = window.setTimeout(() => void previewAprilTags(), 0);
+    const interval = window.setInterval(() => void previewAprilTags(), 900);
+    return () => {
+      window.clearTimeout(initial);
+      window.clearInterval(interval);
+    };
+  }, [previewAprilTags, visionTestingMode]);
 
   const loadCustomModel = async (files: FileList | null) => {
     if (!files?.length) return;
@@ -817,13 +1220,35 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     }
   };
 
+  const openAprilTagPdf = () => {
+    const pdfWindow = window.open("about:blank", "_blank");
+    if (!pdfWindow) {
+      notify("Allow pop-ups to open the printable AprilTag PDF");
+      return;
+    }
+    const pdfBytes = buildAprilTagPdf(pdfTagId);
+    const pdfUrl = URL.createObjectURL(new Blob([pdfBytes], { type: "application/pdf" }));
+    pdfWindow.opener = null;
+    pdfWindow.location.href = pdfUrl;
+    window.setTimeout(() => URL.revokeObjectURL(pdfUrl), 60_000);
+  };
+
   const clampVisionWidth = useCallback((width: number) => {
-    const available = Math.max(330, window.innerWidth - 570);
-    return Math.round(Math.max(330, Math.min(720, available, width)));
+    const available = Math.max(
+      VISION_MIN_WIDTH,
+      window.innerWidth - EDITOR_MIN_WIDTH - VISION_SPLITTER_WIDTH,
+    );
+    return Math.round(Math.max(VISION_MIN_WIDTH, Math.min(available, width)));
   }, []);
 
   useEffect(() => {
-    const fitVisionDeck = () => setVisionWidth((current) => clampVisionWidth(current));
+    const fitVisionDeck = () => {
+      setVisionMaximumWidth(Math.max(
+        VISION_MIN_WIDTH,
+        window.innerWidth - EDITOR_MIN_WIDTH - VISION_SPLITTER_WIDTH,
+      ));
+      setVisionWidth((current) => clampVisionWidth(current));
+    };
     fitVisionDeck();
     window.addEventListener("resize", fitVisionDeck);
     return () => window.removeEventListener("resize", fitVisionDeck);
@@ -857,32 +1282,18 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     setVisionWidth((current) => clampVisionWidth(current + change));
   };
 
-  const updateProfile = (
-    channel: "r" | "g" | "b",
-    side: "Min" | "Max",
-    value: number,
-  ) => {
-    const key = `${channel}${side}` as keyof ColorProfile;
-    const oppositeKey = `${channel}${side === "Min" ? "Max" : "Min"}` as keyof ColorProfile;
-    setProfiles((current) => ({
-      ...current,
-      [activeProfile]: {
-        ...current[activeProfile],
-        [key]:
-          side === "Min"
-            ? Math.min(clampChannel(value), current[activeProfile][oppositeKey])
-            : Math.max(clampChannel(value), current[activeProfile][oppositeKey]),
-      },
-    }));
-  };
-
   const newProject = () => {
     if (!window.confirm("Start a fresh project? Your saved project will stay on this computer.")) return;
     const workspace = workspaceRef.current;
     const toolkit = blocklyRef.current;
-    if (workspace && toolkit) toolkit.loadDefaultWorkspace(workspace);
+    if (workspace && toolkit) {
+      toolkit.loadDefaultWorkspace(workspace);
+      const nextJavascriptCode = toolkit.generateWorkspaceCode(workspace);
+      javascriptCodeRef.current = nextJavascriptCode;
+      setJavascriptCode(nextJavascriptCode);
+    }
     setProjectName("Untitled Hopper Project");
-    setJavascriptCode("");
+    setEditorMode(DEFAULT_EDITOR_MODE);
     notify("Fresh project opened");
   };
 
@@ -918,7 +1329,11 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
       if (!project.workspace) throw new Error("This file has no block workspace.");
       blocklyRef.current?.restoreWorkspace(workspaceRef.current!, project.workspace);
       setProjectName(project.name || "Imported Hopper Project");
-      setJavascriptCode(project.javascriptCode || "");
+      const importedJavascriptCode = project.javascriptCode
+        ?? blocklyRef.current?.generateWorkspaceCode(workspaceRef.current!)
+        ?? "";
+      javascriptCodeRef.current = importedJavascriptCode;
+      setJavascriptCode(importedJavascriptCode);
       notify("Project imported");
     } catch (error) {
       appendLog("Import:", error);
@@ -928,17 +1343,16 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     }
   };
 
-  const activeRange = profiles[activeProfile];
   const telemetryLive = telemetry.connected || cameraLive;
   const modelLabel =
     simulationConnected
-      ? objectScanEnabled
+      ? visionTestingMode === "object"
         ? "Scanning simulation every 1.8s"
         : "Simulation labels ready"
       : modelState === "loading"
       ? "Loading local model…"
       : modelState === "ready"
-        ? objectScanEnabled
+        ? visionTestingMode === "object"
           ? "Scanning every 1.8s"
           : "Model ready"
         : modelState === "error"
@@ -952,16 +1366,34 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
         ? "Pairing…"
         : "Connect drone";
 
+  const objectConfidence = objectConfidencePercent / 100;
+  const visibleDetections = useMemo(
+    () => detections.filter((item) => item.score >= objectConfidence),
+    [detections, objectConfidence],
+  );
+  const visibleSimulatorDetections = useMemo(
+    () => simulatorDetections.filter((item) => item.score >= objectConfidence),
+    [objectConfidence, simulatorDetections],
+  );
   const detectionSummary = useMemo(
     () =>
-      detections.map((item, index) => ({
+      visibleDetections.map((item, index) => ({
         id: `${item.class}-${index}`,
         label: formatDetectionLabel(item.class),
         confidence: Math.round(item.score * 100),
         x: formatCoordinate(item.centerX),
         y: formatCoordinate(item.centerY),
       })),
-    [detections],
+    [visibleDetections],
+  );
+  const aprilTagSummary = useMemo(
+    () => aprilTagDetections.map((tag) => ({
+      id: tag.id,
+      x: formatCoordinate(tag.centerX),
+      y: formatCoordinate(tag.centerY),
+      yaw: formatCoordinate(tag.yaw),
+    })),
+    [aprilTagDetections],
   );
   const customPredictionSummary = useMemo(
     () =>
@@ -981,6 +1413,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   const workspaceStyle = {
     "--vision-width": `${visionWidth}px`,
   } as CSSProperties;
+  const scanActive = scanEvent?.phase === "start";
   return (
     <main className="studio-shell">
       <header className="topbar">
@@ -990,16 +1423,20 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
             className={`wrc-refresh-button ${hardRefreshing ? "refreshing" : ""}`}
             onClick={() => void hardRefresh()}
             disabled={hardRefreshing}
-            aria-label="Hard refresh Hopper Studio and update its offline files"
-            title="Hard refresh: check for and save the newest Hopper Studio files"
+            aria-label={`Hard refresh ${STUDIO_NAME} and update its offline files`}
+            title={`Hard refresh: check for and save the newest ${STUDIO_NAME} files`}
           >
-            <img src={wrcLogo} alt="World Robotics Championship" className="wrc-logo" />
+            <img
+              src={wrcLogo}
+              alt="Weapons, Robotics and Control Engineering"
+              className="wrc-logo"
+            />
             <span aria-hidden="true">↻</span>
           </button>
           <span className="brand-divider" />
           <div>
-            <div className="brand-name">HOPPER STUDIO</div>
-            <div className="brand-subtitle">FLIGHT + VISION LAB</div>
+            <div className="brand-name">{STUDIO_NAME.toUpperCase()}</div>
+            <div className="brand-subtitle">{LAB_NAME.toUpperCase()}</div>
           </div>
         </div>
         <div className="topbar-center">
@@ -1076,6 +1513,40 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
             accept=".json,.hopper.json"
             onChange={(event) => void importProject(event.target.files?.[0])}
           />
+          <details className="information-menu" ref={informationMenuRef}>
+            <summary aria-label="Open information slide decks" title="Information slide decks">
+              <span aria-hidden="true">ⓘ</span>
+              <span className="information-menu-label">Information</span>
+              <i aria-hidden="true">▾</i>
+            </summary>
+            <nav className="information-menu-panel" aria-label="Information slide decks">
+              <div className="information-menu-heading">
+                <b>INFORMATION</b>
+                <small>PDF slide decks</small>
+              </div>
+              <ol>
+                {INFORMATION_SLIDE_DECKS.map((deck, index) => (
+                  <li key={deck.path}>
+                    <a
+                      href={deck.path}
+                      target="_blank"
+                      rel="noopener"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        openInformationSlideDeck(deck.path, deck.title);
+                      }}
+                    >
+                      <span>{String(index + 1).padStart(2, "0")}</span>
+                      <span>
+                        <b>{deck.title}</b>
+                        <small>{deck.description}</small>
+                      </span>
+                    </a>
+                  </li>
+                ))}
+              </ol>
+            </nav>
+          </details>
         </div>
         <div className="editor-tabs" role="tablist" aria-label="Editor mode">
           <button
@@ -1107,8 +1578,13 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
           ) : (
             <button className="run-button" onClick={() => void runProgram()}><span>▶</span> RUN PROGRAM</button>
           )}
-          <button className="cutoff-button" onClick={() => void emergencyCutoff()} title="Emergency motor cutoff">
-            ⚠
+          <button
+            className="cutoff-button"
+            onClick={() => void emergencyCutoff()}
+            title="Emergency motor cutoff"
+            aria-label="Emergency motor cutoff"
+          >
+            <span aria-hidden="true">⚠</span><b>CUT MOTORS</b>
           </button>
         </div>
       </section>
@@ -1121,17 +1597,78 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
             <span>AUTOSAVE ON</span>
           </div>
           <div className={`blockly-host ${editorMode === "blocks" ? "visible" : ""}`} ref={workspaceHostRef} />
+          {editorMode === "blocks" && (
+            <div
+              className={`manual-flight-pad ${showConsole ? "above-console" : ""}`}
+              aria-label="Manual flight override controls"
+            >
+              <span>MANUAL OVERRIDE</span>
+              <button
+                type="button"
+                className={`manual-forward ${manualOverrideDirection === "forward" ? "active" : ""}`}
+                onClick={() => void manualNudge("forward")}
+                disabled={!manualControlsAvailable}
+                aria-label="Temporarily override program and fly forward"
+                title="Fly forward · Up arrow"
+              >↑<small>FWD</small></button>
+              <button
+                type="button"
+                className={`manual-left ${manualOverrideDirection === "left" ? "active" : ""}`}
+                onClick={() => void manualNudge("left")}
+                disabled={!manualControlsAvailable}
+                aria-label="Temporarily override program and fly left"
+                title="Fly left · Left arrow"
+              >←</button>
+              <button
+                type="button"
+                className="manual-land"
+                onClick={() => void stopProgram()}
+                disabled={!running}
+                aria-label="Stop program and land"
+                title="Stop and land · Spacebar"
+              >LAND</button>
+              <button
+                type="button"
+                className={`manual-right ${manualOverrideDirection === "right" ? "active" : ""}`}
+                onClick={() => void manualNudge("right")}
+                disabled={!manualControlsAvailable}
+                aria-label="Temporarily override program and fly right"
+                title="Fly right · Right arrow"
+              >→</button>
+              <button
+                type="button"
+                className={`manual-back ${manualOverrideDirection === "backward" ? "active" : ""}`}
+                onClick={() => void manualNudge("backward")}
+                disabled={!manualControlsAvailable}
+                aria-label="Temporarily override program and fly backward"
+                title="Fly backward · Down arrow"
+              >↓<small>BACK</small></button>
+            </div>
+          )}
           {editorMode === "javascript" && (
             <div className="javascript-editor">
-              <div className="line-numbers" aria-hidden="true">
+              <div ref={javascriptLineNumbersRef} className="line-numbers" aria-hidden="true">
                 {javascriptCode.split("\n").map((_, index) => <span key={index}>{index + 1}</span>)}
               </div>
-              <textarea
-                value={javascriptCode}
-                onChange={(event) => setJavascriptCode(event.target.value)}
-                spellCheck={false}
-                aria-label="JavaScript program"
-              />
+              <div className="javascript-code-pane">
+                <pre
+                  ref={javascriptHighlightRef}
+                  className="javascript-highlight"
+                  aria-hidden="true"
+                ><code>{javascriptTokens.map((token, index) => (
+                    <span className={`js-token-${token.kind}`} key={`${index}-${token.kind}`}>
+                      {token.text}
+                    </span>
+                  ))}{"\u200b"}</code></pre>
+                <textarea
+                  value={javascriptCode}
+                  onChange={(event) => setJavascriptCode(event.target.value)}
+                  onScroll={(event) => syncJavaScriptScroll(event.currentTarget)}
+                  wrap="off"
+                  spellCheck={false}
+                  aria-label="JavaScript program"
+                />
+              </div>
             </div>
           )}
           {showConsole && (
@@ -1156,12 +1693,12 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
           className="vision-resize-handle"
           type="button"
           role="separator"
-          aria-label="Resize Telemetry panel"
+          aria-label="Resize Vision Testing panel"
           aria-orientation="vertical"
-          aria-valuemin={330}
-          aria-valuemax={720}
+          aria-valuemin={VISION_MIN_WIDTH}
+          aria-valuemax={visionMaximumWidth}
           aria-valuenow={visionWidth}
-          title="Drag left or right to resize Telemetry"
+          title="Drag left or right to resize Vision Testing"
           onPointerDown={beginVisionResize}
           onKeyDown={resizeVisionWithKeyboard}
         ><i /><i /><i /></button>
@@ -1169,8 +1706,8 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
         <aside className="vision-panel">
           <div className="vision-heading">
             <div>
-              <span className="eyebrow">CAMERA + FLIGHT</span>
-              <h1>TELEMETRY</h1>
+              <span className="eyebrow">ONE TEST AT A TIME</span>
+              <h1>VISION TESTING</h1>
             </div>
             <span className={`live-badge ${telemetryLive ? "on" : ""}`}>
               <i /> {simulationConnected ? "SIM LIVE" : telemetry.connected ? "DRONE LIVE" : cameraLive ? "CAMERA LIVE" : "OFFLINE"}
@@ -1190,7 +1727,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
                 src={cameraSource}
                 alt="Hopper drone bottom camera feed"
                 onLoad={() => { setCameraState("live"); setWifiState("connected"); appendLog("Camera feed is live."); }}
-                onError={() => { setCameraState("error"); setWifiState("disconnected"); setCenterPixel(null); }}
+                onError={() => { setCameraState("error"); setWifiState("disconnected"); setThresholdResult(null); }}
               />
             ) : (
               <div className="camera-placeholder">
@@ -1199,9 +1736,14 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
                 <small>Join the Hopper Wi-Fi, then connect video.</small>
               </div>
             )}
+            <canvas
+              ref={thresholdOverlayRef}
+              className={`threshold-camera-overlay ${displayVisionMode === "threshold" ? "active" : ""}`}
+              aria-label="Binary threshold camera view"
+            />
             <div className="reticle"><i /><b /></div>
             <div className="frame-corners"><i /><i /><i /><i /></div>
-            {detections.map((detection, index) => (
+            {displayVisionMode === "object" && visibleDetections.map((detection, index) => (
               <div
                 className="detection-box"
                 key={`${detection.class}-${index}`}
@@ -1215,6 +1757,36 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
                 <span>{detection.class} {Math.round(detection.score * 100)}%</span>
               </div>
             ))}
+            {displayVisionMode === "apriltag" && aprilTagDetections.map((tag) => {
+              const right = {
+                x: (tag.corners[1].x + tag.corners[2].x) / 2,
+                y: (tag.corners[1].y + tag.corners[2].y) / 2,
+              };
+              const up = {
+                x: (tag.corners[0].x + tag.corners[1].x) / 2,
+                y: (tag.corners[0].y + tag.corners[1].y) / 2,
+              };
+              return (
+                <svg
+                  className="apriltag-overlay"
+                  key={`tag-${tag.id}`}
+                  viewBox={`0 0 ${tag.frameWidth} ${tag.frameHeight}`}
+                  preserveAspectRatio="none"
+                >
+                  <polygon points={tag.corners.map((point) => `${point.x},${point.y}`).join(" ")} />
+                  <line className="tag-axis-x" x1={tag.center.x} y1={tag.center.y} x2={right.x} y2={right.y} />
+                  <line className="tag-axis-y" x1={tag.center.x} y1={tag.center.y} x2={up.x} y2={up.y} />
+                  <circle cx={tag.center.x} cy={tag.center.y} r="4" />
+                  <text x={tag.bbox[0]} y={Math.max(14, tag.bbox[1] - 5)}>ID {tag.id} · X {formatCoordinate(tag.centerX)} · Y {formatCoordinate(tag.centerY)}</text>
+                </svg>
+              );
+            })}
+            {scanActive && (
+              <i
+                className={`vision-scan-line ${scanEvent?.kind ?? ""}`}
+                key={scanEvent?.sequence}
+              />
+            )}
             <div className="camera-readout">
               <span>CAM · DOWN</span>
               <span>{cameraLive ? "STREAM OK" : "NO SIGNAL"}</span>
@@ -1241,95 +1813,119 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
           )}
           {!simulationConnected && !cameraProxyAvailable && cameraLive && (
             <p className="inline-warning">
-              Direct video is available. Start the local app to use color tracking or object detection.
+              Direct video is available. Start the local app to use thresholding, object detection, or AprilTag detection.
             </p>
           )}
 
-          <section className="vision-tool color-tool">
+          <section className="mission-photo-gallery" aria-label="Mission photos from this session">
+            <div className="mission-photo-heading">
+              <div>
+                <span>SESSION CAMERA ROLL</span>
+                <h2>MISSION PHOTOS <b>{missionPhotos.length}</b></h2>
+              </div>
+              <button
+                type="button"
+                onClick={clearMissionPhotos}
+                disabled={missionPhotos.length === 0}
+              >
+                CLEAR ALL
+              </button>
+            </div>
+            {missionPhotos.length === 0 ? (
+              <p className="mission-photo-empty">
+                Run the <b>take and store photo</b> block to save the current camera frame here.
+              </p>
+            ) : (
+              <>
+                <div className="mission-photo-strip" role="list">
+                  {missionPhotos.map((photo) => (
+                    <a
+                      className="mission-photo-card"
+                      href={photo.url}
+                      download={`mission-photo-${String(photo.id).padStart(2, "0")}.jpg`}
+                      key={photo.id}
+                      role="listitem"
+                      title="Download this mission photo"
+                    >
+                      <img
+                        src={photo.url}
+                        alt={`Mission photo ${photo.id} from the ${photo.source === "simulated" ? "simulator" : "real drone"}`}
+                      />
+                      <span>
+                        <b>PHOTO {String(photo.id).padStart(2, "0")}</b>
+                        <small>
+                          {photo.source === "simulated" ? "SIM" : "DRONE"} ·{" "}
+                          {new Date(photo.capturedAt).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            second: "2-digit",
+                          })}
+                        </small>
+                        <em>{photo.width} × {photo.height}</em>
+                      </span>
+                    </a>
+                  ))}
+                </div>
+                <p className="mission-photo-help">Scroll the camera roll · select a photo to download it</p>
+              </>
+            )}
+          </section>
+
+          <section className="vision-tool threshold-tool">
             <div className="tool-title">
               <span className="tool-number">01</span>
-              <div><h2>COLOR TRACKER</h2><p>Fast pixel check · no neural network</p></div>
+              <div><h2>THRESHOLDING</h2><p>Binary white / black · live preview</p></div>
               <button
-                className={`tiny-toggle ${colorScanEnabled ? "on" : ""}`}
-                onClick={() => setColorScanEnabled((enabled) => !enabled)}
-                aria-label="Toggle continuous color scan"
+                className={`tiny-toggle ${visionTestingMode === "threshold" ? "on" : ""}`}
+                onClick={() => void toggleVisionTesting("threshold")}
+                aria-label="Toggle threshold testing"
+                disabled={!cameraLive}
               ><i /></button>
             </div>
-            <div className="profile-tabs">
-              {(Object.keys(profiles) as Array<keyof ColorProfiles>).map((profile) => (
-                <button
-                  key={profile}
-                  className={`${profile} ${activeProfile === profile ? "active" : ""}`}
-                  onClick={() => { setActiveProfile(profile); setCoverage(null); }}
-                >
-                  <i /> {profile.toUpperCase()}
-                </button>
-              ))}
-            </div>
-            <div className="rgb-editor">
-              {(["r", "g", "b"] as const).map((channel) => (
-                <div className="rgb-row" key={channel}>
-                  <b>{channel.toUpperCase()}</b>
-                  <label className="rgb-number">MIN <input type="number" min="0" max="255" value={activeRange[`${channel}Min`]} onChange={(event) => updateProfile(channel, "Min", Number(event.target.value))} /></label>
-                  <div
-                    className={`rgb-range ${channel}`}
-                    style={{
-                      "--range-min": `${(activeRange[`${channel}Min`] / 255) * 100}%`,
-                      "--range-max": `${(activeRange[`${channel}Max`] / 255) * 100}%`,
-                    } as CSSProperties}
-                  >
-                    <i />
-                    <input
-                      type="range"
-                      min="0"
-                      max="255"
-                      value={activeRange[`${channel}Min`]}
-                      onChange={(event) => updateProfile(channel, "Min", Number(event.target.value))}
-                      aria-label={`${channel.toUpperCase()} minimum`}
-                    />
-                    <input
-                      type="range"
-                      min="0"
-                      max="255"
-                      value={activeRange[`${channel}Max`]}
-                      onChange={(event) => updateProfile(channel, "Max", Number(event.target.value))}
-                      aria-label={`${channel.toUpperCase()} maximum`}
-                    />
-                  </div>
-                  <label className="rgb-number">MAX <input type="number" min="0" max="255" value={activeRange[`${channel}Max`]} onChange={(event) => updateProfile(channel, "Max", Number(event.target.value))} /></label>
-                </div>
-              ))}
-            </div>
-            <div className="center-pixel-readout">
-              <span
-                className="center-pixel-swatch"
-                style={{
-                  background: centerPixel
-                    ? `rgb(${centerPixel.red} ${centerPixel.green} ${centerPixel.blue})`
-                    : "#c7ccca",
-                }}
+            <div className="threshold-control">
+              <div>
+                <label htmlFor="threshold-slider">BRIGHTNESS THRESHOLD</label>
+                <b>{thresholdPercent}%</b>
+              </div>
+              <input
+                id="threshold-slider"
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+                value={thresholdPercent}
+                onChange={(event) => setThresholdPercent(clampPercent(Number(event.target.value)))}
               />
-              <div><span>CENTER TARGET PIXEL</span><small>Put each MIN below and MAX above these values</small></div>
-              <b>
-                <i>R {centerPixel?.red ?? "—"}</i>
-                <i>G {centerPixel?.green ?? "—"}</i>
-                <i>B {centerPixel?.blue ?? "—"}</i>
-              </b>
+              <div className="threshold-scale"><span>BLACK · 0%</span><span>WHITE · 100%</span></div>
             </div>
-            <div className="coverage-meter">
-              <div><span>FRAME COVERAGE</span><b>{coverage === null ? "—" : `${coverage.toFixed(1)}%`}</b></div>
-              <div className="meter-track"><i style={{ width: `${Math.min(100, coverage || 0)}%` }} /></div>
-              <button onClick={scanColor} disabled={!cameraLive}>SCAN FRAME</button>
+            <label className="invert-control">
+              <input
+                type="checkbox"
+                checked={thresholdInvert}
+                onChange={(event) => setThresholdInvert(event.target.checked)}
+              />
+              <span><i /> INVERT WHITE AND BLACK</span>
+            </label>
+            <div className="binary-readouts">
+              <span className="white"><small>WHITE IN FRAME</small><b>{thresholdResult ? `${thresholdResult.whiteCoverage.toFixed(1)}%` : "—"}</b></span>
+              <span className="black"><small>BLACK IN FRAME</small><b>{thresholdResult ? `${thresholdResult.blackCoverage.toFixed(1)}%` : "—"}</b></span>
+              <span className={thresholdResult?.centerWhite ? "white" : "black"}>
+                <small>CENTER PIXEL</small><b>{thresholdResult ? thresholdResult.centerWhite ? "WHITE" : "BLACK" : "—"}</b>
+              </span>
+            </div>
+            <div className="threshold-actions">
+              <span>Use the purple binary blocks to scan during flight.</span>
+              <button onClick={() => void previewThreshold()} disabled={!cameraLive}>TEST ONCE</button>
             </div>
           </section>
 
           <section className="vision-tool object-tool">
             <div className="tool-title">
               <span className="tool-number">02</span>
-              <div><h2>OBJECT DETECTOR</h2><p>Local COCO-SSD · on demand only</p></div>
+              <div><h2>OBJECT DETECTOR</h2><p>Local COCO-SSD · continuous live testing</p></div>
               <button
-                className={`tiny-toggle ${objectScanEnabled ? "on" : ""}`}
-                onClick={() => void toggleObjectScan()}
+                className={`tiny-toggle ${visionTestingMode === "object" ? "on" : ""}`}
+                onClick={() => void toggleVisionTesting("object")}
                 aria-label="Toggle object detection"
                 disabled={!cameraLive || modelState === "loading"}
               ><i /></button>
@@ -1337,7 +1933,28 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
             <div className="model-status-row">
               <span className={`model-orb ${modelState}`}><i /></span>
               <div><b>{modelLabel}</b><small>Runs entirely on this computer</small></div>
-              {modelState === "ready" && <button onClick={() => void scanObjects()}>SCAN ONCE</button>}
+              {modelState === "ready" && <button onClick={() => void previewObjects()}>TEST ONCE</button>}
+            </div>
+            <div className="threshold-control confidence-control">
+              <div>
+                <label htmlFor="object-confidence-slider">MINIMUM CONFIDENCE</label>
+                <b>{objectConfidencePercent}%</b>
+              </div>
+              <input
+                id="object-confidence-slider"
+                type="range"
+                min="1"
+                max="100"
+                step="1"
+                value={objectConfidencePercent}
+                onChange={(event) => setObjectConfidencePercent(
+                  clampConfidencePercent(Number(event.target.value)),
+                )}
+              />
+              <div className="threshold-scale">
+                <span>MORE RESULTS · 1%</span>
+                <span>STRICTER · 100%</span>
+              </div>
             </div>
             {detectionSummary.length > 0 ? (
               <div className="detection-chips object-detections">
@@ -1349,7 +1966,9 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
                 ))}
               </div>
             ) : (
-              <p className="empty-detections">No labels yet. Enable the model or use a purple vision block.</p>
+              <p className="empty-detections">
+                No objects at or above {objectConfidencePercent}%. Lower the confidence or test again.
+              </p>
             )}
             <p className="coordinate-legend">
               X/Y BOX CENTER · FRAME CENTER 0,0 · RIGHT/UP POSITIVE · −100 TO +100
@@ -1398,8 +2017,49 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
             </div>
           </section>
 
+          <section className="vision-tool apriltag-tool">
+            <div className="tool-title">
+              <span className="tool-number">03</span>
+              <div><h2>APRILTAG DETECTION</h2><p>tag36h11 · ID + 2D pose axes</p></div>
+              <button
+                className={`tiny-toggle ${visionTestingMode === "apriltag" ? "on" : ""}`}
+                onClick={() => void toggleVisionTesting("apriltag")}
+                aria-label="Toggle AprilTag detection"
+                disabled={!cameraLive}
+              ><i /></button>
+            </div>
+            <div className="apriltag-pdf-menu">
+              <div><b>PRINT A REAL TAG</b><small>Full-page US Letter vector PDF</small></div>
+              <label>TAG ID
+                <select value={pdfTagId} onChange={(event) => setPdfTagId(Number(event.target.value))}>
+                  {APRIL_TAG_IDS.map((id) => <option value={id} key={id}>{id}</option>)}
+                </select>
+              </label>
+              <button type="button" onClick={openAprilTagPdf}>GENERATE PDF ↗</button>
+            </div>
+            <div className="apriltag-family-row">
+              <span><small>TAG FAMILY</small><b>tag36h11</b></span>
+              <button onClick={() => void previewAprilTags()} disabled={!cameraLive}>TEST ONCE</button>
+            </div>
+            {aprilTagSummary.length > 0 ? (
+              <div className="detection-chips apriltag-detections">
+                {aprilTagSummary.map((tag) => (
+                  <span key={tag.id}>
+                    <b>APRILTAG ID {tag.id}</b>
+                    <small>X {tag.x} · Y {tag.y} · YAW {tag.yaw}°</small>
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="empty-detections">No tag36h11 markers found in the current test frame.</p>
+            )}
+            <p className="coordinate-legend">
+              RED X AXIS · CYAN Y AXIS · FRAME CENTER 0,0 · ALIGNMENT 0°
+            </p>
+          </section>
+
           <div className="vision-footnote">
-            <i /> Vision blocks use the current frame. Object detection stays off until called.
+            <i /> The toggles are test-only and mutually exclusive. Flight blocks perform their own one-shot scans.
           </div>
           <div className="creator-credit">
             <span>CREATED BY</span>
@@ -1414,10 +2074,14 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
           cameraCanvasRef={simulationCameraRef}
           telemetryCanvasRef={simulationTelemetryCameraRef}
           popupWindow={simulatorWindow}
+          inline={simulatorInline}
           minimized={simulatorMinimized}
-          detections={detections}
-          colorDetection={colorDetection}
+          detections={visibleSimulatorDetections}
+          thresholdResult={simulatorThresholdResult}
+          aprilTagDetections={simulatorAprilTags}
           visionMode={simulatorVisionMode}
+          scanActive={scanActive && simulationConnected}
+          scanSequence={scanEvent?.sequence ?? 0}
           onMinimize={() => {
             closeSimulatorWindow();
             setSimulatorMinimized(true);

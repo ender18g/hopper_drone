@@ -4,6 +4,19 @@ import test from "node:test";
 import ts from "typescript";
 
 const root = new URL("../", import.meta.url);
+const branding = JSON.parse(
+  await readFile(new URL("../config/branding.json", import.meta.url), "utf8"),
+);
+const informationSlidePaths = [
+  "information/01-hopper-sensor-suite.pdf",
+  "information/02-quadrotor-aerodynamics.pdf",
+  "information/03-coding-blocks-reference.pdf",
+  "information/04-javascript-api-reference.pdf",
+  "information/05-thresholding-with-hopper.pdf",
+  "information/06-object-detection-and-coco.pdf",
+  "information/07-teachable-machine-models.pdf",
+  "information/08-apriltags-with-hopper.pdf",
+];
 
 async function render() {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
@@ -19,26 +32,31 @@ async function render() {
   );
 }
 
-test("server-renders Hopper Studio metadata and product shell", async () => {
+test("server-renders shared branding metadata and product shell", async () => {
+  assert.ok(["javascript", "blocks"].includes(branding.defaultEditor));
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /Hopper Studio · Flight \+ Vision Lab/i);
+  assert.match(html, new RegExp(
+    `${branding.studioName} · ${branding.labName}`.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+    "i",
+  ));
   assert.match(html, /private, local block-coding and computer-vision studio/i);
   assert.match(html, /og\.png/i);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
 });
 
 test("ships the local flight, simulation, vision, offline cache, and student-build surfaces", async () => {
-  const [component, simulatorComponent, drone, simulation, runtime, vision, blockly, serviceWorker, offlineManifestScript, builtOfflineManifest, styles, readme, packageJson] = await Promise.all([
+  const [component, simulatorComponent, drone, simulation, runtime, vision, aprilTags, blockly, serviceWorker, offlineManifestScript, builtOfflineManifest, styles, readme, packageJson, brandingModule, desktopBuilder, javascriptHighlighting] = await Promise.all([
     readFile(new URL("../components/HopperStudio.tsx", import.meta.url), "utf8"),
     readFile(new URL("../components/SimulatedDroneArea.tsx", import.meta.url), "utf8"),
     readFile(new URL("../lib/drone.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/simulation.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/runtime.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/vision.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/apriltags.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/blockly.ts", import.meta.url), "utf8"),
     readFile(new URL("../public/sw.js", import.meta.url), "utf8"),
     readFile(new URL("../scripts/write-offline-manifest.mjs", import.meta.url), "utf8"),
@@ -46,10 +64,13 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../README.md", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
+    readFile(new URL("../lib/branding.ts", import.meta.url), "utf8"),
+    readFile(new URL("../desktop/electron-builder.config.cjs", import.meta.url), "utf8"),
+    readFile(new URL("../lib/javascript-highlighting.ts", import.meta.url), "utf8"),
   ]);
 
-  assert.match(component, /TELEMETRY/);
-  assert.doesNotMatch(component, /DRONE TELEMETRY/);
+  assert.match(component, /VISION TESTING/);
+  assert.doesNotMatch(component, /COLOR TRACKER/);
   assert.doesNotMatch(component, /SENSOR HEALTH/);
   assert.match(component, /Connect drone/);
   assert.match(component, /Connect simulated drone/);
@@ -58,26 +79,76 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(component, /setSyntheticDetectionProvider/);
   assert.match(component, /STOP &amp; LAND/);
   assert.match(component, /Wi-Fi ready/);
-  assert.match(component, /Resize Telemetry panel/);
+  assert.match(component, /Resize Vision Testing panel/);
+  assert.match(component, /EDITOR_MIN_WIDTH = 340/);
+  assert.match(component, /visionMaximumWidth/);
   assert.match(component, /ALLAN ELSBERRY/);
   assert.match(component, /TEACHABLE MACHINE/);
-  assert.match(component, /CENTER TARGET PIXEL/);
+  assert.match(component, /CENTER PIXEL/);
+  assert.match(component, /THRESHOLDING/);
+  assert.match(component, /APRILTAG DETECTION/);
+  assert.match(component, /GENERATE PDF/);
+  assert.match(component, /openAprilTagPdf/);
+  assert.match(component, /tag36h11/);
+  assert.match(component, /ONE TEST AT A TIME/);
   assert.match(component, /cameraProxyAvailable/);
   assert.match(component, /allow local-network access/i);
   assert.match(component, /Bluetooth permission is blocked/);
   assert.match(component, /useState<WifiState>\("disconnected"\)/);
   assert.match(component, /type="range"/);
+  assert.match(component, /MINIMUM CONFIDENCE/);
+  assert.match(component, /useState<EditorMode>\(DEFAULT_EDITOR_MODE\)/);
+  assert.match(component, /setEditorMode\(DEFAULT_EDITOR_MODE\)/);
+  assert.match(component, /seedJavascriptFromBlocks/);
+  assert.match(component, /tokenizeJavaScript\(javascriptCode\)/);
+  assert.match(component, /className="javascript-highlight"/);
+  assert.match(component, /syncJavaScriptScroll/);
+  assert.match(component, /className="information-menu"/);
+  assert.match(component, /window\.open\("about:blank", "_blank"\)/);
+  assert.match(component, /new URL\(path, document\.baseURI\)\.href/);
+  assert.match(component, /javascriptAutosaveTimerRef/);
+  assert.match(component, /objectConfidencePercent \/ 100/);
+  assert.match(component, /visibleDetections/);
   assert.match(component, /detection\.confidence/);
   assert.match(component, /batteryTone/);
   assert.match(component, /highlightBlock/);
   assert.match(component, /requestOfflineCacheRefresh/);
   assert.match(component, /waitForServiceWorkerActivation/);
   assert.match(component, /serviceWorker\.register/);
-  assert.match(component, /Hard refresh Hopper Studio/);
+  assert.match(component, /Hard refresh \$\{STUDIO_NAME\}/);
   assert.match(component, /OFFLINE READY/);
+  assert.match(component, /MANUAL OVERRIDE/);
+  assert.match(component, /manualNudge/);
+  assert.match(component, /showConsole \? "above-console"/);
+  assert.match(component, /ArrowUp: "forward"/);
+  assert.match(component, /event\.code === "Space"/);
+  assert.match(component, /simulatorWindow \? \[window, simulatorWindow\]/);
+  assert.match(component, /className="manual-land"[\s\S]*?onClick=\{\(\) => void stopProgram\(\)\}/);
+  assert.match(component, /visionTestingMode !== "object"[\s\S]*?setInterval\(\(\) => void previewObjects\(\), 1800\)/);
+  assert.match(component, /visionTestingMode !== "apriltag"[\s\S]*?setInterval\(\(\) => void previewAprilTags\(\), 900\)/);
+  assert.match(component, /setSimulatorDetections\(nextDetections\)/);
+  assert.match(component, /setSimulatorAprilTags\(nextTags\)/);
+  const stopProgramSource = component.slice(
+    component.indexOf("const stopProgram = useCallback"),
+    component.indexOf("const manualNudge"),
+  );
+  assert.doesNotMatch(stopProgramSource, /setVisionTestingMode/);
+  const visionRuntimeSetup = component.slice(
+    component.indexOf("const vision = new VisionRuntime"),
+    component.indexOf("visionRef.current = vision"),
+  );
+  assert.doesNotMatch(visionRuntimeSetup, /setVisionTestingMode/);
   assert.match(drone, /9a66fa00-0800-9191-11e4-012d1540cb8e/);
   assert.match(drone, /HOPPER/);
   assert.match(drone, /interface DroneController/);
+  assert.match(drone, /abortRun/);
+  assert.match(drone, /runGeneration/);
+  assert.match(drone, /isRunActive/);
+  assert.match(drone, /manualFlightOverride/);
+  assert.match(drone, /manualNudge/);
+  assert.match(drone, /DATA_WITH_ACK_PACKET_TYPE/);
+  assert.match(drone, /writeAcknowledgedCommand/);
+  assert.match(drone, /pendingCommandAcks/);
   assert.doesNotMatch(drone, /sensorHealth|linkRssi/);
   assert.match(simulatorComponent, /SIMULATED DRONE ROOM/);
   assert.match(simulatorComponent, /UPLOAD IMAGE/);
@@ -85,6 +156,29 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(simulatorComponent, /createPortal/);
   assert.match(simulatorComponent, /Drag Hopper drone to reposition it/);
   assert.match(simulatorComponent, /sim-vision-box/);
+  assert.match(simulatorComponent, /Person \(Marine\)/);
+  assert.match(simulatorComponent, /sim-assets\/marine-digicam\.png/);
+  assert.doesNotMatch(simulatorComponent, /💂/);
+  assert.match(simulatorComponent, /menuLabel: "Knife"/);
+  assert.match(simulatorComponent, /menuLabel: "Stop sign"/);
+  assert.match(simulatorComponent, /Computer \(laptop\)/);
+  assert.match(simulatorComponent, /menuLabel: "Truck"/);
+  assert.match(simulatorComponent, /menuLabel: "Flag \(red\)"/);
+  assert.match(simulatorComponent, /menuLabel: "Flag \(blue\)"/);
+  assert.match(simulatorComponent, /sim-capture-flag/);
+  assert.match(simulatorComponent, /object\.flagColor === "red"/);
+  assert.match(simulatorComponent, /person-soldier-default/);
+  assert.match(simulatorComponent, /apriltag-7-left/);
+  assert.match(simulatorComponent, /apriltag-19-right/);
+  assert.match(simulatorComponent, /rotation: 180/);
+  assert.match(simulatorComponent, /Choose an object to add/);
+  assert.match(simulatorComponent, /ADD TAG/);
+  assert.match(simulatorComponent, /sim-tag-x-axis-arrow/);
+  assert.match(simulatorComponent, /sim-mobile-inspector/);
+  assert.match(component, /simulatorInline/);
+  assert.match(component, /viewport-fit=cover/);
+  assert.match(component, /wrap="off"/);
+  assert.match(simulatorComponent, /sim-scan-line/);
   assert.match(simulatorComponent, /sideDroneRef/);
   assert.match(simulatorComponent, /FRONT/);
   assert.match(simulation, /SIMULATION_ROOM = \{ width: 10, height: 7 \}/);
@@ -95,24 +189,67 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(simulation, /getSimulationSideViewPose/);
   assert.match(simulation, /Wall impact/);
   assert.match(simulation, /placeDrone/);
+  assert.match(simulation, /manualFlightOverride/);
+  assert.match(simulation, /flagColor\?: "red" \| "blue"/);
   assert.match(runtime, /runBlock/);
   assert.match(vision, /lite_mobilenet_v2/);
-  assert.match(vision, /colorCoverage/);
-  assert.match(vision, /analyzeColorDetection/);
+  assert.match(vision, /scanThreshold/);
+  assert.match(vision, /analyzeThreshold/);
+  assert.match(styles, /\.manual-flight-pad/);
+  assert.match(styles, /\.manual-flight-pad\.above-console/);
+  assert.match(vision, /scanAprilTags/);
+  assert.match(vision, /centerOnAprilTag/);
+  assert.match(vision, /this\.scanned\("custom"/);
+  assert.match(vision, /safeLostTagSearches/);
+  assert.match(vision, /AprilTag centering: tag/);
+  assert.match(vision, /await drone\.rotate/);
   assert.match(vision, /detectionCenterCoordinate/);
   assert.match(vision, /lastObjectCoordinates/);
   assert.match(vision, /loadCustomModel/);
+  assert.match(vision, /async capturePhoto\(maxWidth = 960\)/);
+  assert.match(vision, /canvas\.toBlob/);
+  assert.match(vision, /desktop\/local app or connect through the camera proxy/);
   assert.match(vision, /new URL\("models\/coco-ssd\/model\.json", document\.baseURI\)/);
-  assert.match(blockly, /vision_sees_color/);
+  assert.match(aprilTags, /detectAprilTags/);
+  assert.match(aprilTags, /buildAprilTagPdf/);
+  assert.match(aprilTags, /tag36h11/);
+  assert.match(aprilTags, /hamming/);
+  assert.match(blockly, /vision_sees_binary/);
+  assert.match(blockly, /vision_binary_center/);
+  assert.match(blockly, /vision_scan_apriltags/);
+  assert.match(blockly, /vision_sees_apriltag/);
+  assert.match(blockly, /vision_center_apriltag/);
+  assert.match(blockly, /POWER: numberShadow\(15\)/);
+  assert.doesNotMatch(blockly, /YAW_POWER/);
+  assert.match(blockly, /LOST_SEARCHES/);
+  assert.doesNotMatch(blockly, /vision_sees_color/);
   assert.match(blockly, /vision_sees_custom_label/);
   assert.match(blockly, /vision_object_coordinate/);
   assert.match(blockly, /minidrone_takeoff/);
+  assert.match(blockly, /message0: "take and store photo"/);
+  assert.match(blockly, /await drone\.takePicture\(\)/);
   assert.match(blockly, /activeStatement/);
   assert.match(blockly, /activeExpression/);
+  assert.match(blockly, /class SingleBlockDragStrategy/);
+  assert.match(blockly, /shouldHealStack\([^)]*\)[\s\S]*?return true/);
+  assert.match(blockly, /enableSingleBlockDragging\(workspace\)/);
+  assert.match(blockly, /workspace\.isDragging\(\)/);
+  assert.match(blockly, /getDragStrategy\(\) instanceof SingleBlockDragStrategy/);
+  assert.match(blockly, /Blockly\.Events\.BLOCK_DRAG/);
+  assert.match(blockly, /isStart === false/);
+  assert.match(component, /property === "takePicture"/);
+  assert.match(component, /captureAndStorePhoto/);
+  assert.match(component, /MISSION PHOTOS/);
+  assert.match(component, /CLEAR ALL/);
+  assert.match(component, /URL\.revokeObjectURL/);
+  assert.match(component, /missionPhotos\.map/);
+  assert.match(styles, /--header: #001b3a/);
+  assert.match(styles, /--red: #008c95/);
   assert.match(blockly, /new URL\("blockly\/media\/", document\.baseURI\)/);
   assert.doesNotThrow(() => new Function(serviceWorker));
   assert.match(serviceWorker, /HARD_REFRESH/);
   assert.match(serviceWorker, /request\.mode === "navigate"/);
+  assert.match(serviceWorker, /cachedNavigation/);
   assert.match(serviceWorker, /refreshAppCache/);
   assert.match(serviceWorker, /text\/css,\*\/\*;q=0\.1/);
   assert.match(serviceWorker, /promoteCache/);
@@ -126,12 +263,25 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.ok(offlineManifest.assets.some((asset) => /^assets\/HopperStudio-.+\.js$/.test(asset)));
   assert.ok(offlineManifest.assets.includes("models/coco-ssd/model.json"));
   assert.ok(offlineManifest.assets.includes("sw.js"));
+  for (const slidePath of informationSlidePaths) {
+    assert.ok(component.includes(slidePath), `${slidePath} is listed in the Information menu`);
+    assert.ok(serviceWorker.includes(slidePath), `${slidePath} is cached by the offline worker`);
+    assert.ok(offlineManifest.assets.includes(slidePath), `${slidePath} is in the offline manifest`);
+  }
   assert.match(styles, /activeBlockGlow/);
   assert.match(styles, /sim-pitch-reference/);
+  assert.match(styles, /visionScanSweep/);
+  assert.match(styles, /threshold-camera-overlay/);
+  assert.match(styles, /apriltag-overlay/);
   assert.match(styles, /rotateX\(var\(--sim-flip-pitch/);
   assert.match(styles, /height: 232px/);
   assert.match(styles, /wrcRefreshSpin/);
   assert.match(styles, /local-pill\.saving/);
+  assert.match(styles, /\.js-token-keyword/);
+  assert.match(styles, /\.javascript-highlight/);
+  assert.match(styles, /\.information-menu-panel/);
+  assert.match(styles, /\.mission-photo-strip/);
+  assert.match(styles, /\.sim-capture-flag\.red/);
   assert.match(readme, /start-windows\.bat/);
   assert.match(readme, /local-network access prompt/i);
   assert.match(readme, /Bluetooth flight control is independent/);
@@ -139,10 +289,17 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(readme, /Altitude telemetry/);
   assert.match(readme, /Use the simulated drone/);
   assert.match(readme, /Use Hopper Studio offline/);
+  assert.match(readme, /defaultEditor/);
   assert.match(readme, /OpenMoji/);
   assert.match(readme, /Standard model versus embedded model/);
   assert.match(packageJson, /"build:student"/);
   assert.match(packageJson, /"build:pages"/);
+  assert.match(packageJson, /"apriltag"/);
+  assert.match(brandingModule, /config\/branding\.json/);
+  assert.match(brandingModule, /DEFAULT_EDITOR_MODE/);
+  assert.match(javascriptHighlighting, /export function tokenizeJavaScript/);
+  assert.match(desktopBuilder, /config\/branding\.json/);
+  assert.match(desktopBuilder, /productName: studioName/);
   assert.doesNotMatch(packageJson, /WRANGLER_LOG_PATH=.*vinext/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
 
@@ -155,10 +312,145 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
     access(new URL("../public/sim-assets/car.png", import.meta.url)),
     access(new URL("../public/sim-assets/banana.png", import.meta.url)),
     access(new URL("../public/sim-assets/apple.png", import.meta.url)),
+    access(new URL("../public/sim-assets/marine-digicam.png", import.meta.url)),
     access(new URL("../public/sw.js", import.meta.url)),
     access(new URL("../scripts/write-offline-manifest.mjs", import.meta.url)),
+    ...informationSlidePaths.flatMap((slidePath) => [
+      access(new URL(`../public/${slidePath}`, import.meta.url)),
+      access(new URL(`../student-build/${slidePath}`, import.meta.url)),
+    ]),
   ]);
   await assert.rejects(access(new URL("app/_sites-preview", root)));
+});
+
+test("tokenizes JavaScript for safe source-preserving syntax highlighting", async () => {
+  const source = await readFile(
+    new URL("../lib/javascript-highlighting.ts", import.meta.url),
+    "utf8",
+  );
+  const compiled = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const highlighting = await import(
+    `data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`
+  );
+  const program = [
+    "// mission",
+    "const retries = 2;",
+    "const result = await drone.takePicture();",
+    "console.log(`photo ${result ?? 1}`);",
+  ].join("\n");
+  const tokens = highlighting.tokenizeJavaScript(program);
+
+  assert.equal(tokens.map((token) => token.text).join(""), program);
+  assert.ok(tokens.some((token) => token.kind === "comment"));
+  assert.ok(tokens.some((token) => token.kind === "keyword" && token.text.includes("await")));
+  assert.ok(tokens.some((token) => token.kind === "function" && token.text.includes("takePicture")));
+  assert.ok(tokens.some((token) => token.kind === "string"));
+  assert.ok(tokens.some((token) => token.kind === "number"));
+});
+
+test("captures real and simulated camera frames as session JPEG photos", async () => {
+  const source = await readFile(new URL("../lib/vision.ts", import.meta.url), "utf8");
+  const compiled = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+  }).outputText.replace(
+    /^import \{ detectAprilTags \} from "\.\/apriltags";$/m,
+    "const detectAprilTags = () => [];",
+  );
+  const visionModule = await import(
+    `data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}#photo`
+  );
+  const originalDocument = globalThis.document;
+  const originalImageElement = globalThis.HTMLImageElement;
+  const originalCanvasElement = globalThis.HTMLCanvasElement;
+
+  class MockImage {
+    naturalWidth = 1280;
+    naturalHeight = 720;
+  }
+
+  class MockCanvas {
+    width = 640;
+    height = 360;
+    securityError = false;
+
+    getContext() {
+      return { drawImage() {} };
+    }
+
+    toBlob(callback, type) {
+      if (this.securityError) throw new DOMException("Blocked", "SecurityError");
+      callback(new Blob(["jpeg"], { type }));
+    }
+  }
+
+  globalThis.HTMLImageElement = MockImage;
+  globalThis.HTMLCanvasElement = MockCanvas;
+  globalThis.document = { createElement: () => new MockCanvas() };
+
+  try {
+    const noOp = () => undefined;
+    let cameraSource = new MockImage();
+    const runtime = new visionModule.VisionRuntime(
+      () => cameraSource,
+      () => null,
+      noOp,
+      noOp,
+      noOp,
+      noOp,
+      noOp,
+      noOp,
+      noOp,
+      noOp,
+    );
+    const realPhoto = await runtime.capturePhoto();
+    assert.equal(realPhoto.width, 960);
+    assert.equal(realPhoto.height, 540);
+    assert.equal(realPhoto.blob.type, "image/jpeg");
+
+    cameraSource = new MockCanvas();
+    const simulatedPhoto = await runtime.capturePhoto();
+    assert.equal(simulatedPhoto.width, 640);
+    assert.equal(simulatedPhoto.height, 360);
+
+    const missingRuntime = new visionModule.VisionRuntime(
+      () => null,
+      () => null,
+      noOp,
+      noOp,
+      noOp,
+      noOp,
+      noOp,
+      noOp,
+      noOp,
+      noOp,
+    );
+    await assert.rejects(
+      missingRuntime.capturePhoto(),
+      /Connect the camera feed before taking and storing a photo/,
+    );
+
+    globalThis.document = {
+      createElement: () => {
+        const canvas = new MockCanvas();
+        canvas.securityError = true;
+        return canvas;
+      },
+    };
+    cameraSource = new MockImage();
+    await assert.rejects(
+      runtime.capturePhoto(),
+      /desktop\/local app or connect through the camera proxy/,
+    );
+  } finally {
+    if (originalDocument === undefined) delete globalThis.document;
+    else globalThis.document = originalDocument;
+    if (originalImageElement === undefined) delete globalThis.HTMLImageElement;
+    else globalThis.HTMLImageElement = originalImageElement;
+    if (originalCanvasElement === undefined) delete globalThis.HTMLCanvasElement;
+    else globalThis.HTMLCanvasElement = originalCanvasElement;
+  }
 });
 
 test("refreshes local CSS as a stylesheet and promotes offline caches atomically", async () => {
@@ -229,11 +521,14 @@ test("refreshes local CSS as a stylesheet and promotes offline caches atomically
     }
     return new Response("asset", { status: 200, headers: { "content-type": "application/octet-stream" } });
   };
+  const serviceWorkerListeners = new Map();
   const serviceWorkerSelf = {
     registration: { scope: "https://hopper.test/" },
     clients: { claim: async () => undefined },
     skipWaiting: async () => undefined,
-    addEventListener() {},
+    addEventListener(type, listener) {
+      serviceWorkerListeners.set(type, listener);
+    },
   };
   const createWorker = new Function(
     "self",
@@ -257,6 +552,23 @@ test("refreshes local CSS as a stylesheet and promotes offline caches atomically
   assert.match(await cachedCss.text(), /display: grid/);
   assert.equal(await cacheStorage.has("hopper-studio-offline-v1"), false);
 
+  const cachedPdfUrl = "https://hopper.test/information/01-hopper-sensor-suite.pdf";
+  const cachedPdf = await activeCache.match(new Request(cachedPdfUrl));
+  assert.equal(await cachedPdf.text(), "asset");
+  unavailablePath = "/information/01-hopper-sensor-suite.pdf";
+  const offlinePdfRequest = new Request(cachedPdfUrl);
+  Object.defineProperty(offlinePdfRequest, "mode", { value: "navigate" });
+  let offlinePdfResponse;
+  serviceWorkerListeners.get("fetch")({
+    request: offlinePdfRequest,
+    respondWith(response) {
+      offlinePdfResponse = Promise.resolve(response);
+    },
+    waitUntil() {},
+  });
+  assert.ok(offlinePdfResponse);
+  assert.equal(await (await offlinePdfResponse).text(), "asset");
+
   unavailablePath = "/sim-assets/car.png";
   const failedRefresh = await worker.performAppCacheRefresh({ strict: true });
   assert.equal(failedRefresh.status, "offline");
@@ -264,33 +576,33 @@ test("refreshes local CSS as a stylesheet and promotes offline caches atomically
   assert.match(await (await activeCache.match(new Request("https://hopper.test/"))).text(), /app\/globals\.css/);
 });
 
-test("calculates inclusive RGB coverage and centered object coordinates", async () => {
+test("calculates binary threshold coverage and centered object coordinates", async () => {
   const source = await readFile(new URL("../lib/vision.ts", import.meta.url), "utf8");
   const compiled = ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
-  }).outputText;
+  }).outputText.replace(
+    /^import \{ detectAprilTags \} from "\.\/apriltags";$/m,
+    "const detectAprilTags = () => [];",
+  );
   const visionMath = await import(
     `data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`
   );
 
-  const green = { rMin: 0, rMax: 130, gMin: 120, gMax: 255, bMin: 0, bMax: 140 };
   const pixels = new Uint8ClampedArray([
-    0, 200, 0, 255,
-    50, 119, 50, 255,
-    130, 255, 140, 255,
-    131, 255, 140, 255,
+    0, 0, 0, 255,
+    160, 160, 160, 255,
+    255, 255, 255, 255,
+    150, 150, 150, 255,
   ]);
-  assert.equal(visionMath.calculateColorCoverage(pixels, green), 50);
-  assert.deepEqual(
-    visionMath.analyzeColorDetection(pixels, 2, 2, "green", green),
-    {
-      profile: "green",
-      coverage: 50,
-      bbox: [0, 0, 1, 2],
-      frameWidth: 2,
-      frameHeight: 2,
-    },
-  );
+  const binary = visionMath.analyzeThreshold(pixels, 2, 2, 60, false);
+  assert.equal(binary.whiteCoverage, 50);
+  assert.equal(binary.blackCoverage, 50);
+  assert.equal(binary.centerWhite, false);
+  assert.equal(binary.binaryData[0], 0);
+  assert.equal(binary.binaryData[4], 255);
+  const inverted = visionMath.analyzeThreshold(pixels, 2, 2, 60, true);
+  assert.equal(inverted.whiteCoverage, 50);
+  assert.equal(inverted.centerWhite, true);
   assert.deepEqual(visionMath.detectionCenterCoordinate([40, 40, 20, 20], 100, 100), {
     x: 0,
     y: 0,
@@ -303,6 +615,137 @@ test("calculates inclusive RGB coverage and centered object coordinates", async 
     x: -100,
     y: -100,
   });
+
+  const noOp = () => undefined;
+  const centeringLogs = [];
+  const runtime = new visionMath.VisionRuntime(
+    () => null,
+    () => null,
+    noOp,
+    noOp,
+    noOp,
+    noOp,
+    noOp,
+    noOp,
+    noOp,
+    (message) => centeringLogs.push(message),
+  );
+  let objectScans = 0;
+  runtime.detectObjects = async () => {
+    objectScans += 1;
+    return [{ class: "bottle", score: 0.97 }];
+  };
+  assert.equal(await runtime.seesObject("bottle", 0.55), true);
+  assert.equal(objectScans, 1, "camera sees object performs its own scan");
+
+  let aprilScans = 0;
+  runtime.scanAprilTags = async () => {
+    aprilScans += 1;
+    return [{ id: 7, centerX: 0, centerY: 0, yaw: 0 }];
+  };
+  assert.equal(await runtime.seesAprilTag(7), true);
+  assert.equal(aprilScans, 1, "camera sees AprilTag performs its own scan");
+
+  const scanSequence = [
+    [{ id: 7, centerX: 18, centerY: 0, yaw: 0 }],
+    [],
+    [],
+    [{ id: 7, centerX: 0, centerY: 12, yaw: 0 }],
+    [{ id: 7, centerX: 0, centerY: 0, yaw: 20 }],
+    [{ id: 7, centerX: 0, centerY: 0, yaw: 0 }],
+  ];
+  runtime.scanAprilTags = async () => scanSequence.shift() ?? [];
+  const commands = [];
+  const drone = {
+    cancelRunFlag: false,
+    setAxis(axis, power) { commands.push(["axis", axis, power]); },
+    reset() { commands.push(["reset"]); },
+    async wait(seconds) { commands.push(["wait", seconds]); },
+    async rotate(degrees, direction) { commands.push(["rotate", degrees, direction]); },
+  };
+  assert.equal(await runtime.centerOnAprilTag(drone, 7, 7, 5, 5, 3), true);
+  assert.ok(commands.some((command) => command[0] === "axis" && command[1] === "roll" && command[2] === 7));
+  assert.ok(commands.some((command) => command[0] === "axis" && command[1] === "pitch" && command[2] === 7));
+  assert.ok(commands.some((command) => command[0] === "wait" && command[1] === 0.3));
+  assert.ok(commands.some((command) => command[0] === "rotate" && command[1] === 20 && command[2] === "clockwise"));
+  assert.ok(centeringLogs.some((message) => message.includes("tag 7 detected")));
+  assert.ok(centeringLogs.some((message) => message.includes("moving right")));
+  assert.ok(centeringLogs.some((message) => message.includes("moving forward")));
+  assert.ok(centeringLogs.some((message) => message.includes("yawing clockwise 20°")));
+  assert.ok(centeringLogs.some((message) => message.includes("centered and aligned")));
+  assert.equal(scanSequence.length, 0, "centering rescans after movement and tolerates two missed frames");
+});
+
+test("detects tag36h11 IDs and rotated 2D pose from camera pixels", async () => {
+  const source = await readFile(new URL("../lib/apriltags.ts", import.meta.url), "utf8");
+  const { AprilTagFamily } = await import("apriltag");
+  const tagConfig = JSON.parse(await readFile(new URL("../node_modules/apriltag/families/36h11.json", import.meta.url), "utf8"));
+  globalThis.__hopperAprilTagTest = { AprilTagFamily, tagConfig };
+  try {
+    const compiled = ts.transpileModule(source, {
+      compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+    }).outputText
+      .replace(
+        /^import \{ AprilTagFamily \} from "apriltag";$/m,
+        "const { AprilTagFamily } = globalThis.__hopperAprilTagTest;",
+      )
+      .replace(
+        /^import tag36h11 from "apriltag\/families\/36h11\.json";$/m,
+        "const tag36h11 = globalThis.__hopperAprilTagTest.tagConfig;",
+      )
+      .replace(
+        /^import \{ STUDIO_NAME \} from "\.\/branding";$/m,
+        `const STUDIO_NAME = ${JSON.stringify(branding.studioName)};`,
+      );
+    const aprilTags = await import(
+      `data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`
+    );
+    const width = 220;
+    const height = 220;
+    const centerX = 110;
+    const centerY = 110;
+    const size = 140;
+    const angle = 25 * Math.PI / 180;
+    const pixels = new Uint8ClampedArray(width * height * 4);
+    for (let index = 0; index < pixels.length; index += 4) {
+      pixels[index] = 255;
+      pixels[index + 1] = 255;
+      pixels[index + 2] = 255;
+      pixels[index + 3] = 255;
+    }
+    const marker = aprilTags.getAprilTagPixels(19);
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const dx = x - centerX;
+        const dy = y - centerY;
+        const localX = dx * Math.cos(angle) + dy * Math.sin(angle);
+        const localY = -dx * Math.sin(angle) + dy * Math.cos(angle);
+        const gridX = Math.floor((localX + size / 2) / (size / 10));
+        const gridY = Math.floor((localY + size / 2) / (size / 10));
+        if (gridX < 0 || gridX >= 10 || gridY < 0 || gridY >= 10 || marker[gridY][gridX] !== "b") continue;
+        const pixel = (y * width + x) * 4;
+        pixels[pixel] = 0;
+        pixels[pixel + 1] = 0;
+        pixels[pixel + 2] = 0;
+      }
+    }
+    const detections = aprilTags.detectAprilTags({ data: pixels, width, height }, width, height);
+    assert.equal(detections.length, 1);
+    assert.equal(detections[0].id, 19);
+    assert.equal(detections[0].hamming, 0);
+    assert.ok(Math.abs(detections[0].centerX) < 1);
+    assert.ok(Math.abs(detections[0].centerY) < 1);
+    assert.ok(Math.abs(detections[0].yaw - 115) < 1.5);
+    const pdf = aprilTags.buildAprilTagPdf(586);
+    const pdfText = Buffer.from(pdf).toString("latin1");
+    assert.match(pdfText, /^%PDF-1\.4/);
+    assert.match(pdfText, /\/MediaBox \[0 0 612 792\]/);
+    assert.match(pdfText, /tag36h11 - ID 586/);
+    assert.match(pdfText, /xref\n0 7/);
+    assert.match(pdfText, /%%EOF\n$/);
+  } finally {
+    delete globalThis.__hopperAprilTagTest;
+  }
 });
 
 test("projects simulated floor targets into the downward camera frame", async () => {
@@ -386,8 +829,91 @@ test("tracks nested active action and vision blocks without highlighting loop bl
       "fly-forward",
       null,
     ]);
+    let releaseLongBlock;
+    const longBlock = runtime.runBlock("long-flight", () => new Promise((resolve) => {
+      releaseLongBlock = resolve;
+    }));
+    runtime.stop();
+    let idle = false;
+    const idlePromise = runtime.waitUntilIdle().then(() => { idle = true; });
+    await Promise.resolve();
+    assert.equal(idle, false, "stop waits for an already-running task to settle");
+    releaseLongBlock();
+    await Promise.all([longBlock, idlePromise]);
+    assert.equal(idle, true);
+    await assert.rejects(runtime.runBlock("stale-command", async () => undefined), /Program stopped/);
   } finally {
     globalThis.window = previousWindow;
+  }
+});
+
+test("sends real-drone flips on the acknowledged BLE channel and safely retries", async () => {
+  const source = await readFile(new URL("../lib/drone.ts", import.meta.url), "utf8");
+  const compiled = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const droneModule = await import(
+    `data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`
+  );
+  const previousWindow = globalThis.window;
+  const previousCustomEvent = globalThis.CustomEvent;
+  const writes = [];
+  let controller;
+  globalThis.window = {
+    setTimeout,
+    clearTimeout,
+    setInterval,
+    clearInterval,
+    dispatchEvent() {},
+  };
+  globalThis.CustomEvent = class {
+    constructor(type, init) { this.type = type; this.detail = init?.detail; }
+  };
+
+  try {
+    const characteristic = {
+      async writeValue(value) {
+        const packet = Uint8Array.from(new Uint8Array(value));
+        writes.push([...packet]);
+        if (writes.length === 2) {
+          setTimeout(() => {
+            const ack = Uint8Array.from([1, 0, packet[1]]);
+            controller.receivePacket(new DataView(ack.buffer));
+          }, 0);
+        }
+      },
+    };
+    const gattServer = {
+      connected: true,
+      disconnect() {},
+      async connect() { return this; },
+      async getPrimaryService() {
+        return {
+          async getCharacteristic() {
+            return characteristic;
+          },
+        };
+      },
+    };
+    controller = new droneModule.MamboController({
+      id: "test-hopper",
+      name: "Hopper test",
+      gatt: gattServer,
+      addEventListener() {},
+    });
+    controller.gattServer = gattServer;
+    controller.wait = async () => undefined;
+
+    await controller.flip("left");
+    controller.abortRun();
+
+    assert.equal(writes.length, 2, "a missing first ACK retries the same flip packet once");
+    assert.deepEqual(writes[0], [4, 0, 2, 4, 0, 0, 3, 0, 0, 0]);
+    assert.deepEqual(writes[1], writes[0], "retries reuse the sequence so the drone can deduplicate");
+  } finally {
+    controller?.abortRun();
+    globalThis.window = previousWindow;
+    globalThis.CustomEvent = previousCustomEvent;
   }
 });
 
@@ -414,6 +940,17 @@ test("simulated takeoff, tilt acceleration, and damping behave as a flight contr
   try {
     const controller = new simulation.SimulatedDroneController();
     controller.connect();
+    controller.setSceneObjects([
+      { id: "landed-apple", label: "apple", x: 1.25, y: 1.2, size: 0.56, rotation: 0, kind: "object" },
+      { id: "landed-tag", label: "AprilTag 23", x: 1.25, y: 1.2, size: 0.62, rotation: 22, kind: "apriltag", tagId: 23 },
+    ]);
+    assert.equal(controller.getSnapshot().z, 0);
+    const landedObjects = controller.getSyntheticDetections(640, 360);
+    assert.equal(landedObjects.length, 1, "object testing detects a floor target while the drone is landed");
+    assert.equal(landedObjects[0].class, "apple");
+    const landedTags = controller.getSyntheticAprilTags(640, 360);
+    assert.equal(landedTags.length, 1, "AprilTag testing detects a floor marker while the drone is landed");
+    assert.equal(landedTags[0].id, 23);
     controller.placeDrone(6, 5);
     assert.equal(controller.getSnapshot().x, 6);
     assert.equal(controller.getSnapshot().y, 5);
@@ -487,9 +1024,61 @@ test("simulated takeoff, tilt acceleration, and damping behave as a flight contr
     assert.ok(flipMiddle.flipAngle < -170 && flipMiddle.flipAngle > -190, "left flip reaches half rotation");
     assert.equal(flipMiddle.x, 5, "flip holds horizontal position");
     assert.equal(flipMiddle.y, 3, "flip holds horizontal position");
-    controller.cancelRunFlag = true;
+    controller.abortRun();
     await flipPromise;
     assert.equal(controller.getSnapshot().flipAxis, null);
+
+    await controller.startRun();
+    const staleFly = controller.fly("forward", 1, 5);
+    controller.abortRun();
+    await controller.startRun();
+    controller.setAxis("pitch", 20);
+    await staleFly;
+    assert.equal(controller.axes.pitch, 20, "a stale command cannot clear movement from a newer run");
+
+    const manualCorrection = controller.manualNudge("left", 30, 0.15);
+    assert.equal(controller.manualFlightOverride.roll, -30, "manual correction takes control immediately");
+    controller.setAxis("pitch", 35);
+    assert.equal(controller.axes.pitch, 35, "program commands continue updating beneath the override");
+    await manualCorrection;
+    assert.equal(controller.manualFlightOverride, null, "manual correction releases control after its pulse");
+    assert.equal(controller.axes.pitch, 35, "the latest program command is ready to resume");
+
+    const manualDirectionChecks = [
+      ["forward", "y", 1],
+      ["backward", "y", -1],
+      ["left", "x", -1],
+      ["right", "x", 1],
+    ];
+    for (const [direction, coordinate, sign] of manualDirectionChecks) {
+      controller.setAxis("pitch", 0);
+      controller.setAxis("roll", 0);
+      controller.setAxis("yaw", 0);
+      controller.setAxis("gaz", 0);
+      for (let frame = 0; frame < 120; frame += 1) {
+        simulatedTime += 16;
+        controller.step(0.016, simulatedTime);
+      }
+      controller.placeDrone(5, 3);
+      const start = controller.getSnapshot()[coordinate];
+      const correction = controller.manualNudge(direction, 30, 0.15);
+      for (let frame = 0; frame < 30; frame += 1) {
+        simulatedTime += 16;
+        controller.step(0.016, simulatedTime);
+      }
+      const distance = (controller.getSnapshot()[coordinate] - start) * sign;
+      assert.ok(distance > 0.01, `${direction} manual control moves the simulated drone`);
+      await correction;
+    }
+
+    const forcedLanding = controller.forceLand();
+    for (let frame = 0; frame < 300; frame += 1) {
+      simulatedTime += 16;
+      controller.step(0.016, simulatedTime);
+    }
+    await forcedLanding;
+    assert.equal(controller.cancelRunFlag, true, "forced landing keeps old run tasks cancelled");
+    assert.deepEqual(controller.axes, { pitch: 0, roll: 0, yaw: 0, gaz: 0 });
     controller.disconnect();
   } finally {
     globalThis.window = previousWindow;

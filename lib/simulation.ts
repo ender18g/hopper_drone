@@ -1,5 +1,11 @@
-import type { DroneController, DroneEventName, DroneTelemetry } from "./drone";
+import type {
+  DroneController,
+  DroneEventName,
+  DroneTelemetry,
+  ManualFlightDirection,
+} from "./drone";
 import type { VisionDetection } from "./vision";
+import type { AprilTagDetection } from "./apriltags";
 
 export const SIMULATION_ROOM = { width: 10, height: 7 } as const;
 export const SIMULATION_START = { x: 1.25, y: 1.2 } as const;
@@ -7,11 +13,15 @@ export const SIMULATION_START = { x: 1.25, y: 1.2 } as const;
 export type SimulationObject = {
   id: string;
   label: string;
-  src: string;
+  src?: string;
+  emoji?: string;
+  flagColor?: "red" | "blue";
   x: number;
   y: number;
   size: number;
   rotation: number;
+  kind?: "object" | "paper" | "apriltag";
+  tagId?: number;
   uploaded?: boolean;
 };
 
@@ -145,6 +155,14 @@ export class SimulatedDroneController implements DroneController {
   onEvent?: (eventName: DroneEventName) => void;
 
   private connected = false;
+  private runGeneration = 0;
+  private manualFlightOverride: {
+    token: symbol;
+    roll: number;
+    pitch: number;
+    yaw: number;
+    gaz: number;
+  } | null = null;
   private animationFrame: number | null = null;
   private previousFrame = 0;
   private telemetryElapsed = 0;
@@ -178,11 +196,10 @@ export class SimulatedDroneController implements DroneController {
   }
 
   disconnect() {
+    this.abortRun();
     this.connected = false;
     if (this.animationFrame !== null) window.cancelAnimationFrame(this.animationFrame);
     this.animationFrame = null;
-    this.axes = { pitch: 0, roll: 0, yaw: 0, gaz: 0 };
-    this.clearFlip();
     this.snapshot = { ...this.snapshot, connected: false };
     this.emitTelemetry();
     this.emitFrame();
@@ -208,8 +225,9 @@ export class SimulatedDroneController implements DroneController {
   }
 
   getSyntheticDetections(width = 640, height = 480): VisionDetection[] {
-    if (!this.connected || this.snapshot.crashed || this.snapshot.z < 0.12) return [];
+    if (!this.connected || this.snapshot.crashed) return [];
     return this.sceneObjects.flatMap((object) => {
+      if (object.kind && object.kind !== "object") return [];
       const projection = projectObjectToCamera(this.snapshot, object, width, height);
       if (!projection.visible) return [];
       const boxLeft = clamp(projection.centerX - projection.size / 2, 0, width);
@@ -226,6 +244,48 @@ export class SimulatedDroneController implements DroneController {
         frameHeight: height,
         centerX: Math.round(centerX * 10) / 10,
         centerY: Math.round(centerY * 10) / 10,
+      }];
+    });
+  }
+
+  getSyntheticAprilTags(width = 640, height = 480): AprilTagDetection[] {
+    if (!this.connected || this.snapshot.crashed) return [];
+    return this.sceneObjects.flatMap((object) => {
+      if (object.kind !== "apriltag" || object.tagId === undefined) return [];
+      const projection = projectObjectToCamera(this.snapshot, object, width, height);
+      if (!projection.visible) return [];
+      const angle = radians(object.rotation - this.snapshot.heading);
+      const halfSize = projection.size / 2;
+      const rotatePoint = (localX: number, localY: number) => ({
+        x: projection.centerX + localX * Math.cos(angle) - localY * Math.sin(angle),
+        y: projection.centerY + localX * Math.sin(angle) + localY * Math.cos(angle),
+      });
+      const corners: AprilTagDetection["corners"] = [
+        rotatePoint(-halfSize, -halfSize),
+        rotatePoint(halfSize, -halfSize),
+        rotatePoint(halfSize, halfSize),
+        rotatePoint(-halfSize, halfSize),
+      ];
+      const xs = corners.map((point) => point.x);
+      const ys = corners.map((point) => point.y);
+      const left = Math.max(0, Math.min(...xs));
+      const top = Math.max(0, Math.min(...ys));
+      const right = Math.min(width, Math.max(...xs));
+      const bottom = Math.min(height, Math.max(...ys));
+      const centerX = clamp((projection.centerX / width - 0.5) * 200, -100, 100);
+      const centerY = clamp((0.5 - projection.centerY / height) * 200, -100, 100);
+      return [{
+        id: object.tagId,
+        family: "tag36h11",
+        corners,
+        center: { x: projection.centerX, y: projection.centerY },
+        bbox: [left, top, right - left, bottom - top],
+        frameWidth: width,
+        frameHeight: height,
+        centerX: Math.round(centerX * 10) / 10,
+        centerY: Math.round(centerY * 10) / 10,
+        yaw: Math.round(((object.rotation - this.snapshot.heading + 90 + 540) % 360 - 180) * 10) / 10,
+        hamming: 0,
       }];
     });
   }
@@ -269,13 +329,22 @@ export class SimulatedDroneController implements DroneController {
     await this.wait(duration);
   }
 
+  abortRun() {
+    this.runGeneration += 1;
+    this.cancelRunFlag = true;
+    this.reset();
+    this.manualFlightOverride = null;
+  }
+
   async startRun() {
+    this.runGeneration += 1;
     this.cancelRunFlag = false;
+    this.manualFlightOverride = null;
     this.reset();
   }
 
   async stopRun() {
-    this.reset();
+    this.abortRun();
     await this.landNoWait();
   }
 
@@ -306,9 +375,12 @@ export class SimulatedDroneController implements DroneController {
 
   async forceLand() {
     if (this.snapshot.crashed) return;
-    this.cancelRunFlag = false;
+    this.abortRun();
     await this.landNoWait();
-    await this.waitFor(() => this.snapshot.z <= 0.01 || this.snapshot.crashed, 3.5);
+    const endAt = performance.now() + 3500;
+    while (this.snapshot.z > 0.01 && !this.snapshot.crashed && performance.now() < endAt) {
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 25));
+    }
   }
 
   async cutoff() {
@@ -339,11 +411,34 @@ export class SimulatedDroneController implements DroneController {
     }
   }
 
+  async manualNudge(
+    direction: ManualFlightDirection,
+    power = 30,
+    seconds = 0.45,
+  ) {
+    if (this.cancelRunFlag || !this.isFlying()) return;
+    const safePower = clamp(Math.abs(Number(power) || 30), 1, 100);
+    const safeSeconds = clamp(Number(seconds) || 0.45, 0.15, 1.5);
+    const token = Symbol(direction);
+    this.manualFlightOverride = {
+      token,
+      roll: direction === "right" ? safePower : direction === "left" ? -safePower : 0,
+      pitch: direction === "forward" ? safePower : direction === "backward" ? -safePower : 0,
+      yaw: 0,
+      gaz: 0,
+    };
+    await new Promise<void>((resolve) => window.setTimeout(resolve, safeSeconds * 1000));
+    if (this.manualFlightOverride?.token === token) this.manualFlightOverride = null;
+  }
+
   async rotate(degreesToTurn = 0, direction: "clockwise" | "counterclockwise" = "clockwise") {
+    const generation = this.runGeneration;
+    if (!this.isRunActive(generation)) return;
     const safeDegrees = Math.max(0, Number(degreesToTurn) || 0);
     const seconds = safeDegrees / 180;
     this.axes.yaw = direction === "clockwise" ? 100 : -100;
     await this.wait(seconds);
+    if (!this.isRunActive(generation)) return;
     this.axes.yaw = 0;
     await this.wait(0.55);
   }
@@ -353,6 +448,8 @@ export class SimulatedDroneController implements DroneController {
     seconds = 0,
     power = 0,
   ) {
+    const generation = this.runGeneration;
+    if (!this.isRunActive(generation)) return;
     const safeSeconds = Math.max(0, Number(seconds) || 0);
     let safePower = clamp(Number(power) || 0, -100, 100);
     let axis: Axis;
@@ -362,18 +459,20 @@ export class SimulatedDroneController implements DroneController {
     if (["down", "left", "backward"].includes(direction)) safePower *= -1;
     this.setAxis(axis, safePower);
     await this.wait(safeSeconds);
+    if (!this.isRunActive(generation)) return;
     this.setAxis(axis, 0);
     await this.wait(2);
   }
 
   setAxis(axis: "pitch" | "roll" | "yaw" | "gaz" | "altitude", power: number) {
+    if (this.cancelRunFlag) return;
     const normalizedAxis = axis === "altitude" ? "gaz" : axis;
     this.axes[normalizedAxis] = clamp(Number(power) || 0, -100, 100);
     if (normalizedAxis === "gaz") this.targetAltitude = null;
   }
 
   async flip(direction: SimulationFlipDirection) {
-    if (this.snapshot.z < 0.55 || this.snapshot.crashed) return;
+    if (this.cancelRunFlag || this.snapshot.z < 0.55 || this.snapshot.crashed) return;
     this.reset();
     const transform = getSimulationFlipTransform(direction, 0);
     const animation = {
@@ -410,8 +509,9 @@ export class SimulatedDroneController implements DroneController {
   }
 
   async wait(seconds: number) {
+    const generation = this.runGeneration;
     const endAt = performance.now() + Math.max(0, Number(seconds) || 0) * 1000;
-    while (!this.cancelRunFlag && performance.now() < endAt) {
+    while (this.isRunActive(generation) && performance.now() < endAt) {
       await new Promise<void>((resolve) => window.setTimeout(resolve, 25));
     }
   }
@@ -455,8 +555,9 @@ export class SimulatedDroneController implements DroneController {
     const emergency = current.flyingState === "emergency";
     const activeFlip = this.flipAnimation;
 
-    let targetPitch = powerToTiltDegrees(this.axes.pitch);
-    let targetRoll = powerToTiltDegrees(this.axes.roll);
+    const flightAxes = this.manualFlightOverride ?? this.axes;
+    let targetPitch = powerToTiltDegrees(flightAxes.pitch);
+    let targetRoll = powerToTiltDegrees(flightAxes.roll);
     if (now < this.manualOverrideUntil) {
       targetPitch = this.manualPitch ?? targetPitch;
       targetRoll = this.manualRoll ?? targetRoll;
@@ -470,7 +571,7 @@ export class SimulatedDroneController implements DroneController {
     const pitch = current.pitch + this.pitchVelocity * elapsed;
     const roll = current.roll + this.rollVelocity * elapsed;
 
-    const targetYawRate = airborne && !emergency ? this.axes.yaw * 1.8 : 0;
+    const targetYawRate = airborne && !emergency ? flightAxes.yaw * 1.8 : 0;
     const yawRate = current.yawRate + (targetYawRate - current.yawRate) * Math.min(1, elapsed * 5.4);
     const heading = (current.heading + yawRate * elapsed + 360) % 360;
     const headingRadians = radians(heading);
@@ -520,7 +621,7 @@ export class SimulatedDroneController implements DroneController {
       ) * elapsed;
 
       const targetVerticalVelocity = this.targetAltitude === null
-        ? this.axes.gaz * 0.014
+        ? flightAxes.gaz * 0.014
         : clamp((this.targetAltitude - z) * 1.7, -0.9, 1.25);
       vz += (targetVerticalVelocity - vz) * Math.min(1, elapsed * 3.6);
     } else if (emergency) {
@@ -673,10 +774,15 @@ export class SimulatedDroneController implements DroneController {
   }
 
   private async waitFor(predicate: () => boolean, timeoutSeconds: number) {
+    const generation = this.runGeneration;
     const endAt = performance.now() + timeoutSeconds * 1000;
-    while (!this.cancelRunFlag && !predicate() && performance.now() < endAt) {
+    while (this.isRunActive(generation) && !predicate() && performance.now() < endAt) {
       await new Promise<void>((resolve) => window.setTimeout(resolve, 25));
     }
+  }
+
+  private isRunActive(generation: number) {
+    return !this.cancelRunFlag && generation === this.runGeneration;
   }
 
   private initialSnapshot(): SimulationSnapshot {

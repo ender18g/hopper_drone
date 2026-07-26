@@ -15,6 +15,14 @@ const FALLBACK_ASSETS = [
   "sim-assets/apple.png",
   "sim-assets/banana.png",
   "sim-assets/car.png",
+  "information/01-hopper-sensor-suite.pdf",
+  "information/02-quadrotor-aerodynamics.pdf",
+  "information/03-coding-blocks-reference.pdf",
+  "information/04-javascript-api-reference.pdf",
+  "information/05-thresholding-with-hopper.pdf",
+  "information/06-object-detection-and-coco.pdf",
+  "information/07-teachable-machine-models.pdf",
+  "information/08-apriltags-with-hopper.pdf",
   "blockly/media/1x1.gif",
   "blockly/media/click.mp3",
   "blockly/media/delete-icon.svg",
@@ -268,10 +276,12 @@ self.addEventListener("fetch", (event) => {
           return response;
         }
       } catch {
-        // The router/server is unavailable; use the complete saved app shell.
+        // The router/server is unavailable; use the saved navigation or app shell.
       }
+      const cachedNavigation = await matchActiveCache(canonicalRequest(request.url));
+      if (cachedNavigation) return cachedNavigation;
       const cachedShell = await matchActiveCache(canonicalRequest(APP_SHELL_URL));
-      return cachedShell || new Response("Hopper Studio has not finished saving its offline copy yet.", {
+      return cachedShell || new Response("The app has not finished saving its offline copy yet.", {
         status: 503,
         headers: { "content-type": "text/plain; charset=utf-8" },
       });

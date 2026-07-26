@@ -1,29 +1,27 @@
 import type { DetectedObject, ObjectDetection } from "@tensorflow-models/coco-ssd";
 import type { CustomMobileNet } from "@teachablemachine/image";
+import type { DroneController } from "./drone";
+import { detectAprilTags, type AprilTagDetection } from "./apriltags";
 
-export type ColorProfile = {
-  rMin: number;
-  rMax: number;
-  gMin: number;
-  gMax: number;
-  bMin: number;
-  bMax: number;
-};
+export type BinaryColor = "white" | "black";
 
-export type ColorProfiles = Record<"red" | "green" | "blue", ColorProfile>;
-
-export type RgbPixel = {
-  red: number;
-  green: number;
-  blue: number;
-};
-
-export type ColorDetectionResult = {
-  profile: keyof ColorProfiles;
-  coverage: number;
-  bbox: [number, number, number, number] | null;
+export type ThresholdResult = {
+  threshold: number;
+  invert: boolean;
+  whiteCoverage: number;
+  blackCoverage: number;
+  centerWhite: boolean;
   frameWidth: number;
   frameHeight: number;
+  binaryData: Uint8ClampedArray;
+};
+
+export type VisionScanKind = "threshold" | "object" | "apriltag" | "custom";
+
+export type VisionScanEvent = {
+  kind: VisionScanKind;
+  phase: "start" | "complete" | "error";
+  sequence: number;
 };
 
 export type ObjectCoordinate = {
@@ -47,73 +45,48 @@ export type CustomPrediction = {
   probability: number;
 };
 
-export const DEFAULT_COLOR_PROFILES: ColorProfiles = {
-  red: { rMin: 150, rMax: 255, gMin: 0, gMax: 120, bMin: 0, bMax: 120 },
-  green: { rMin: 0, rMax: 130, gMin: 120, gMax: 255, bMin: 0, bMax: 140 },
-  blue: { rMin: 0, rMax: 130, gMin: 40, gMax: 170, bMin: 130, bMax: 255 },
+export type CapturedPhoto = {
+  blob: Blob;
+  width: number;
+  height: number;
 };
 
 const clampCoordinate = (value: number) => Math.max(-100, Math.min(100, value));
+const clampPercent = (value: number) => Math.max(0, Math.min(100, Number(value) || 0));
 
-export const pixelMatchesProfile = (pixel: RgbPixel, profile: ColorProfile) =>
-  pixel.red >= profile.rMin &&
-  pixel.red <= profile.rMax &&
-  pixel.green >= profile.gMin &&
-  pixel.green <= profile.gMax &&
-  pixel.blue >= profile.bMin &&
-  pixel.blue <= profile.bMax;
-
-export const calculateColorCoverage = (data: Uint8ClampedArray, profile: ColorProfile) => {
-  let matches = 0;
-  const total = data.length / 4;
-  for (let index = 0; index < data.length; index += 4) {
-    if (
-      pixelMatchesProfile(
-        { red: data[index], green: data[index + 1], blue: data[index + 2] },
-        profile,
-      )
-    ) {
-      matches += 1;
-    }
-  }
-  return total === 0 ? 0 : (matches / total) * 100;
-};
-
-export const analyzeColorDetection = (
+export const analyzeThreshold = (
   data: Uint8ClampedArray,
   width: number,
   height: number,
-  profileName: keyof ColorProfiles,
-  profile: ColorProfile,
-): ColorDetectionResult => {
-  let matches = 0;
-  let minimumX = width;
-  let minimumY = height;
-  let maximumX = -1;
-  let maximumY = -1;
+  thresholdPercent = 60,
+  invert = false,
+): ThresholdResult => {
+  const safeThreshold = clampPercent(thresholdPercent);
+  const cutoff = safeThreshold * 2.55;
+  const binaryData = new Uint8ClampedArray(data.length);
+  let whitePixels = 0;
   for (let index = 0; index < data.length; index += 4) {
-    if (!pixelMatchesProfile(
-      { red: data[index], green: data[index + 1], blue: data[index + 2] },
-      profile,
-    )) continue;
-    matches += 1;
-    const pixelIndex = index / 4;
-    const x = pixelIndex % width;
-    const y = Math.floor(pixelIndex / width);
-    minimumX = Math.min(minimumX, x);
-    minimumY = Math.min(minimumY, y);
-    maximumX = Math.max(maximumX, x);
-    maximumY = Math.max(maximumY, y);
+    const brightness = data[index] * 0.2126 + data[index + 1] * 0.7152 + data[index + 2] * 0.0722;
+    const white = (brightness >= cutoff) !== Boolean(invert);
+    const value = white ? 255 : 0;
+    if (white) whitePixels += 1;
+    binaryData[index] = value;
+    binaryData[index + 1] = value;
+    binaryData[index + 2] = value;
+    binaryData[index + 3] = 255;
   }
   const total = width * height;
+  const centerIndex = ((Math.floor(height / 2) * width) + Math.floor(width / 2)) * 4;
+  const whiteCoverage = total === 0 ? 0 : (whitePixels / total) * 100;
   return {
-    profile: profileName,
-    coverage: total === 0 ? 0 : (matches / total) * 100,
-    bbox: matches === 0
-      ? null
-      : [minimumX, minimumY, maximumX - minimumX + 1, maximumY - minimumY + 1],
+    threshold: safeThreshold,
+    invert: Boolean(invert),
+    whiteCoverage,
+    blackCoverage: 100 - whiteCoverage,
+    centerWhite: binaryData[centerIndex] === 255,
     frameWidth: width,
     frameHeight: height,
+    binaryData,
   };
 };
 
@@ -131,14 +104,15 @@ export const detectionCenterCoordinate = (
 };
 
 export class VisionRuntime {
-  private profiles: ColorProfiles = DEFAULT_COLOR_PROFILES;
   private model: ObjectDetection | null = null;
   private modelPromise: Promise<ObjectDetection> | null = null;
   private customModel: CustomMobileNet | null = null;
   private lastObjectCoordinates = new Map<string, StoredObjectCoordinate>();
-  private lastDetectionScanAt = Number.NEGATIVE_INFINITY;
-  private lastDetectionMinimumConfidence = 1;
+  private lastObjectDetections: VisionDetection[] = [];
+  private lastAprilTagDetections: AprilTagDetection[] = [];
+  private scanSequence = 0;
   private syntheticDetectionProvider: ((width: number, height: number) => VisionDetection[]) | null = null;
+  private syntheticAprilTagProvider: ((width: number, height: number) => AprilTagDetection[]) | null = null;
 
   constructor(
     private readonly getImage: () => HTMLImageElement | HTMLCanvasElement | null,
@@ -147,60 +121,53 @@ export class VisionRuntime {
     private readonly onDetections: (detections: VisionDetection[]) => void,
     private readonly onCustomModelStatus: (status: "off" | "loading" | "ready" | "error") => void,
     private readonly onCustomPredictions: (predictions: CustomPrediction[]) => void,
-    private readonly onColorDetection: (result: ColorDetectionResult) => void,
+    private readonly onThreshold: (result: ThresholdResult) => void,
+    private readonly onAprilTags: (detections: AprilTagDetection[]) => void,
+    private readonly onScan: (event: VisionScanEvent) => void,
+    private readonly onLog: (message: string) => void = () => undefined,
   ) {}
-
-  setProfiles(profiles: ColorProfiles) {
-    this.profiles = profiles;
-  }
 
   setSyntheticDetectionProvider(
     provider: ((width: number, height: number) => VisionDetection[]) | null,
   ) {
     this.syntheticDetectionProvider = provider;
     this.lastObjectCoordinates.clear();
+    this.lastObjectDetections = [];
     this.onDetections([]);
     this.onModelStatus(provider || this.model ? "ready" : "off");
   }
 
-  colorCoverage(profileName: keyof ColorProfiles) {
-    const frame = this.captureFrame(180);
-    const result = analyzeColorDetection(
-      frame.data,
-      frame.width,
-      frame.height,
-      profileName,
-      this.profiles[profileName],
-    );
-    this.onColorDetection(result);
-    return result.coverage;
+  setSyntheticAprilTagProvider(
+    provider: ((width: number, height: number) => AprilTagDetection[]) | null,
+  ) {
+    this.syntheticAprilTagProvider = provider;
+    this.lastAprilTagDetections = [];
+    this.onAprilTags([]);
   }
 
-  sampleCenterPixel(): RgbPixel {
-    const image = this.getReadyImage();
-    const { width, height } = this.getSourceSize(image);
-    const canvas = this.getCanvas();
-    if (!canvas) throw new Error("Camera analysis canvas is unavailable.");
-    canvas.width = 1;
-    canvas.height = 1;
-    const context = canvas.getContext("2d", { willReadFrequently: true });
-    if (!context) throw new Error("Camera analysis canvas is unavailable.");
-    context.imageSmoothingEnabled = false;
-    const sourceX = Math.floor(width / 2);
-    const sourceY = Math.floor(height / 2);
-    context.drawImage(image, sourceX, sourceY, 1, 1, 0, 0, 1, 1);
-    try {
-      const data = context.getImageData(0, 0, 1, 1).data;
-      return { red: data[0], green: data[1], blue: data[2] };
-    } catch {
-      throw new Error(
-        "The camera is visible, but this browser blocked pixel access. Start the local server so the camera proxy can enable CV blocks.",
-      );
-    }
+  async scanThreshold(threshold = 60, invert = false, announceScan = true) {
+    return this.scanned("threshold", announceScan, async () => {
+      const frame = this.captureFrame(320);
+      const result = analyzeThreshold(frame.data, frame.width, frame.height, threshold, invert);
+      this.onThreshold(result);
+      return result;
+    });
   }
 
-  async seesColor(profileName: keyof ColorProfiles, minimumCoverage = 12) {
-    return this.colorCoverage(profileName) >= Number(minimumCoverage);
+  async seesBinary(
+    color: BinaryColor,
+    threshold = 60,
+    invert = false,
+    minimumCoverage = 10,
+  ) {
+    const result = await this.scanThreshold(threshold, invert);
+    const coverage = color === "white" ? result.whiteCoverage : result.blackCoverage;
+    return coverage >= clampPercent(minimumCoverage);
+  }
+
+  async binaryCenter(color: BinaryColor, threshold = 60, invert = false) {
+    const result = await this.scanThreshold(threshold, invert);
+    return color === "white" ? result.centerWhite : !result.centerWhite;
   }
 
   async loadObjectModel() {
@@ -227,70 +194,181 @@ export class VisionRuntime {
     return this.modelPromise;
   }
 
-  async detectObjects(minimumConfidence = 0.55) {
-    if (this.syntheticDetectionProvider) {
-      const frame = this.getReadyImage();
-      const size = this.getSourceSize(frame);
-      const detections = this.syntheticDetectionProvider(size.width, size.height)
-        .filter((detection) => detection.score >= Number(minimumConfidence));
-      detections.forEach((detection) => {
+  async detectObjects(minimumConfidence = 0.55, announceScan = true) {
+    return this.scanned("object", announceScan, async () => {
+      let normalized: VisionDetection[];
+      if (this.syntheticDetectionProvider) {
+        const frame = this.getReadyImage();
+        const size = this.getSourceSize(frame);
+        normalized = this.syntheticDetectionProvider(size.width, size.height)
+          .filter((detection) => detection.score >= Number(minimumConfidence));
+      } else {
+        const model = await this.loadObjectModel();
+        const frame = this.captureCanvas(420, true);
+        const detections = await model.detect(frame, 10, minimumConfidence);
+        normalized = detections.map((detection) => {
+          const coordinate = detectionCenterCoordinate(detection.bbox, frame.width, frame.height);
+          return {
+            ...detection,
+            frameWidth: frame.width,
+            frameHeight: frame.height,
+            centerX: coordinate.x,
+            centerY: coordinate.y,
+          };
+        });
+      }
+      normalized.forEach((detection) => {
         this.lastObjectCoordinates.set(detection.class.trim().toLowerCase(), {
           x: detection.centerX,
           y: detection.centerY,
           confidence: detection.score,
         });
       });
-      this.lastDetectionScanAt = performance.now();
-      this.lastDetectionMinimumConfidence = minimumConfidence;
-      this.onDetections(detections);
-      return detections;
-    }
-    const model = await this.loadObjectModel();
-    const frame = this.captureCanvas(420, true);
-    const detections = await model.detect(frame, 10, minimumConfidence);
-    const normalized = detections.map((detection) => {
-      const coordinate = detectionCenterCoordinate(detection.bbox, frame.width, frame.height);
-      this.lastObjectCoordinates.set(detection.class.trim().toLowerCase(), {
-        ...coordinate,
-        confidence: detection.score,
-      });
-      return {
-        ...detection,
-        frameWidth: frame.width,
-        frameHeight: frame.height,
-        centerX: coordinate.x,
-        centerY: coordinate.y,
-      };
+      this.lastObjectDetections = normalized;
+      this.onDetections(normalized);
+      return normalized;
     });
-    this.lastDetectionScanAt = performance.now();
-    this.lastDetectionMinimumConfidence = minimumConfidence;
-    this.onDetections(normalized);
-    return normalized;
   }
 
   async seesObject(label: string, minimumConfidence = 0.55) {
     const wanted = String(label).trim().toLowerCase();
-    const detections = await this.detectObjects(Number(minimumConfidence));
-    return detections.some((detection) => detection.class.toLowerCase() === wanted);
+    const detections = await this.detectObjects(minimumConfidence);
+    return detections.some(
+      (detection) => detection.class.toLowerCase() === wanted && detection.score >= Number(minimumConfidence),
+    );
   }
 
-  async objectCoordinate(
+  objectCoordinate(
     label: string,
     axis: "x" | "y",
     minimumConfidence = 0.55,
   ) {
     const wanted = String(label).trim().toLowerCase();
     const confidence = Number(minimumConfidence);
-    if (
-      performance.now() - this.lastDetectionScanAt > 350 ||
-      confidence > this.lastDetectionMinimumConfidence
-    ) {
-      await this.detectObjects(Number(minimumConfidence));
-    }
     const lastCoordinate = this.lastObjectCoordinates.get(wanted);
     return lastCoordinate && lastCoordinate.confidence >= confidence
       ? lastCoordinate[axis]
       : 0;
+  }
+
+  async scanAprilTags(announceScan = true) {
+    return this.scanned("apriltag", announceScan, async () => {
+      let detections: AprilTagDetection[];
+      if (this.syntheticAprilTagProvider) {
+        const frame = this.getReadyImage();
+        const size = this.getSourceSize(frame);
+        detections = this.syntheticAprilTagProvider(size.width, size.height);
+      } else {
+        const canvas = this.captureCanvas(520, true);
+        const context = canvas.getContext("2d", { willReadFrequently: true });
+        if (!context) throw new Error("Camera analysis canvas is unavailable.");
+        detections = detectAprilTags(
+          context.getImageData(0, 0, canvas.width, canvas.height),
+          canvas.width,
+          canvas.height,
+        );
+      }
+      this.lastAprilTagDetections = detections;
+      this.onAprilTags(detections);
+      return detections;
+    });
+  }
+
+  async seesAprilTag(id: number | "any" | string = "any") {
+    const detections = await this.scanAprilTags();
+    if (String(id).toLowerCase() === "any") return detections.length > 0;
+    const wanted = Math.round(Number(id));
+    return detections.some((detection) => detection.id === wanted);
+  }
+
+  async centerOnAprilTag(
+    drone: DroneController,
+    id: number | "any" | string = "any",
+    translationPower = 10,
+    centerSlack = 5,
+    angleSlack = 5,
+    lostTagSearches = 3,
+  ) {
+    const wanted = String(id).toLowerCase() === "any" ? "any" : Math.round(Number(id));
+    const safeTranslationPower = clampPercent(translationPower);
+    const safeCenterSlack = Math.max(1, Math.min(35, Number(centerSlack) || 5));
+    const safeAngleSlack = Math.max(1, Math.min(45, Number(angleSlack) || 5));
+    const safeLostTagSearches = Math.max(1, Math.min(20, Math.round(Number(lostTagSearches) || 3)));
+    const deadline = performance.now() + 30_000;
+    let misses = 0;
+    const requestedTag = wanted === "any" ? "any AprilTag" : `AprilTag ${wanted}`;
+    const signed = (value: number) => {
+      const rounded = Math.round(value * 10) / 10;
+      return rounded > 0 ? `+${rounded}` : String(rounded);
+    };
+
+    this.onLog(`AprilTag centering: looking for ${requestedTag}.`);
+
+    while (!drone.cancelRunFlag && performance.now() < deadline) {
+      const detections = await this.scanAprilTags(true);
+      const candidates = wanted === "any"
+        ? detections
+        : detections.filter((detection) => detection.id === wanted);
+      const target = [...candidates].sort(
+        (left, right) => Math.hypot(left.centerX, left.centerY) - Math.hypot(right.centerX, right.centerY),
+      )[0];
+      if (!target) {
+        misses += 1;
+        this.onLog(
+          `AprilTag centering: ${requestedTag} not detected — search ${misses} of ${safeLostTagSearches}.`,
+        );
+        if (misses >= safeLostTagSearches) {
+          drone.reset();
+          this.onLog(`AprilTag centering: gave up after ${safeLostTagSearches} lost-tag searches.`);
+          return false;
+        }
+        await drone.wait(0.45);
+        continue;
+      }
+      misses = 0;
+      const horizontalError = target.centerX;
+      const verticalError = target.centerY;
+      this.onLog(
+        `AprilTag centering: tag ${target.id} detected at X ${signed(horizontalError)}%, Y ${signed(verticalError)}%, yaw ${signed(target.yaw)}°.`,
+      );
+      if (Math.abs(horizontalError) > safeCenterSlack || Math.abs(verticalError) > safeCenterSlack) {
+        if (Math.abs(horizontalError) >= Math.abs(verticalError)) {
+          const direction = horizontalError > 0 ? "right" : "left";
+          this.onLog(`AprilTag centering: moving ${direction} at ${safeTranslationPower}% power.`);
+          drone.setAxis("roll", direction === "right" ? safeTranslationPower : -safeTranslationPower);
+        } else {
+          const direction = verticalError > 0 ? "forward" : "backward";
+          this.onLog(`AprilTag centering: moving ${direction} at ${safeTranslationPower}% power.`);
+          drone.setAxis("pitch", direction === "forward" ? safeTranslationPower : -safeTranslationPower);
+        }
+        await drone.wait(0.3);
+        drone.reset();
+        this.onLog("AprilTag centering: stabilizing, then scanning again.");
+        await drone.wait(0.65);
+        continue;
+      }
+      if (Math.abs(target.yaw) > safeAngleSlack) {
+        const yawDirection = target.yaw > 0 ? "clockwise" : "counterclockwise";
+        this.onLog(
+          `AprilTag centering: yawing ${yawDirection} ${Math.round(Math.abs(target.yaw) * 10) / 10}°.`,
+        );
+        await drone.rotate(
+          Math.abs(target.yaw),
+          yawDirection,
+        );
+        continue;
+      }
+      drone.reset();
+      this.onLog(`AprilTag centering: tag ${target.id} is centered and aligned.`);
+      return true;
+    }
+    drone.reset();
+    this.onLog(
+      drone.cancelRunFlag
+        ? "AprilTag centering: stopped."
+        : "AprilTag centering: timed out after 30 seconds.",
+    );
+    return false;
   }
 
   async loadCustomModel(modelFile: File, weightsFile: File, metadataFile: File) {
@@ -314,16 +392,18 @@ export class VisionRuntime {
     }
   }
 
-  async classifyCustomModel() {
-    if (!this.customModel) {
-      throw new Error(
-        "Load a standard Teachable Machine image model in Telemetry first.",
-      );
-    }
-    const frame = this.captureCanvas(420, true);
-    const predictions = await this.customModel.predict(frame, false);
-    this.onCustomPredictions(predictions);
-    return predictions;
+  async classifyCustomModel(announceScan = true) {
+    return this.scanned("custom", announceScan, async () => {
+      if (!this.customModel) {
+        throw new Error(
+          "Load a standard Teachable Machine image model in Vision Testing first.",
+        );
+      }
+      const frame = this.captureCanvas(420, true);
+      const predictions = await this.customModel.predict(frame, false);
+      this.onCustomPredictions(predictions);
+      return predictions;
+    });
   }
 
   async seesCustomLabel(label: string, minimumConfidence = 0.75) {
@@ -336,12 +416,75 @@ export class VisionRuntime {
     );
   }
 
+  async capturePhoto(maxWidth = 960): Promise<CapturedPhoto> {
+    const safeMaxWidth = Math.max(1, Math.round(Number(maxWidth) || 960));
+    let canvas: HTMLCanvasElement;
+    try {
+      canvas = this.captureCanvas(safeMaxWidth, true);
+    } catch (error) {
+      if (
+        error instanceof Error
+        && error.message === "Connect the camera feed before using vision blocks."
+      ) {
+        throw new Error("Connect the camera feed before taking and storing a photo.");
+      }
+      throw error;
+    }
+
+    try {
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob(
+          (encoded) => {
+            if (encoded) resolve(encoded);
+            else reject(new Error("The current camera frame could not be encoded. Try again."));
+          },
+          "image/jpeg",
+          0.9,
+        );
+      });
+      return { blob, width: canvas.width, height: canvas.height };
+    } catch (error) {
+      if (
+        (error instanceof DOMException && error.name === "SecurityError")
+        || (error instanceof Error && error.name === "SecurityError")
+      ) {
+        throw new Error(
+          "The camera is visible, but this browser blocked saving its pixels. Use the desktop/local app or connect through the camera proxy.",
+        );
+      }
+      throw error;
+    }
+  }
+
   dispose() {
     this.model?.dispose();
     this.customModel?.dispose();
     this.model = null;
     this.modelPromise = null;
     this.customModel = null;
+  }
+
+  private async scanned<T>(
+    kind: VisionScanKind,
+    announceScan: boolean,
+    operation: () => Promise<T>,
+  ) {
+    if (!announceScan) return operation();
+    const sequence = ++this.scanSequence;
+    const startedAt = performance.now();
+    this.onScan({ kind, phase: "start", sequence });
+    try {
+      const result = await operation();
+      const remainingAnimation = 540 - (performance.now() - startedAt);
+      if (remainingAnimation > 0) {
+        await new Promise<void>((resolve) => window.setTimeout(resolve, remainingAnimation));
+      }
+      this.onScan({ kind, phase: "complete", sequence });
+      return result;
+    } catch (error) {
+      this.onScan({ kind, phase: "error", sequence });
+      throw error;
+    }
   }
 
   private captureFrame(maxWidth: number) {

@@ -1,30 +1,75 @@
 # Hopper Studio
 
-Hopper Studio is a fully local block-coding, JavaScript, Bluetooth flight-control, and camera-vision app for the FTW Hopper drone. It preserves the FTW Code / Parrot Mambo command protocol and adds camera color blocks, local COCO-SSD object detection, and support for custom Teachable Machine image classifiers.
+Hopper Studio is a fully local block-coding, JavaScript, Bluetooth flight-control, and camera-vision app for the FTW Hopper drone. It preserves the FTW Code / Parrot Mambo command protocol and adds binary thresholding, tag36h11 AprilTag detection and 2D pose alignment, local COCO-SSD object detection, and support for custom Teachable Machine image classifiers.
+
+To rename the app and its subtitle everywhere in the web and desktop builds,
+edit `config/branding.json`. The desktop executable/app name, window titles,
+web metadata, visible header, simulator title, and release title all read from
+that shared file. Set `defaultEditor` there to either `"javascript"` or
+`"blocks"` to choose which coding view opens for students and for new projects.
+
+## Download the desktop app
+
+Every push to `main` runs `.github/workflows/release-desktop.yml` and creates a
+new GitHub Release with both student downloads:
+
+- `Hopper-Studio-Windows-x64-*.exe` is a portable Windows app. It does not
+  install anything and does not ask for administrator access.
+- `Hopper-Studio-macOS-arm64-*.zip` contains the Hopper Studio `.app` for
+  Apple Silicon Macs.
+- `Hopper-Studio-macOS-x64-*.zip` contains the Hopper Studio `.app` for Intel
+  Macs.
+
+The desktop app includes the complete website, local vision models, Blockly
+media, and the restricted Hopper camera proxy. Students do not need Node.js or
+a browser. **Connect drone** opens a Hopper-only Bluetooth chooser, and
+**Connect simulated drone** opens the flight room in its own desktop window.
+
+The desktop shell is sandboxed and has no Node.js or Electron API in the web
+page. It denies generic browser permissions and external navigation, binds its
+local server only to `127.0.0.1`, and permits the camera proxy to contact only
+`http://192.168.2.1:80`. See `desktop/SECURITY.md` for the school IT review
+profile.
+
+Unsigned apps can still trigger Windows SmartScreen or macOS Gatekeeper even
+when they request minimal permissions. To publish trusted builds, add these
+GitHub Actions repository secrets:
+
+- Windows: `WIN_CSC_LINK` and `WIN_CSC_KEY_PASSWORD`
+- macOS signing: `MAC_CSC_LINK` and `MAC_CSC_KEY_PASSWORD`
+- macOS notarization: `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and
+  `APPLE_TEAM_ID`
+
+Certificates and passwords belong only in GitHub Actions secrets; never commit
+them to the repository. If the secrets are absent, the workflow deliberately
+builds unsigned downloads instead of failing.
 
 ## What is included
 
-- Blockly workspace with the original flight, battery, event, logic, loop, math, variable, function, and accessory capabilities.
+- Blockly workspace with the original flight, battery, event, logic, loop, math, variable, function, and accessory capabilities. Newly dragged `fly forward` blocks default to 15% power.
 - JavaScript editor for advanced students.
 - Web Bluetooth control for Hopper, FTW, Mambo, Travis, and Mars device names.
-- A 10 m × 7 m simulated flight room with damped pitch/roll physics, wall crashes, a flight-path trail, side-view attitude, and a downward camera that uses the same blocks as the real Hopper.
+- A 10 m × 7 m simulated flight room with damped pitch/roll physics, wall crashes, a flight-path trail, side-view attitude, and a downward camera that uses the same blocks as the real Hopper. New rooms include a rotated AprilTag 0 floor marker.
 - A live execution glow that follows each active flight, wait, accessory, and camera-vision block on both simulated and physical Hopper runs.
 - Drag, duplicate, delete, upload, and resize floor targets for search-pattern and computer-vision labs.
 - Simultaneous Bluetooth flight control and Wi-Fi camera display.
 - Separate Bluetooth and Hopper Wi-Fi indicators. The Wi-Fi indicator checks whether `192.168.2.1` actually responds; select it to check again immediately.
-- A draggable Telemetry panel divider. Drag it left to enlarge the camera and live readouts, or right to give Blockly more room. The Left and Right arrow keys also work when the divider is focused.
-- Editable red, green, and blue RGB profiles with live frame coverage.
-- Paired drag sliders and numeric inputs for every RGB minimum/maximum, plus a live center-reticle pixel readout for tuning colors against the real camera image.
-- `camera sees color` and `color coverage` blocks.
+- A draggable Vision Testing panel divider. Drag it left to enlarge the camera and live readouts, or right to give Blockly more room. The Left and Right arrow keys also work when the divider is focused.
+- A 0–100% binary brightness threshold, an invert option, white/black frame coverage, and a center-pixel readout.
+- `camera sees binary white/black` frame-coverage and center-pixel blocks.
+- A local tag36h11 AprilTag generator/detector with ID, centered X/Y coordinates, tag-axis overlays, and yaw alignment.
+- A full-page printable US Letter PDF generator for every tag36h11 ID; the PDF opens in a separate browser tab and remains vector-sharp when printed.
+- `scan for april tags`, `camera sees april tag with ID`, and `center on april tag` blocks. The centering block has adjustable roll/pitch power, while its gear edits center/angle tolerances and the missed-scan limit.
 - Optional local COCO-SSD blocks and live labels. The neural network is stored locally and loads only when requested.
 - Object results include confidence and centered X/Y coordinates on a signed `-100` to `+100` scale. `(0, 0)` is the frame center; right and up are positive.
 - A local file loader and block for standard Teachable Machine image classifiers.
 - Local project autosave, JSON import, and JSON export.
+- A BLOCKS-view manual flight pad for temporary forward/back/left/right corrections. The arrow keys trigger the same controls, and Spacebar always triggers Stop & Land while a program is running.
 - An emergency Stop & Land action plus a separately confirmed motor cutoff.
 
 ## Start the full local app (recommended)
 
-The full local app includes a camera proxy. That proxy is important because browsers normally let a page *display* the drone camera but may block the page from reading its pixels. Pixel access is required by the color, COCO-SSD, and custom-model blocks.
+The full local app includes a camera proxy. That proxy is important because browsers normally let a page *display* the drone camera but may block the page from reading its pixels. Pixel access is required by the threshold, AprilTag, COCO-SSD, and custom-model blocks.
 
 Requirements: Node.js 22.13 or newer and current desktop Chrome or Edge. Web Bluetooth is not available in Firefox or Safari.
 
@@ -58,7 +103,7 @@ Hopper Studio keeps this port fixed because browser Bluetooth permissions belong
 3. Select **Connect drone** and choose the Hopper in the Bluetooth picker.
 4. Join the drone Wi-Fi network without closing Hopper Studio. Bluetooth remains connected while Wi-Fi supplies video.
 5. Confirm that the separate Wi-Fi box turns green. It checks for a response from `192.168.2.1` and is independent of Bluetooth.
-6. In **Telemetry**, keep `http://192.168.2.1/` and select **Connect**.
+6. In **Vision Testing**, keep `http://192.168.2.1/` and select **Connect**.
 7. Build the program, place the drone in a safe open area, and select **Run Program**.
 
 Bluetooth flight control is independent of the current Wi-Fi network. The **Wi-Fi offline** camera indicator does not disable **Connect drone**. Hopper Studio checks the camera only when you select the Wi-Fi box or connect the video feed, so being on another Wi-Fi network does not create camera errors during Bluetooth-only use.
@@ -69,13 +114,17 @@ The local camera proxy accepts only `192.168.2.1`; it cannot be used as a genera
 
 Select **Connect simulated drone** beside the Bluetooth button. The flight room opens in a separate browser window that you can move beside the coding workspace. If the browser blocks it, allow pop-ups for Hopper Studio and select the button again. The blue connected state means **Run Program** is sending the current Blockly or JavaScript program to the simulator. Switching between the simulator and a real Hopper never clears the workspace.
 
-The room starts with airplane, car, banana, and apple targets. Drag them anywhere on the floor, select one to resize, duplicate, or delete it, or upload a local image. Drag the Hopper marker itself whenever you want to reposition its starting point; the simulator stops its horizontal motion and continues from the new location. The simulated downward camera feeds the same RGB coverage, object label, coordinate, and custom-model blocks used by the physical camera. Object-detection calls draw labeled confidence boxes over the camera feed, while color calls draw the matching-color bounds and coverage percentage. The 5°, 10°, and 15° manual attitude checks are useful for demonstrating acceleration and damping before students encode a lawnmower search in blocks.
+The room starts with airplane, car, banana, and apple targets plus one plain white sheet at the center of the dark floor. Drag them anywhere on the floor, select one to resize or rotate, duplicate or delete it, or upload a local image. Choose a tag36h11 ID from the AprilTag dropdown and add as many printable floor tags as the lab needs. A translucent red X-axis arrow rotates with each simulated tag to make visual alignment easy; that helper is intentionally omitted from the simulated drone camera. Drag the Hopper marker itself whenever you want to reposition its starting point; the simulator stops its horizontal motion and continues from the new location. The simulated downward camera feeds the same threshold, object, AprilTag, coordinate, and custom-model blocks used by the physical camera.
+
+The simulator camera remains in **VISION IDLE** during ordinary flight unless a Vision Testing toggle is enabled. A scan block animates a green line down the image and shows that scan's result: binary white/black percentages, object labels and boxes, or AprilTag IDs, boxes, and pose axes. Panel testing also refreshes those annotations continuously, even while the simulated drone is landed and no program is running. The 5°, 10°, and 15° manual attitude checks are useful for demonstrating acceleration and damping before students encode a lawnmower search in blocks.
 
 Flight power uses a classroom-friendly response curve: 5% produces a visible slow crawl, 20% gives roughly 4.3° of pitch or roll for a more useful search speed, and 100% still tops out at 15°. While a program runs, the active action block has a cyan glowing border for the full command duration. Vision blocks take over that glow while an image is being processed, then the glow returns to the surrounding flight action when appropriate. Loop containers remain unhighlighted so students can follow the concrete drone and camera operations.
 
 The side-view instrument updates directly from every simulation frame, independently of the heavier room and camera rendering. Its altitude, vertical-speed readout, shadow, pitch, roll, and heading stay tied to the same physics snapshot. The taller air field uses a compressed altitude scale, keeping ordinary multi-metre climbs visible instead of pinning the drone to the ceiling. The red nose marker identifies the front of the drone: forward pitch visibly lowers that nose, backward pitch raises it, and the status label states the current attitude. Forward, backward, left, and right flip blocks now perform an in-place 360° rotation, hold the current position and altitude, and show the complete maneuver in both the top and side views.
 
 The included transparent floor-object PNGs are by [OpenMoji](https://openmoji.org/), the open-source emoji and icon project, and are distributed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+
+The tag36h11 codebook and marker renderer come from the MIT-licensed [`apriltag`](https://github.com/veggiedefender/apriltag-js) package. The browser detector in `lib/apriltags.ts` performs local thresholding, square-candidate extraction, codebook matching, and 2D orientation estimation without uploading camera images.
 
 ## Use Hopper Studio offline
 
@@ -85,22 +134,23 @@ The circular arrow on the WRC logo is the **hard refresh** control. Select it wh
 
 Offline caching requires HTTPS or `http://localhost`, as required by browser service-worker security. The first offline save includes the approximately 18 MB local COCO-SSD model, so keep the page open until the console reports that the offline app copy is ready.
 
-## How Color Tracker controls the color blocks
+## Vision testing and scan blocks
 
-Telemetry is both a live sensor panel **and** the configuration panel used by the purple camera blocks.
+The three Vision Testing toggles are mutually exclusive: thresholding, object detection, or AprilTag detection can run continuously for setup, but never more than one at a time. Panel tests use the same camera and algorithms as flight blocks and are independent of flight execution: they continue while the drone is landed, while no program is running, during a program, and after Stop & Land. Program scans no longer switch off the selected panel test.
 
-- The red, green, and blue tabs each hold one RGB range.
-- Every pixel is considered a match only when its R, G, and B values are all between that profile's Min and Max values.
-- `red` in the `camera sees red over ... %` block uses the exact red slider/number values shown in Color Tracker. Green and blue work the same way.
-- `red coverage %` returns the percentage of pixels in the current camera frame that match the red profile.
-- `camera sees red over 12%` returns true when red coverage is at least 12%. The percentage socket in the block is the coverage threshold; it is not an RGB value.
-- The calculation is inclusive on all six limits: a pixel matches only when its red, green, and blue values are each between that profile's minimum and maximum.
-- **Scan Frame** and the continuous Color Tracker toggle use the same `VisionRuntime` calculation as the blocks, so they are good ways to tune a profile before flight.
-- RGB profiles are saved in this browser's local storage and are reused by later projects on the same computer.
+- Threshold 0% makes almost every pixel white; increasing the threshold requires more brightness for white. **Invert** swaps the binary output after thresholding.
+- `camera sees binary white with threshold at 60%, invert false, in 10% of frame` scans once and returns true when at least 10% of the processed frame is white. Its dropdown can check black instead.
+- `camera sees binary white/black at center pixel` performs the same scan but checks only the reticle pixel.
+- On a dark carpet, tune the threshold in the panel until a white sheet remains cleanly white, then use the binary coverage or center-pixel block to decide when to land.
+- `scan for objects` refreshes COCO results explicitly. The `camera sees [object]` predicate also performs a fresh object scan every time it is evaluated; the X/Y-coordinate block reads the most recently detected position.
+- `scan for april tags` refreshes tag36h11 IDs and 2D poses. `camera sees april tag with ID` also performs a fresh AprilTag scan every time it is evaluated, so it works directly inside an `if` without a preceding scan block; the ID dropdown includes `any`.
+- In AprilTag Detection, choose an ID under **Print a real tag** and select **Generate PDF**. Hopper Studio opens a full-page US Letter PDF in a new tab for printing; allow pop-ups if the browser asks.
+- `center on april tag` rescans after every movement while it centers X/Y and aligns the drone's forward axis with the tag x axis. Roll/pitch defaults to 10% power and uses a 0.30-second correction pulse before stabilizing and rescanning. Yaw uses the measured tag angle as a complete clockwise or counterclockwise `rotate` command, then scans the tag again. The program console reports each detection, lost-tag retry, translation direction, yaw correction, and completion result. It succeeds inside ±5% of frame center and ±5° by default. Select its gear to adjust both tolerances and how many consecutive lost-tag scans are allowed; the lost limit defaults to three and can be raised when the real camera temporarily loses the tag during movement. A 30-second overall timeout still prevents the block from becoming trapped forever.
+- Every `camera sees`, `custom model sees`, and explicit `scan` block captures a fresh frame and shows the scan sweep. Saved detection state is still available to coordinate blocks after that scan.
 
-Lighting, camera auto-exposure, shadows, and a colored target's size all affect coverage. Tune the ranges with the real target and classroom lighting before using a vision result to change flight.
+Lighting, camera auto-exposure, shadows, print quality, and target size affect vision. Tune with the real target and classroom lighting before flight. For AprilTags, print tag36h11 markers with a clean white margin and keep them flat.
 
-The `x/y coordinate of [object]` block returns the center of the matching COCO bounding box. It rescans when needed, returns the last known coordinate when an object temporarily disappears, and returns `0` until that label has been detected once. Coordinates range from `-100` to `+100`: left/down are negative and right/up are positive.
+The `x/y coordinate of [object]` block returns the center of the matching COCO bounding box from the latest object scan and returns `0` until that label has been detected. Coordinates range from `-100` to `+100`: left/down are negative and right/up are positive.
 
 ## COCO-SSD object labels
 
@@ -191,9 +241,9 @@ The included neural network recognizes these 80 COCO labels. Use the label exact
 
 The COCO-SSD model:
 
-- never loads during ordinary block coding or color tracking;
+- never loads during ordinary block coding or threshold/AprilTag testing;
 - loads from `public/models/coco-ssd`, not from the internet;
-- runs once when a purple object block is evaluated; or
+- runs once when either the purple `scan for objects` or `camera sees [object]` block is evaluated; or
 - runs at a deliberately slow 1.8-second interval only when the Object Detector toggle is enabled.
 
 ## Use a custom Teachable Machine image model
@@ -214,9 +264,9 @@ Google's Teachable Machine image library documents those three browser files and
 ### Load and use it in Hopper Studio
 
 1. Start Hopper Studio with the local server and connect the camera.
-2. In **Telemetry → Object Detector → Teachable Machine**, select **Load Model**.
+2. In **Vision Testing → Object Detector → Teachable Machine**, select **Load Model**.
 3. In the file picker, select `model.json`, `weights.bin`, and `metadata.json` together.
-4. Telemetry lists every custom label it read from the model. Use **Scan Once** to test the current camera frame.
+4. Vision Testing lists every custom label it read from the model. Use **Scan Once** to test the current camera frame.
 5. Add the purple `custom model sees [label] at [confidence] %` block. Enter one of the listed class names. Matching is case-insensitive.
 6. Reload the three model files after a page refresh. Browsers intentionally do not grant a site permanent access to previously selected local files.
 
@@ -249,7 +299,7 @@ npm run build:student
 
 The result is `student-build/hopper-studio.html`. Application JavaScript, CSS, React, Blockly, TensorFlow code, the Teachable Machine loader, and the WRC logo are embedded in that single HTML file. The `student-build/models` and `student-build/blockly` folders are also copied for optional model/media support when the build is served locally.
 
-Students can double-click `hopper-studio.html` in Chrome or Edge for the block editor, JavaScript editor, project files, Bluetooth controls (where Chrome permits Web Bluetooth on `file:` pages), direct camera display, and local custom-model file picker. Browser security may prevent color/object analysis or Web Bluetooth on a double-clicked file. For the complete and reliable experience, distribute the whole folder and use `start-windows.bat`.
+Students can double-click `hopper-studio.html` in Chrome or Edge for the block editor, JavaScript editor, project files, Bluetooth controls (where Chrome permits Web Bluetooth on `file:` pages), direct camera display, and local custom-model file picker. Browser security may prevent threshold/object/AprilTag analysis or Web Bluetooth on a double-clicked file. For the complete and reliable experience, distribute the whole folder and use `start-windows.bat`.
 
 ## Deploy with GitHub Pages
 
@@ -267,13 +317,14 @@ Before the first deployment, open the GitHub repository's **Settings → Pages**
 
 GitHub Pages is a static HTTPS host, so it cannot run Hopper Studio's `/api/camera` proxy. Current Chrome and Edge releases can display the feed directly after the user grants the site's local-network access prompt. Join the Hopper Wi-Fi, select **Connect**, and choose **Allow** when the browser asks to find devices on the local network.
 
-The direct feed is cross-origin, so the hosted page cannot safely read its pixels unless the drone itself supplies suitable CORS headers. Color tracking, COCO-SSD, and custom-model analysis therefore still require the local app (`start-windows.bat` or `npm run dev`). If the user previously denied local-network access, reset that permission from the icon beside the address bar and reconnect.
+The direct feed is cross-origin, so the hosted page cannot safely read its pixels unless the drone itself supplies suitable CORS headers. Thresholding, AprilTag, COCO-SSD, and custom-model analysis therefore still require the local app (`start-windows.bat` or `npm run dev`). If the user previously denied local-network access, reset that permission from the icon beside the address bar and reconnect.
 
 ## Safety
 
 - Test new programs with propellers removed or the drone restrained.
 - Keep students, faces, loose clothing, and fragile objects out of the flight area.
-- The normal red Stop button stops the program and repeatedly sends an emergency landing command.
+- The normal red Stop button invalidates the entire run, unregisters its keyboard/drone events, clears buffered movement and flight pings, waits briefly for active vision/actions to settle, and repeatedly sends an emergency landing command. A new run cannot begin while this cleanup is in progress.
+- While a BLOCKS program is flying, the on-screen direction pad or keyboard arrow keys temporarily replace its flight output with a 30% correction pulse, then release control back to the latest program command. The red LAND control and Spacebar use the same full Stop & Land cleanup as the top-right button.
 - The warning-triangle button immediately cuts motor power and asks for confirmation first. Use it only when landing would be less safe.
 - Programs automatically send a landing command when their main sequence finishes.
 - Treat camera classifications as uncertain sensor readings. Require multiple consistent readings and conservative confidence thresholds before changing flight.

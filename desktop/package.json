@@ -1,0 +1,9 @@
+{
+  "name": "hopper-studio",
+  "version": "0.1.0",
+  "description": "Local flight, coding, simulation, and computer-vision studio for the FTW Hopper drone",
+  "author": "WRC",
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "main.mjs"
+}
