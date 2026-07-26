@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 from pathlib import Path
 
@@ -15,7 +16,8 @@ except ModuleNotFoundError:
 
 
 ROOT = Path(__file__).resolve().parents[1]
-OUTPUT = ROOT / "output" / "pdf" / "09-python-coding-reference.pdf"
+WORKSPACE_ROOT = ROOT.parent
+OUTPUT = WORKSPACE_ROOT / "output" / "pdf" / "09-python-coding-reference.pdf"
 PUBLIC = ROOT / "public" / "information" / "09-python-coding-reference.pdf"
 
 PAGE_W = 960
@@ -36,6 +38,49 @@ CODE_KEYWORD = HexColor("#78C7FF")
 CODE_STRING = HexColor("#A8E6A1")
 CODE_NUMBER = HexColor("#F5C66B")
 CODE_FUNCTION = HexColor("#55D6C2")
+LIGHT_CODE_TEXT = NAVY
+LIGHT_CODE_COMMENT = MUTED
+LIGHT_CODE_KEYWORD = HexColor("#315A91")
+LIGHT_CODE_STRING = HexColor("#2E7D45")
+LIGHT_CODE_NUMBER = HexColor("#9A6B00")
+LIGHT_CODE_FUNCTION = HexColor("#007986")
+
+PYTHON_KEYWORDS = {
+    "False",
+    "None",
+    "True",
+    "and",
+    "as",
+    "break",
+    "continue",
+    "def",
+    "elif",
+    "else",
+    "except",
+    "finally",
+    "for",
+    "if",
+    "in",
+    "is",
+    "not",
+    "or",
+    "pass",
+    "return",
+    "try",
+    "while",
+}
+
+PYTHON_TOKEN_PATTERN = re.compile(
+    r"""
+    (?P<comment>\#[^\n]*)
+    |(?P<string>f?'''(?:\\.|[^']|'(?!'')|''(?!'))*'''|f?\"\"\"(?:\\.|[^\"]|\"(?!\"\")|\"\"(?!\"))*\"\"\"|f?"(?:\\.|[^"\\])*"|f?'(?:\\.|[^'\\])*')
+    |(?P<number>\b(?:0[xX][0-9A-Fa-f]+|\d+(?:\.\d+)?)\b)
+    |(?P<identifier>[A-Za-z_][A-Za-z0-9_]*)
+    |(?P<space>\s+)
+    |(?P<punct>.)
+    """,
+    re.VERBOSE,
+)
 
 
 def top(value: float) -> float:
@@ -145,6 +190,55 @@ def label(c: canvas.Canvas, text: str, x: float, y_top: float, color: Color = TE
     c.drawString(x, top(y_top), text.upper())
 
 
+def python_tokens(source: str) -> list[tuple[str, Color]]:
+    """Tokenize one documented Python line using the Hopper editor palette."""
+    output: list[tuple[str, Color]] = []
+    matches = list(PYTHON_TOKEN_PATTERN.finditer(source))
+    for index, match in enumerate(matches):
+        text = match.group(0)
+        kind = match.lastgroup
+        if kind == "comment":
+            color = LIGHT_CODE_COMMENT
+        elif kind == "string":
+            color = LIGHT_CODE_STRING
+        elif kind == "number":
+            color = LIGHT_CODE_NUMBER
+        elif kind == "identifier" and text in PYTHON_KEYWORDS:
+            color = LIGHT_CODE_KEYWORD
+        elif kind == "identifier":
+            next_text = ""
+            for later in matches[index + 1:]:
+                if later.lastgroup != "space":
+                    next_text = later.group(0)
+                    break
+            color = LIGHT_CODE_FUNCTION if next_text == "(" else LIGHT_CODE_TEXT
+        else:
+            color = LIGHT_CODE_TEXT
+        if output and output[-1][1] == color:
+            output[-1] = (output[-1][0] + text, color)
+        else:
+            output.append((text, color))
+    return output
+
+
+def draw_inline_python(
+    c: canvas.Canvas,
+    source: str,
+    x: float,
+    y_top: float,
+    maximum_width: float,
+    size: float = 8.8,
+) -> None:
+    font = "Courier-Bold"
+    fitted = fit_text(source, font, size, maximum_width)
+    fitted = max(7.0, fitted)
+    cursor = x
+    for segment, color in python_tokens(source):
+        set_font(c, font, fitted, color)
+        c.drawString(cursor, top(y_top), segment)
+        cursor += stringWidth(segment, font, fitted)
+
+
 def command_rows(
     c: canvas.Canvas,
     rows: list[tuple[str, str]],
@@ -156,12 +250,11 @@ def command_rows(
     y = y_top
     for command, explanation in rows:
         rounded_panel(c, x, y, width, row_height - 5, PANEL, LINE, 7)
-        set_font(c, "Courier-Bold", fit_text(command, "Courier-Bold", 9.4, width * 0.53), NAVY_2)
-        c.drawString(x + 12, top(y + 19), command)
-        lines = wrap(explanation, "Helvetica", 8.3, width * 0.42)
-        set_font(c, "Helvetica", 8.3, MUTED)
+        draw_inline_python(c, command, x + 12, y + 13, width - 24, 8.8)
+        lines = wrap(explanation, "Helvetica", 7.35, width - 24)
+        set_font(c, "Helvetica", 7.35, MUTED)
         for line_index, line in enumerate(lines[:2]):
-            c.drawString(x + width * 0.56, top(y + 14 + line_index * 10), line)
+            c.drawString(x + 12, top(y + 27 + line_index * 8.6), line)
         y += row_height
 
 
@@ -259,7 +352,7 @@ def page_cover(c: canvas.Canvas, total: int) -> None:
     set_font(c, "Helvetica-Bold", 8, TEAL_LIGHT)
     c.drawString(64, 34, "WRC | HOPPER FLIGHT + VISION INFORMATION SERIES")
     set_font(c, "Courier-Bold", 8, TEAL_LIGHT)
-    c.drawRightString(896, 34, f"01 / {total:02d}")
+    c.drawRightString(896, 34, f"09 / {total:02d}")
     c.showPage()
 
 
@@ -329,11 +422,11 @@ def page_flight(c: canvas.Canvas, page: int, total: int) -> None:
     command_rows(
         c,
         [
-            ("take_off()", "Take off and wait until the aircraft is ready."),
-            ("land()", "Land and wait for the landing sequence."),
-            ("hover()", "Zero motion and hold for about one second."),
-            ("wait(seconds)", "Pause without blocking Stop & Land."),
-            ('fly(direction, seconds=1, power=15)', 'up/down/left/right/forward/backward.'),
+            ("take_off()", "No args. Auto-awaits; returns None. Low battery (<=10%) or Bluetooth failure raises; a stopped run returns early."),
+            ("land()", "No args. Auto-awaits; returns None after the landing wait. Bluetooth/transport failure raises."),
+            ("hover()", "No args. Auto-awaits; zeros every motion axis, waits about 1 s, and returns None."),
+            ("wait(seconds)", "seconds: number >=0; required. Auto-awaits and returns None; negative/non-number becomes 0; Stop ends the wait early."),
+            ('fly(direction, seconds=1, power=15)', 'direction: six strings; seconds >=0; power clamps -100..100. Auto-awaits, returns None; transport failure raises.'),
         ],
         54,
         132,
@@ -343,17 +436,18 @@ def page_flight(c: canvas.Canvas, page: int, total: int) -> None:
     command_rows(
         c,
         [
-            ('rotate(degrees=0, direction="clockwise")', "Timed yaw; use clockwise or counterclockwise."),
-            ('flip(direction)', "forward/backward/left/right; allow safe clearance."),
-            ('set_axis(axis, power)', "Persistent pitch/roll/yaw/gaz until reset."),
-            ("reset_motion()", "Zero every motion axis without landing."),
-            ("emergency_cutoff()", "Immediate motor cutoff - emergency only."),
+            ('rotate(degrees=0, direction="clockwise")', 'degrees: number >=0; direction: "clockwise"/"counterclockwise". Auto-awaits; returns None; open-loop timing.'),
+            ('flip(direction)', 'direction: forward/backward/left/right; required. Auto-awaits; returns None; a missing acknowledgement raises.'),
+            ('set_axis(axis, power)', 'axis: pitch/roll/yaw/gaz/altitude; power clamps -100..100. Returns None immediately; persists until reset.'),
+            ("reset_motion()", "No args. Returns None synchronously; zeros persistent axes and does not land."),
+            ("emergency_cutoff()", "No args. Auto-awaits; returns None. Immediate motor cutoff only; Bluetooth failure raises."),
         ],
         492,
         132,
         414,
         48,
     )
+    note_panel(c, "Directions and safety", "fly direction is up/down/left/right/forward/backward. flip uses forward/backward/left/right. Test short, low-power moves first; put land() in finally after take_off().", 54, 390, 852, 65, RED)
     footer(c, page, total)
     c.showPage()
 
@@ -363,11 +457,11 @@ def page_state_accessories(c: canvas.Canvas, page: int, total: int) -> None:
     command_rows(
         c,
         [
-            ("battery_level()", "Battery percentage, or None before telemetry arrives."),
-            ("is_flying()", "True while hovering, flying, or flipping."),
-            ("is_landed()", "True when the controller reports landed."),
-            ("wait_for_battery_change()", "Pause until a new battery event arrives."),
-            ("take_photo()", "Store the current real or simulated camera view."),
+            ("battery_level()", "No args. Returns number 0..100 or None before telemetry; synchronous and no expected failure."),
+            ("is_flying()", "No args. Returns bool from the controller's flying/landed state; synchronous."),
+            ("is_landed()", "No args. Returns bool from the controller's flying/landed state; synchronous."),
+            ("wait_for_battery_change()", "No args. Auto-awaits; returns None on a new value or Stop; transport loss may raise."),
+            ("take_photo()", "No args. Auto-awaits; returns None after requesting a photo; camera/transport failure raises."),
         ],
         54,
         132,
@@ -377,11 +471,11 @@ def page_state_accessories(c: canvas.Canvas, page: int, total: int) -> None:
     command_rows(
         c,
         [
-            ("open_grabber()", "Open the attached grabber accessory."),
-            ("close_grabber()", "Close the attached grabber accessory."),
-            ("fire_gun()", "Fire one BB from the attached cannon."),
-            ('key_pressed("ArrowUp")', "Read a live keyboard key state."),
-            ("stopped()", "True after the operator selects Stop & Land."),
+            ("open_grabber()", "No args. Auto-awaits; returns None. Raises if no physical grabber is attached; simulator is a timing stub."),
+            ("close_grabber()", "No args. Auto-awaits; returns None. Raises if no physical grabber is attached; simulator is a timing stub."),
+            ("fire_gun()", "No args. Auto-awaits; returns None. Raises if no physical cannon is attached; simulator is a timing stub."),
+            ('key_pressed(key)', "key: string such as ArrowUp or a. Returns live bool synchronously; no expected failure."),
+            ("stopped()", "No args. Returns bool synchronously; True after runtime cancellation. It does not itself land."),
         ],
         492,
         132,
@@ -410,10 +504,10 @@ def page_threshold(c: canvas.Canvas, page: int, total: int) -> None:
     command_rows(
         c,
         [
-            ("scan_threshold(threshold=60, invert=False)", "Return white/black coverage and center result."),
-            ('sees_binary("white", 60, False, 10)', "True when coverage meets the final percent."),
-            ('binary_center("white", 60, False)', "True when the center pixel has the color."),
-            ("take_photo()", "Save exactly what the current camera sees."),
+            ("scan_threshold(threshold=60, invert=False)", "threshold: 0..100%; invert: bool. Auto-awaits; returns result record; missing camera raises."),
+            ('sees_binary(color, threshold=60, invert=False, coverage=10)', "color: white/black; coverage 0..100%. Auto-awaits a fresh frame; returns bool; camera failure raises."),
+            ('binary_center(color, threshold=60, invert=False)', "color: white/black; threshold 0..100%. Auto-awaits a fresh frame; returns bool; camera failure raises."),
+            ("take_photo()", "No args. Auto-awaits; returns None after saving/requesting the current view; camera/transport failure raises."),
         ],
         54,
         137,
@@ -424,12 +518,14 @@ def page_threshold(c: canvas.Canvas, page: int, total: int) -> None:
         c,
         [
             ("1", [("take_off", CODE_FUNCTION), ("()", CODE_TEXT)]),
-            ("2", [("while", CODE_KEYWORD), (" ", CODE_TEXT), ("not", CODE_KEYWORD), (" ", CODE_TEXT), ("stopped", CODE_FUNCTION), ("():", CODE_TEXT)]),
-            ("3", [("    if", CODE_KEYWORD), (" ", CODE_TEXT), ("binary_center", CODE_FUNCTION), ("(", CODE_TEXT), ('"white"', CODE_STRING), (", ", CODE_TEXT), ("60", CODE_NUMBER), (", ", CODE_TEXT), ("False", CODE_KEYWORD), ("):", CODE_TEXT)]),
-            ("4", [("        take_photo", CODE_FUNCTION), ("()", CODE_TEXT)]),
-            ("5", [("        break", CODE_KEYWORD)]),
-            ("6", [("    fly", CODE_FUNCTION), ("(", CODE_TEXT), ('"forward"', CODE_STRING), (", ", CODE_TEXT), ("0.4", CODE_NUMBER), (", ", CODE_TEXT), ("12", CODE_NUMBER), (")", CODE_TEXT)]),
-            ("7", [("land", CODE_FUNCTION), ("()", CODE_TEXT)]),
+            ("2", [("try", CODE_KEYWORD), (":", CODE_TEXT)]),
+            ("3", [("    for", CODE_KEYWORD), (" attempt ", CODE_TEXT), ("in", CODE_KEYWORD), (" ", CODE_TEXT), ("range", CODE_FUNCTION), ("(", CODE_TEXT), ("20", CODE_NUMBER), ("):", CODE_TEXT)]),
+            ("4", [("        if", CODE_KEYWORD), (" ", CODE_TEXT), ("binary_center", CODE_FUNCTION), ("(", CODE_TEXT), ('"white"', CODE_STRING), (", ", CODE_TEXT), ("60", CODE_NUMBER), (", ", CODE_TEXT), ("False", CODE_KEYWORD), ("):", CODE_TEXT)]),
+            ("5", [("            take_photo", CODE_FUNCTION), ("()", CODE_TEXT)]),
+            ("6", [("            break", CODE_KEYWORD)]),
+            ("7", [("        fly", CODE_FUNCTION), ("(", CODE_TEXT), ('"forward"', CODE_STRING), (", ", CODE_TEXT), ("0.4", CODE_NUMBER), (", ", CODE_TEXT), ("12", CODE_NUMBER), (")", CODE_TEXT)]),
+            ("8", [("finally", CODE_KEYWORD), (":", CODE_TEXT)]),
+            ("9", [("    land", CODE_FUNCTION), ("()", CODE_TEXT)]),
         ],
         565,
         137,
@@ -437,7 +533,7 @@ def page_threshold(c: canvas.Canvas, page: int, total: int) -> None:
         190,
         "WHITE-PAPER-SEARCH.PY",
     )
-    note_panel(c, "Fresh frame rule", "sees_binary() and binary_center() scan before deciding. scan_threshold() is useful when you want the full result in a variable.", 565, 344, 341, 93)
+    note_panel(c, "Fresh frame + result", "Predicates scan before deciding. scan_threshold() returns threshold, invert, whiteCoverage, blackCoverage, centerWhite, frameWidth, frameHeight, and binaryData.", 565, 344, 341, 93)
     footer(c, page, total)
     c.showPage()
 
@@ -447,17 +543,18 @@ def page_objects(c: canvas.Canvas, page: int, total: int) -> None:
     command_rows(
         c,
         [
-            ("load_object_model()", "Load the local COCO-SSD network."),
-            ("scan_objects(confidence=0.55)", "Return up to 10 detections; detect_objects is an alias."),
-            ('sees_object("person", confidence=0.55)', "Scan and return True when that label is found."),
-            ('object_coordinate("person", "x", 0.55)', "Last x or y value on a -100 to +100 scale."),
-            ('object_x("person", 0.55)', "Shortcut for the most recent horizontal coordinate."),
-            ('object_y("person", 0.55)', "Shortcut for the most recent vertical coordinate."),
+            ("load_object_model()", "No args. Auto-awaits; returns model handle. Local-server/model-load failure raises."),
+            ("scan_objects(confidence=0.55)", "confidence: 0..1. Auto-awaits; returns up to 10 detection records; model/camera failure raises."),
+            ("detect_objects(confidence=0.55)", "Exact alias of scan_objects(). Same confidence, automatic wait, detection-list return, and failure behavior."),
+            ('sees_object(label, confidence=0.55)', "label: string; confidence 0..1. Auto-awaits a fresh scan; returns bool; model/camera failure raises."),
+            ('object_coordinate(label, axis, confidence=0.55)', "label string; axis x/y. Returns saved -100..100 number synchronously, or 0 when absent/below confidence."),
+            ('object_x(label, confidence=0.55)', "label: string; confidence 0..1. Synchronous x shortcut; returns saved -100..100 number or 0."),
+            ('object_y(label, confidence=0.55)', "label: string; confidence 0..1. Synchronous y shortcut; returns saved -100..100 number or 0."),
         ],
         54,
         132,
         515,
-        47,
+        43,
     )
     code_block(
         c,
@@ -479,8 +576,8 @@ def page_objects(c: canvas.Canvas, page: int, total: int) -> None:
     command_rows(
         c,
         [
-            ("scan_custom_model()", "Return predictions from the loaded model."),
-            ('sees_custom_label("red flag", 0.75)', "Scan and test one custom class."),
+            ("scan_custom_model()", "No args. Auto-awaits; returns class/probability records. Raises until model files are loaded or when camera fails."),
+            ('sees_custom_label(label, confidence=0.75)', "label: string; confidence 0..1. Auto-awaits; returns bool; unloaded model/camera failure raises."),
         ],
         593,
         348,
@@ -496,10 +593,10 @@ def page_tags(c: canvas.Canvas, page: int, total: int) -> None:
     command_rows(
         c,
         [
-            ("scan_april_tags()", "Return every visible tag and update overlays."),
-            ('sees_april_tag("any")', "Scan and return True for one or more tags."),
-            ("sees_april_tag(42)", "Scan for one tag36h11 ID."),
-            ('center_on_april_tag("any", 10, 5, 5, 3)', "Center x/y, align yaw, and stop after lost searches."),
+            ("scan_april_tags()", "No args. Auto-awaits; returns detection records; missing camera/canvas raises."),
+            ('sees_april_tag(id="any")', 'id: "any" or tag36h11 integer 0..586. Auto-awaits a fresh scan; returns bool; camera failure raises.'),
+            ("sees_april_tag(id=42)", "Named-argument example for one ID. Same bool return, automatic waiting, and camera failure behavior."),
+            ('center_on_april_tag(id="any", power=10, center_slack=5, angle_slack=5, lost_searches=3)', "power 0..100; slacks 1..35/1..45; lost 1..20. Auto-awaits; bool; false on loss/Stop/30 s timeout."),
         ],
         54,
         140,
@@ -510,13 +607,15 @@ def page_tags(c: canvas.Canvas, page: int, total: int) -> None:
         c,
         [
             ("1", [("take_off", CODE_FUNCTION), ("()", CODE_TEXT)]),
-            ("2", [("if", CODE_KEYWORD), (" ", CODE_TEXT), ("sees_april_tag", CODE_FUNCTION), ("(", CODE_TEXT), ("7", CODE_NUMBER), ("):", CODE_TEXT)]),
-            ("3", [("    centered = ", CODE_TEXT), ("center_on_april_tag", CODE_FUNCTION), ("(", CODE_TEXT), ("7", CODE_NUMBER), (")", CODE_TEXT)]),
-            ("4", [("    if", CODE_KEYWORD), (" centered:", CODE_TEXT)]),
-            ("5", [("        take_photo", CODE_FUNCTION), ("()", CODE_TEXT)]),
-            ("6", [("else", CODE_KEYWORD), (":", CODE_TEXT)]),
-            ("7", [("    print", CODE_FUNCTION), ("(", CODE_TEXT), ('"Tag 7 not found"', CODE_STRING), (")", CODE_TEXT)]),
-            ("8", [("land", CODE_FUNCTION), ("()", CODE_TEXT)]),
+            ("2", [("try", CODE_KEYWORD), (":", CODE_TEXT)]),
+            ("3", [("    if", CODE_KEYWORD), (" ", CODE_TEXT), ("sees_april_tag", CODE_FUNCTION), ("(", CODE_TEXT), ("7", CODE_NUMBER), ("):", CODE_TEXT)]),
+            ("4", [("        centered = ", CODE_TEXT), ("center_on_april_tag", CODE_FUNCTION), ("(", CODE_TEXT), ("7", CODE_NUMBER), (")", CODE_TEXT)]),
+            ("5", [("        if", CODE_KEYWORD), (" centered:", CODE_TEXT)]),
+            ("6", [("            take_photo", CODE_FUNCTION), ("()", CODE_TEXT)]),
+            ("7", [("    else", CODE_KEYWORD), (":", CODE_TEXT)]),
+            ("8", [("        print", CODE_FUNCTION), ("(", CODE_TEXT), ('"Tag 7 not found"', CODE_STRING), (")", CODE_TEXT)]),
+            ("9", [("finally", CODE_KEYWORD), (":", CODE_TEXT)]),
+            ("10", [("    land", CODE_FUNCTION), ("()", CODE_TEXT)]),
         ],
         580,
         140,
@@ -524,7 +623,7 @@ def page_tags(c: canvas.Canvas, page: int, total: int) -> None:
         215,
         "TAG-MISSION.PY",
     )
-    note_panel(c, "Named options", 'center_on_april_tag(id=7, power=8, center_slack=4, angle_slack=5, lost_searches=4)', 54, 393, 852, 59)
+    note_panel(c, "Detection return", "Each record includes ID, center x/y on -100..100, image corners, and 2D image yaw. Centering commands roll/pitch/yaw only; they do not control height or land.", 54, 393, 852, 59)
     footer(c, page, total)
     c.showPage()
 
@@ -551,11 +650,11 @@ def page_variables(c: canvas.Canvas, page: int, total: int) -> None:
     command_rows(
         c,
         [
-            ("print(value)", "Write values to the program console."),
-            ("len(value)", "Number of items or characters."),
-            ("contains(collection, value)", "True when a list or string contains a value."),
-            ("abs / min / max / round", "Common number helpers."),
-            ("int / float / str / bool", "Convert one value to a new type."),
+            ("print(value)", "value: any; one or more arguments allowed. Returns None after writing to the app console; synchronous."),
+            ("len(value)", "value: string/list-like or None. Returns integer length (0 for None); synchronous."),
+            ("contains(collection, value)", "collection: string/list/set/map-like; value: any. Returns bool synchronously; unsupported collections return False."),
+            ("abs(value), min(value1, value2), max(value1, value2), round(value)", "Numeric arguments. Return numbers synchronously using the browser math helpers; invalid values may produce NaN."),
+            ("int(value), float(value), str(value), bool(value)", "value: any. Return converted value synchronously; int truncates; conversion follows JavaScript coercion."),
         ],
         490,
         135,
@@ -655,9 +754,9 @@ def page_loops(c: canvas.Canvas, page: int, total: int) -> None:
     command_rows(
         c,
         [
-            ("range(4)", "0, 1, 2, 3"),
-            ("range(2, 6)", "2, 3, 4, 5"),
-            ("range(6, 0, -2)", "6, 4, 2"),
+            ("range(stop)", "stop: finite number. Returns list from 0 to before stop with step 1; range(4) -> 0,1,2,3."),
+            ("range(start, stop)", "start/stop: finite numbers. Returns list from start to before stop; range(2, 6) -> 2,3,4,5."),
+            ("range(start, stop, step)", "step: finite nonzero number. Returns ascending/descending list; invalid numbers or zero step raise."),
         ],
         54,
         326,
@@ -700,17 +799,17 @@ def page_functions(c: canvas.Canvas, page: int, total: int) -> None:
 
 
 def page_reference(c: canvas.Canvas, page: int, total: int) -> None:
-    header(c, "12", "Quick reference: units, rules, and support", "Keep this page nearby during a lab. The detailed pages explain every command listed here.", page, total)
+    header(c, "12", "Quick reference: units, rules, and support", "Keep this page nearby during a lab. Use the page map to jump to each fully documented command group.", page, total)
     note_panel(c, "Units", "Power and threshold: 0-100 percent\nConfidence: 0-1 fraction\nTime: seconds\nRotation: degrees\nVision x/y: -100 to +100", 54, 132, 257, 134)
     note_panel(c, "Directions", "fly: up, down, left, right, forward, backward\nflip: forward, backward, left, right\nrotate: clockwise, counterclockwise", 54, 282, 257, 116, NAVY_2)
     note_panel(c, "Python rules", "Four spaces per level. Colon after block headers. Calls stay on one line. No await or import. Use True, False, None, and snake_case command names.", 54, 414, 257, 74, RED)
-    note_panel(c, "Flight + state", "take_off  land  hover  wait  fly  rotate  flip  set_axis  reset_motion  battery_level  is_flying  is_landed  wait_for_battery_change  stopped  key_pressed", 333, 132, 273, 130)
-    note_panel(c, "Photos + accessories", "take_photo  open_grabber  close_grabber  fire_gun  emergency_cutoff", 333, 278, 273, 78)
-    note_panel(c, "Basic tools", "print  len  range  contains  abs  min  max  round  int  float  str  bool", 333, 372, 273, 80, NAVY_2)
-    note_panel(c, "Vision", "scan_threshold  sees_binary  binary_center  load_object_model  scan_objects  detect_objects  sees_object  object_coordinate  object_x  object_y  scan_april_tags  sees_april_tag  center_on_april_tag  scan_custom_model  sees_custom_label", 628, 132, 278, 196)
+    note_panel(c, "Flight + state API", "Pages 3-4 document lifecycle, motion, timing, state, photos, accessories, keys, cancellation, argument types/defaults, returns, automatic waiting, and failures.", 333, 132, 273, 130)
+    note_panel(c, "Vision API", "Pages 5-7 document thresholding, COCO objects, custom labels, AprilTags, units, defaults, return records, automatic waiting, and camera/model failures.", 333, 278, 273, 108, TEAL)
+    note_panel(c, "Language tools", "Pages 8-11 cover values, printing, operators, decisions, bounded loops, functions, return values, and guaranteed landing.", 333, 402, 273, 76, NAVY_2)
+    note_panel(c, "Find a command fast", "Flight + timing: p3\nState + accessories: p4\nThreshold: p5\nObjects + custom: p6\nAprilTags: p7\nValues + logic: p8-9\nLoops + functions: p10-11", 628, 132, 278, 196)
     note_panel(c, "Safety", "Use conservative power and short motion times. Test vision while landed. Keep the area clear. Stop & Land remains the operator control; emergency_cutoff is for immediate motor shutdown only.", 628, 344, 278, 108, RED)
     set_font(c, "Helvetica", 7.4, MUTED)
-    c.drawString(333, top(480), "Source of truth: lib/python.ts, lib/drone.ts, lib/vision.ts, and lib/runtime.ts")
+    c.drawString(333, top(492), "Source of truth: lib/python.ts, lib/drone.ts, lib/vision.ts, and lib/runtime.ts")
     footer(c, page, total)
     c.showPage()
 

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import shutil
 from dataclasses import dataclass
 from io import BytesIO
@@ -61,6 +62,11 @@ LIGHT_GOLD = HexColor("#F6F0D9")
 LIGHT_CORAL = HexColor("#F8E5E8")
 CODE_BG = HexColor("#061F3E")
 CODE_TEXT = HexColor("#E8F1F4")
+CODE_COMMENT = HexColor("#7892A6")
+CODE_KEYWORD = HexColor("#78C7FF")
+CODE_STRING = HexColor("#A8E6A1")
+CODE_NUMBER = HexColor("#F5C66B")
+CODE_FUNCTION = HexColor("#55D6C2")
 
 PHOTO_UNDERSIDE = TEMP_DIR / "hopper-underside-sanitized.jpg"
 PHOTO_TOP = TEMP_DIR / "hopper-top-sanitized.jpg"
@@ -442,7 +448,9 @@ def cover_page(
     for chip in chips:
         chip_width = draw_pill(c, chip.upper(), chip_x, max(46, y - 12), LIGHT_TEAL, TEAL_DARK)
         chip_x += chip_width + 8
-    draw_text(c, f"DECK {context.number:02d}  |  {context.total} SLIDES", 48, 20, 8, HexColor("#9CB1BF"), "Helvetica-Bold")
+    topic_number = topic.partition("/")[0].strip()
+    deck_number = int(topic_number) if topic_number.isdigit() else context.number
+    draw_text(c, f"DECK {deck_number:02d}  |  {context.total} SLIDES", 48, 20, 8, HexColor("#9CB1BF"), "Helvetica-Bold")
     rounded_panel(c, W - 82, 18, 36, 42, white, None, 8)
     draw_image_contain(c, LOGO_EMBLEM, W - 76, 22, 24, 34)
 
@@ -667,6 +675,137 @@ def draw_apriltag(
         draw_text(c, f"tag36h11 ID {tag_id}", x + size / 2, y - 15, 9, MUTED, "Helvetica-Bold", "center")
 
 
+JS_KEYWORDS = {
+    "async",
+    "await",
+    "break",
+    "catch",
+    "const",
+    "continue",
+    "else",
+    "false",
+    "finally",
+    "for",
+    "function",
+    "if",
+    "let",
+    "new",
+    "null",
+    "return",
+    "throw",
+    "true",
+    "try",
+    "while",
+}
+
+JS_TOKEN_PATTERN = re.compile(
+    r"""
+    (?P<comment>//[^\n]*|/\*.*?\*/)
+    |(?P<string>`(?:\\.|[^`])*`|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')
+    |(?P<number>\b(?:0[xX][0-9A-Fa-f]+|\d+(?:\.\d+)?)\b)
+    |(?P<identifier>[A-Za-z_$][A-Za-z0-9_$]*)
+    |(?P<space>\s+)
+    |(?P<punct>.)
+    """,
+    re.VERBOSE,
+)
+
+
+def javascript_tokens(source: str, dark_background: bool = True) -> list[tuple[str, Color]]:
+    """Tokenize one JavaScript line for the Hopper editor palette."""
+    palette = {
+        "comment": CODE_COMMENT if dark_background else MUTED,
+        "keyword": CODE_KEYWORD if dark_background else HexColor("#315A91"),
+        "string": CODE_STRING if dark_background else HexColor("#2E7D45"),
+        "number": CODE_NUMBER if dark_background else HexColor("#9A6B00"),
+        "function": CODE_FUNCTION if dark_background else TEAL_DARK,
+        "text": CODE_TEXT if dark_background else NAVY,
+    }
+    output: list[tuple[str, Color]] = []
+    matches = list(JS_TOKEN_PATTERN.finditer(source))
+    for index, match in enumerate(matches):
+        text = match.group(0)
+        kind = match.lastgroup
+        if kind == "comment":
+            color = palette["comment"]
+        elif kind == "string":
+            color = palette["string"]
+        elif kind == "number":
+            color = palette["number"]
+        elif kind == "identifier" and text in JS_KEYWORDS:
+            color = palette["keyword"]
+        elif kind == "identifier":
+            next_text = ""
+            for later in matches[index + 1:]:
+                if later.lastgroup != "space":
+                    next_text = later.group(0)
+                    break
+            color = palette["function"] if next_text == "(" else palette["text"]
+        else:
+            color = palette["text"]
+        if output and output[-1][1] == color:
+            output[-1] = (output[-1][0] + text, color)
+        else:
+            output.append((text, color))
+    return output
+
+
+def draw_inline_javascript(
+    c: canvas.Canvas,
+    source: str,
+    x: float,
+    y: float,
+    font_size: float,
+    maximum_width: float,
+    font: str = "Courier-Bold",
+    dark_background: bool = False,
+) -> float:
+    size = fit_font(source, font, font_size, maximum_width, max(7.2, font_size - 2.4))
+    cursor = x
+    for segment, color in javascript_tokens(source, dark_background):
+        draw_text(c, segment, cursor, y, size, color, font)
+        cursor += stringWidth(segment, font, size)
+    return size
+
+
+def draw_api_row(
+    c: canvas.Canvas,
+    x: float,
+    y: float,
+    width: float,
+    height: float,
+    example: str,
+    documentation: str,
+    alternate: bool = False,
+    code_width: float = 405,
+) -> None:
+    """Draw a runnable JS example beside compact API documentation."""
+    rounded_panel(
+        c,
+        x,
+        y,
+        width,
+        height,
+        white if not alternate else HexColor("#E7EEF0"),
+        None,
+        7,
+    )
+    draw_inline_javascript(c, example, x + 16, y + height - 18, 9.4, code_width - 24)
+    doc_x = x + code_width
+    draw_wrapped(
+        c,
+        documentation,
+        doc_x,
+        y + height - 13,
+        width - code_width - 14,
+        7.9,
+        9.6,
+        MUTED,
+        "Helvetica",
+        3,
+    )
+
+
 def draw_code_window(
     c: canvas.Canvas,
     x: float,
@@ -690,7 +829,7 @@ def draw_code_window(
     for line_number, line in enumerate(lines, 1):
         draw_text(c, str(line_number), x + 18, line_y, font_size - 2, HexColor("#617D90"), "Courier", "right")
         cursor_x = x + 34
-        segments = [(line, CODE_TEXT)] if isinstance(line, str) else line
+        segments = javascript_tokens(line, True) if isinstance(line, str) else line
         for segment, color in segments:
             draw_text(c, segment, cursor_x, line_y, font_size, color, "Courier")
             cursor_x += stringWidth(segment, "Courier", font_size)
@@ -1328,20 +1467,23 @@ def blocks_deck() -> Deck:
         draw_code_window(
             c,
             478,
-            54,
+            44,
             436,
-            189,
+            203,
             [
-                [(f"await ", GOLD), ("runtime.runBlock(...", CODE_TEXT)],
-                [("  ", CODE_TEXT), (f"await ", GOLD), ("drone.takeOff();", CODE_TEXT)],
-                [(");", CODE_TEXT)],
-                [(f"await ", GOLD), ('drone.fly("forward", 1, 15);', CODE_TEXT)],
-                [(f"await ", GOLD), ("drone.land();", CODE_TEXT)],
+                'await runtime.runBlock("takeoff", async () => {',
+                "  await drone.takeOff();",
+                "});",
+                'await runtime.runBlock("fly-1", async () => {',
+                '  await drone.fly("forward", 1, 15);',
+                "});",
+                'await runtime.runBlock("land", async () => {',
+                "  await drone.land();",
+                "});",
             ],
             "GENERATED JAVASCRIPT",
-            9.5,
+            8.8,
         )
-        draw_text(c, "Structural blocks may not glow; concrete flight, wait, accessory and vision actions do.", 696, 42, 9, MUTED, "Helvetica-Bold", "center")
 
     def starts(c: canvas.Canvas, context: PageContext) -> None:
         page_chrome(c, context, "Start & Events", "General control")
@@ -1431,31 +1573,31 @@ def blocks_deck() -> Deck:
                 "BINARY",
                 TEAL_DARK,
                 [
-                    "camera sees binary white/black at threshold + coverage",
-                    "camera sees binary white/black at center pixel",
+                    "sees color: threshold + coverage",
+                    "center pixel color: threshold",
                 ],
             ),
             (
                 "OBJECTS",
                 TEAL,
                 [
-                    "scan for objects",
-                    "camera sees [label] at [confidence]%",
-                    "x/y coordinate of [label] at [confidence]%",
+                    "scan objects (default 55%)",
+                    "sees label at confidence %",
+                    "last label x/y at confidence %",
                 ],
             ),
             (
                 "CUSTOM",
                 GOLD,
-                ["custom model sees [label] at [confidence]%"],
+                ["sees custom label at confidence %"],
             ),
             (
                 "APRILTAGS",
                 CORAL,
                 [
-                    "scan for april tags",
-                    "camera sees april tag with ID [any/0-586]",
-                    "center on AprilTag (in Flight category)",
+                    "scan AprilTags",
+                    "sees tag ID any / 0-586",
+                    "center tag: power + slack + lost",
                 ],
             ),
         ]
@@ -1470,8 +1612,9 @@ def blocks_deck() -> Deck:
             for block_label in blocks:
                 draw_block(c, x + 12, y, widths[index] - 24, block_label, color, 48)
                 y -= 76
-        draw_text(c, "Fresh scan: binary predicates, sees object, custom sees and sees AprilTag.", 480, 72, 9.5, TEAL_DARK, "Helvetica-Bold", "center")
-        draw_text(c, "Saved state only: object coordinate. 0 can mean centered OR not previously detected.", 480, 52, 9.5, CORAL, "Helvetica-Bold", "center")
+        draw_text(c, "Binary: threshold + coverage are 0-100%; invert swaps classes; predicates await a fresh frame and return Boolean.", 480, 75, 8.4, TEAL_DARK, "Helvetica-Bold", "center")
+        draw_text(c, "COCO: label + confidence + saved coordinate (-100..100, or 0). Custom: label + confidence only; no box or coordinate.", 480, 59, 8.2, CORAL, "Helvetica-Bold", "center")
+        draw_text(c, "AprilTags: scan returns detections; sees/center return Boolean; center also stops at 30 s or the lost-search limit.", 480, 43, 8.4, MUTED, "Helvetica-Bold", "center")
 
     def builtins(c: canvas.Canvas, context: PageContext) -> None:
         page_chrome(c, context, "Logic, loops, math, variables and functions", "Built-in Blockly tools")
@@ -1489,13 +1632,15 @@ def blocks_deck() -> Deck:
 
     def safe_mission(c: canvas.Canvas, context: PageContext) -> None:
         page_chrome(c, context, "Build one intentional, safe mission", "Recommended pattern")
-        draw_block(c, 58, 365, 276, "when program starts", TEAL_DARK, 42)
-        draw_block(c, 76, 315, 240, "take off", NAVY, 38)
-        draw_block(c, 76, 267, 315, "repeat for 10 seconds", GOLD, 38)
-        draw_block(c, 100, 217, 350, "fly forward for 1 sec at 15%", NAVY, 38)
-        draw_block(c, 100, 169, 338, "if camera sees white paper", TEAL_DARK, 38)
-        draw_block(c, 124, 121, 230, "land", NAVY, 38)
-        draw_block(c, 76, 73, 230, "land", NAVY, 38)
+        draw_block(c, 58, 386, 276, "when program starts", TEAL_DARK, 34)
+        draw_block(c, 76, 344, 240, "take off", NAVY, 34)
+        draw_block(c, 76, 302, 280, "set found to false", CORAL, 34)
+        draw_block(c, 76, 260, 315, "repeat for 10 seconds", GOLD, 34)
+        draw_block(c, 100, 218, 338, "if camera sees white paper", TEAL_DARK, 34)
+        draw_block(c, 124, 176, 250, "set found to true", CORAL, 34)
+        draw_block(c, 124, 134, 230, "break out of loop", GOLD, 34)
+        draw_block(c, 100, 92, 350, "else: fly forward 0.5 sec at 12%", NAVY, 34)
+        draw_block(c, 76, 50, 230, "land after the loop", NAVY, 34)
         draw_card(
             c,
             504,
@@ -1506,7 +1651,7 @@ def blocks_deck() -> Deck:
             [
                 "Place all intended executable stacks deliberately; detached top-level stacks may still run.",
                 "Use one start hat for the main mission.",
-                "End with land even when a condition is never met.",
+                "Break after the target is found; keep land outside the loop so every normal path lands.",
                 "Use the UI STOP & LAND for intervention.",
             ],
             TEAL,
@@ -1557,211 +1702,222 @@ def javascript_deck() -> Deck:
             draw_card(c, 46 + index * 219, 246, 201, 184, name, body, accent, white, 18, 10.5, icon)
         rounded_panel(c, 46, 86, 868, 124, NAVY, None, 16)
         draw_text(c, "TOP-LEVEL await WORKS", 480, 168, 13, TEAL, "Helvetica-Bold", "center")
-        draw_text(c, "await drone.takeOff();", 480, 129, 20, white, "Courier-Bold", "center")
+        example = "await drone.takeOff();"
+        example_width = stringWidth(example, "Courier-Bold", 20)
+        draw_inline_javascript(c, example, 480 - example_width / 2, 129, 20, example_width + 2, dark_background=True)
         draw_text(c, "Promise-returning calls must be awaited or the main body may finish and auto-land early.", 480, 99, 10, HexColor("#C7DAE2"), "Helvetica", "center")
 
     def flight(c: canvas.Canvas, context: PageContext) -> None:
         page_chrome(c, context, "drone: core flight commands", "Stable student surface")
         rows = [
-            ("await drone.takeOff()", "Take off; physical controller waits about 3 s."),
-            ("await drone.land()", "Land; physical controller waits about 5 s."),
-            ("await drone.hover()", "Zero axes and wait 1 s."),
-            ('await drone.fly(direction, seconds, power)', "6 directions; seconds >= 0; signed power clamps -100..100%."),
-            ('await drone.rotate(degrees, direction)', "clockwise/counterclockwise; timed/open-loop yaw."),
-            ('await drone.flip(direction)', "forward/backward/left/right; preserve safe clearance."),
-            ('drone.setAxis(axis, power)', "Persistent pitch/roll/yaw/gaz command until reset."),
-            ("drone.reset()", "Zero motion axes; does not land."),
+            (
+                "await drone.takeOff();",
+                "No args. Promise<void>; await. Rejects on low battery (<=10%) or BLE failure; a stopped run returns early.",
+            ),
+            (
+                "await drone.land();",
+                "No args. Promise<void>; await. Zeros axes, sends land, then waits about 5 s; transport failures reject.",
+            ),
+            (
+                "await drone.hover();",
+                "No args. Promise<void>; await. Zeros every axis, waits about 1 s, and returns void.",
+            ),
+            (
+                'await drone.fly("forward", 1, 15);',
+                "direction: up/down/left/right/forward/backward; seconds >=0 (default 0); power -100..100 (default 0). Promise<void>; await.",
+            ),
+            (
+                'await drone.rotate(90, "clockwise");',
+                "degrees >=0 (default 0); direction clockwise/counterclockwise (default clockwise). Promise<void>; await; open-loop timing.",
+            ),
+            (
+                'await drone.flip("forward");',
+                "direction: forward/backward/left/right. Promise<void>; await. Missing acknowledgement rejects; preserve safe clearance.",
+            ),
+            (
+                'drone.setAxis("pitch", 15);',
+                "axis: pitch/roll/yaw/gaz/altitude; power clamps -100..100. Synchronous void; persists until reset; altitude aliases gaz.",
+            ),
+            (
+                "drone.reset();",
+                "No args. Synchronous void. Zeros all persistent motion axes; it does not land.",
+            ),
         ]
         y = 388
-        for index, (signature, note) in enumerate(rows):
-            rounded_panel(c, 46, y, 868, 43, white if index % 2 == 0 else HexColor("#E7EEF0"), None, 7)
-            draw_text(c, signature, 64, y + 15, 10.5, NAVY, "Courier-Bold")
-            draw_text(c, note, 492, y + 15, 9.5, MUTED, "Helvetica")
-            y -= 46
-        draw_text(c, '"altitude" is accepted as an axis alias for gaz vertical power - it is not a height setpoint.', 480, 51, 9.5, CORAL, "Helvetica-Bold", "center")
+        for index, (example, documentation) in enumerate(rows):
+            draw_api_row(c, 46, y, 868, 41, example, documentation, index % 2 == 1, 410)
+            y -= 45
+        draw_text(c, "All Promise-returning calls must be awaited. Stop cancels the active run; UI STOP & LAND also sends a landing command.", 480, 50, 8.9, CORAL, "Helvetica-Bold", "center")
 
     def state(c: canvas.Canvas, context: PageContext) -> None:
         page_chrome(c, context, "drone: state, timing and accessories", "Returns and caveats")
-        draw_card(
-            c,
-            46,
-            246,
-            420,
-            184,
-            "STATE + TIMING",
-            [
-                "await drone.wait(seconds)",
-                "drone.getBatteryLevel() -> number | null",
-                "drone.isFlying() / drone.isLanded() -> boolean",
-                "await drone.waitUntilBatteryLevelChanges()",
-                "drone.cancelRunFlag -> boolean",
-            ],
-            TEAL,
-            white,
-            14,
-            10.5,
-        )
-        draw_card(
-            c,
-            488,
-            246,
-            426,
-            184,
-            "CAMERA + ACCESSORIES",
-            [
-                "await drone.takePicture() -> session gallery",
-                'await drone.grabber("OPEN" | "CLOSE")',
-                "await drone.fireGun()",
-                "await drone.cutoff() -> emergency only",
-            ],
-            GOLD,
-            white,
-            14,
-            10.5,
-        )
-        rounded_panel(c, 46, 87, 868, 121, LIGHT_CORAL, HexColor("#E7BBC2"), 16)
-        draw_text(c, "APP-OWNED - DO NOT USE IN STUDENT PROGRAMS", 480, 171, 10, CORAL, "Helvetica-Bold", "center")
+        left_rows = [
+            ("await drone.wait(1);", "seconds: number >=0. Promise<void>; await. Resolves after the delay or early when the run stops."),
+            ("const level = drone.getBatteryLevel();", "No args. Returns number 0..100 or null before telemetry; synchronous and does not throw."),
+            ("const flying = drone.isFlying();", "No args. Returns boolean from the controller's flying/landed state; synchronous."),
+            ("const landed = drone.isLanded();", "No args. Returns boolean from the controller's flying/landed state; synchronous."),
+            ("await drone.waitUntilBatteryLevelChanges();", "No args. Promise<void>; await. Resolves on a new battery value or when the run stops."),
+        ]
+        right_rows = [
+            ("await drone.takePicture();", "No args. Promise<void>; await. Requests a camera photo; camera or transport errors reject."),
+            ('await drone.grabber("OPEN");', 'action: "OPEN" or "CLOSE". Promise<void>; await. Rejects when no physical grabber is attached; simulator is a timing stub.'),
+            ("await drone.fireGun();", "No args. Promise<void>; await. Rejects when no physical cannon is attached; simulator is a timing stub."),
+            ("await drone.cutoff();", "No args. Promise<void>; await. Immediate motor cutoff for emergencies; transport errors reject."),
+        ]
+        for index, (example, documentation) in enumerate(left_rows):
+            draw_api_row(c, 46, 368 - index * 54, 420, 49, example, documentation, index % 2 == 1, 232)
+        for index, (example, documentation) in enumerate(right_rows):
+            draw_api_row(c, 488, 368 - index * 54, 426, 49, example, documentation, index % 2 == 1, 225)
+        rounded_panel(c, 46, 78, 868, 55, LIGHT_CORAL, HexColor("#E7BBC2"), 12)
+        draw_text(c, "APP-OWNED - DO NOT USE IN STUDENT PROGRAMS", 480, 112, 9, CORAL, "Helvetica-Bold", "center")
         draw_wrapped(
             c,
             "disconnect, abortRun, startRun, stopRun, landNoWait, forceLand, manualNudge, onTelemetry and onEvent are lifecycle/UI internals. Replacing callbacks can break the app.",
             83,
-            142,
+            95,
             794,
-            10.5,
-            14,
+            8.5,
+            10,
             INK,
             "Helvetica",
         )
 
     def vision_binary_object(c: canvas.Canvas, context: PageContext) -> None:
         page_chrome(c, context, "vision: binary and COCO functions", "Confidence in JavaScript is 0..1")
-        draw_card(
-            c,
-            46,
-            249,
-            420,
-            181,
-            "BINARY THRESHOLD",
-            [
-                "await vision.scanThreshold(T=60, invert=false)",
-                'await vision.seesBinary("white", T, invert, coverage=10)',
-                'await vision.binaryCenter("white", T, invert)',
-                "T and coverage use 0-100 percentages.",
-            ],
-            TEAL_DARK,
-            white,
-            13,
-            9.8,
-        )
-        draw_card(
-            c,
-            488,
-            249,
-            426,
-            181,
-            "COCO OBJECTS",
-            [
-                "await vision.loadObjectModel()",
-                "await vision.detectObjects(confidence=0.55)",
-                'await vision.seesObject("apple", 0.55)',
-                'vision.objectCoordinate("apple", "x", 0.55)',
-            ],
-            TEAL,
-            white,
-            13,
-            9.8,
-        )
-        rounded_panel(c, 46, 85, 868, 124, NAVY, None, 16)
-        draw_text(c, "OBJECT RESULT", 76, 169, 9, TEAL, "Helvetica-Bold")
-        draw_text(c, "{ class, score, bbox, frameWidth, frameHeight, centerX, centerY }", 76, 136, 13, white, "Courier-Bold")
-        draw_text(c, "x/y are -100..100; right/up positive. objectCoordinate never scans and returns last known value or 0.", 76, 105, 9.5, HexColor("#CADCE3"), "Helvetica")
+        rows = [
+            (
+                "const mask = await vision.scanThreshold(60, false);",
+                "threshold: 0..100% (default 60); invert: boolean (default false). Promise<ThresholdResult>; fresh frame; camera failure rejects.",
+            ),
+            (
+                'const seen = await vision.seesBinary("white", 60, false, 10);',
+                "color: white/black; threshold + minimumCoverage: 0..100%; invert boolean. Promise<boolean>; defaults 60/false/10; camera failure rejects.",
+            ),
+            (
+                'const centered = await vision.binaryCenter("white", 60, false);',
+                "color: white/black; threshold 0..100% default 60; invert default false. Promise<boolean>; tests center pixel of a fresh frame.",
+            ),
+            (
+                "await vision.loadObjectModel();",
+                "No args. Promise<ObjectDetection>; await. Lazy-loads local COCO-SSD; file://, model-load, or network/server failures reject.",
+            ),
+            (
+                "const objects = await vision.detectObjects(0.55);",
+                "minimumConfidence: 0..1 (default .55). Promise<VisionDetection[]>; up to 10 results. Camera/model failures reject.",
+            ),
+            (
+                'const apple = await vision.seesObject("apple", 0.55);',
+                "label: string; minimumConfidence: 0..1 default .55. Promise<boolean>; performs a fresh scan; camera/model failures reject.",
+            ),
+            (
+                'const x = vision.objectCoordinate("apple", "x", 0.55);',
+                "label string; axis x/y; confidence 0..1 default .55. Synchronous number -100..100 from saved detections; returns 0 if absent.",
+            ),
+        ]
+        y = 388
+        for index, (example, documentation) in enumerate(rows):
+            draw_api_row(c, 46, y, 868, 41, example, documentation, index % 2 == 1, 430)
+            y -= 45
+        rounded_panel(c, 46, 60, 868, 42, NAVY, None, 12)
+        draw_text(c, "ThresholdResult: threshold, invert, whiteCoverage, blackCoverage, centerWhite, frameWidth, frameHeight, binaryData", 480, 83, 8.6, CODE_TEXT, "Courier-Bold", "center")
+        draw_text(c, "VisionDetection adds class, score, bbox and centerX/centerY; right and up are positive.", 480, 67, 8.2, TEAL, "Helvetica-Bold", "center")
 
     def vision_tags_custom(c: canvas.Canvas, context: PageContext) -> None:
         page_chrome(c, context, "vision: AprilTags and custom models", "Fresh frames and local inference")
-        draw_card(
-            c,
-            46,
-            236,
-            420,
-            194,
-            "APRILTAGS",
-            [
-                "await vision.scanAprilTags()",
-                'await vision.seesAprilTag("any" | id)',
-                "await vision.centerOnAprilTag(drone, id, power, centerSlack, angleSlack, lostSearches)",
-                "IDs 0-586; 2D image yaw; returns true/false.",
-            ],
-            CORAL,
-            white,
-            13,
-            9.6,
-        )
-        draw_card(
-            c,
-            488,
-            236,
-            426,
-            194,
-            "TEACHABLE MACHINE",
-            [
-                "Load model.json + weights.bin + metadata.json in the UI.",
-                "await vision.classifyCustomModel()",
-                'await vision.seesCustomLabel("landing pad", 0.75)',
-                "Whole-frame classes; no boxes or x/y location.",
-            ],
-            GOLD,
-            white,
-            13,
-            9.6,
-        )
-        draw_camera_frame(c, 46, 84, 266, 116, tag=True)
-        draw_apriltag(c, 0, 332, 89, 100, True)
-        draw_process(
-            c,
-            [("Frame", "Fresh camera capture."), ("Inference", "Runs on this computer."), ("Decision", "Boolean, result list or pose.")],
-            488,
-            84,
-            426,
-            116,
-            TEAL_DARK,
-        )
+        rows = [
+            (
+                "const tags = await vision.scanAprilTags();",
+                "No args. Promise<AprilTagDetection[]>; await. Captures a fresh frame; a missing camera/canvas rejects.",
+            ),
+            (
+                'const found = await vision.seesAprilTag("any");',
+                'id: "any" (default) or tag36h11 ID 0..586. Promise<boolean>; await; scans first; camera failures reject.',
+            ),
+            (
+                'const aligned = await vision.centerOnAprilTag(drone, "any", 10, 5, 5, 3);',
+                "args: drone; id; power 0..100; centerSlack 1..35; angleSlack 1..45; lostSearches 1..20. Promise<boolean>; 30 s limit.",
+            ),
+            (
+                "const classes = await vision.classifyCustomModel();",
+                "No args. Promise<CustomPrediction[]>; await. Requires UI-loaded model + camera; otherwise rejects.",
+            ),
+            (
+                'const pad = await vision.seesCustomLabel("landing pad", 0.75);',
+                "label: string; minimumConfidence: 0..1 (default .75). Promise<boolean>; await; scans whole frame; model/camera failures reject.",
+            ),
+        ]
+        y = 374
+        for index, (example, documentation) in enumerate(rows):
+            draw_api_row(c, 46, y, 868, 50, example, documentation, index % 2 == 1, 485)
+            y -= 55
+        rounded_panel(c, 46, 67, 420, 58, LIGHT_CORAL, HexColor("#E9BBC2"), 12)
+        draw_text(c, "APRILTAG RETURN", 64, 103, 8.5, CORAL, "Helvetica-Bold")
+        draw_wrapped(c, "Detections include ID, x/y center in -100..100, image corners and 2D image yaw. Centering returns false on loss, stop, or timeout.", 64, 88, 384, 8, 9.5, MUTED)
+        rounded_panel(c, 488, 67, 426, 58, LIGHT_GOLD, HexColor("#DED09B"), 12)
+        draw_text(c, "CUSTOM MODEL FILES", 506, 103, 8.5, GOLD, "Helvetica-Bold")
+        draw_wrapped(c, "Load model.json, weights.bin and metadata.json in Vision Testing. Predictions are className + probability; there are no boxes.", 506, 88, 390, 8, 9.5, MUTED)
 
     def runtime(c: canvas.Canvas, context: PageContext) -> None:
         page_chrome(c, context, "runtime and console", "Events, loops and cancellation")
         rows = [
-            ('runtime.registerKey("pressed", "a", async () => {...})', "Key event; handlers can overlap."),
-            ('runtime.registerDrone("landed", async () => {...})', "flying, landed, crashed, batteryLevelChanged."),
-            ('runtime.keyIsPressed("ArrowUp")', "Live Boolean."),
-            ("await runtime.repeatForSeconds(seconds, async () => {...})", "Sequential iterations with a yield."),
-            ("await runtime.tick()", "Yield and throw if stopped."),
-            ("runtime.stopped / runtime.hasEvents", "Read program state."),
-            ("runtime.stop()", "Unregister/abort only; currently does NOT land."),
-            ("console.log / warn / error(...values)", "Append to the in-app console."),
+            (
+                'runtime.registerKey("pressed", "a", async () => {});',
+                "kind: pressed/released; key string; async handler. Returns void; handlers may overlap; rejection is reported to the console.",
+            ),
+            (
+                'runtime.registerDrone("landed", async () => {});',
+                "event: flying/landed/crashed/batteryLevelChanged; async handler. Returns void; handlers may overlap; rejection is reported.",
+            ),
+            (
+                'await runtime.runBlock("block-id", async () => {});',
+                "blockId: string; async/value handler. Promise<handler result>; await. A stopped runtime rejects; active-block state clears in finally.",
+            ),
+            (
+                'const down = runtime.keyIsPressed("ArrowUp");',
+                "key: string. Returns live boolean synchronously; no await and no expected failure.",
+            ),
+            (
+                "await runtime.repeatForSeconds(5, async () => {});",
+                "seconds >=0; async handler. Promise<void>; await. Iterations are sequential and yield; stopping throws Program stopped.",
+            ),
+            (
+                "await runtime.tick();",
+                "No args. Promise<void>; await. Yields one event-loop turn; rejects with Program stopped after cancellation.",
+            ),
+            (
+                "const { stopped, hasEvents } = runtime;",
+                "Both are booleans. stopped reports cancellation; hasEvents becomes true after event registration. Synchronous reads.",
+            ),
+            (
+                "runtime.stop();",
+                "No args. Synchronous void. Unregisters and aborts runtime tasks; idempotent; it does not command a landing.",
+            ),
+            (
+                'console.log("x =", x);',
+                "One or more values. log/warn/error return void and append a line to the app console; no await.",
+            ),
         ]
-        y = 388
-        for index, (signature, note) in enumerate(rows):
-            rounded_panel(c, 46, y, 868, 43, white if index % 2 == 0 else HexColor("#E7EEF0"), None, 7)
-            draw_text(c, signature, 64, y + 15, 9.2, NAVY, "Courier-Bold")
-            draw_text(c, note, 610, y + 15, 9.2, MUTED, "Helvetica")
-            y -= 46
-        draw_text(c, "Use the red UI STOP & LAND for a safe operator intervention.", 480, 51, 10, CORAL, "Helvetica-Bold", "center")
+        y = 394
+        for index, (example, documentation) in enumerate(rows):
+            draw_api_row(c, 46, y, 868, 36, example, documentation, index % 2 == 1, 430)
+            y -= 39
+        draw_text(c, "Use the red UI STOP & LAND for operator intervention: runtime.stop() alone does not land.", 480, 50, 9.2, CORAL, "Helvetica-Bold", "center")
 
     def example(c: canvas.Canvas, context: PageContext) -> None:
         page_chrome(c, context, "A complete safe example", "White-paper landing")
         lines = [
-            [(f"await ", GOLD), ("drone.takeOff();", CODE_TEXT)],
-            [("try", TEAL), (" {", CODE_TEXT)],
-            [("  ", CODE_TEXT), (f"while ", GOLD), ("(!runtime.stopped) {", CODE_TEXT)],
-            [("    ", CODE_TEXT), (f"const ", TEAL), ("overPaper = ", CODE_TEXT), (f"await ", GOLD)],
-            [("      ", CODE_TEXT), ('vision.binaryCenter("white", 60, false);', CODE_TEXT)],
-            [("    ", CODE_TEXT), (f"if ", GOLD), ("(overPaper) ", CODE_TEXT), (f"break", GOLD), (";", CODE_TEXT)],
-            [("    ", CODE_TEXT), (f"await ", GOLD), ('drone.fly("forward", 0.5, 12);', CODE_TEXT)],
-            [("  }", CODE_TEXT)],
-            [("} ", CODE_TEXT), ("finally", TEAL), (" {", CODE_TEXT)],
-            [("  ", CODE_TEXT), (f"await ", GOLD), ("drone.land();", CODE_TEXT)],
-            [("}", CODE_TEXT)],
+            "await drone.takeOff();",
+            "try {",
+            "  for (let attempt = 0; attempt < 20; attempt += 1) {",
+            '    const overPaper = await vision.binaryCenter("white", 60, false);',
+            "    if (overPaper) break;",
+            '    await drone.fly("forward", 0.5, 12);',
+            "  }",
+            "} finally {",
+            "  await drone.land();",
+            "}",
         ]
-        draw_code_window(c, 46, 82, 536, 349, lines, "WHITE-PAPER-LANDING.JS", 9.5)
+        draw_code_window(c, 46, 82, 536, 349, lines, "WHITE-PAPER-LANDING.JS", 8.7)
         draw_card(
             c,
             610,
@@ -1772,6 +1928,7 @@ def javascript_deck() -> Deck:
             [
                 "Top-level await keeps order.",
                 "Fresh vision decision after each move.",
+                "Twenty attempts bound the search.",
                 "Small, conservative command.",
                 "finally sends land after error or break.",
             ],
