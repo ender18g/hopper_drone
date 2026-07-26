@@ -35,7 +35,19 @@ import {
   buildAprilTagPdf,
   type AprilTagDetection,
 } from "../lib/apriltags";
-import { LAB_NAME, STUDIO_NAME } from "../lib/branding";
+import {
+  DEFAULT_EDITOR_MODE,
+  ENABLED_EDITOR_MODES,
+  LAB_NAME,
+  STUDIO_NAME,
+  type EditorMode,
+} from "../lib/branding";
+import { tokenizeJavaScript } from "../lib/javascript-highlighting";
+import {
+  PYTHON_STARTER_PROGRAM,
+  tokenizePython,
+  transpilePython,
+} from "../lib/python";
 import SimulatedDroneArea from "./SimulatedDroneArea";
 import wrcLogo from "../logos/wrc_logo.png?inline";
 
@@ -54,6 +66,53 @@ const VISION_WIDTH_KEY = "hopper-studio-vision-width-v1";
 const VISION_MIN_WIDTH = 330;
 const EDITOR_MIN_WIDTH = 340;
 const VISION_SPLITTER_WIDTH = 9;
+const INFORMATION_SLIDE_DECKS = [
+  {
+    title: "The Hopper sensor suite",
+    description: "Indoor sensors, camera, and why Hopper does not use GPS",
+    path: "information/01-hopper-sensor-suite.pdf",
+  },
+  {
+    title: "How a quadrotor flies",
+    description: "Aerodynamics, linear and angular motion, and a simple model",
+    path: "information/02-quadrotor-aerodynamics.pdf",
+  },
+  {
+    title: "Coding blocks reference",
+    description: "The available Blockly categories and what each block does",
+    path: "information/03-coding-blocks-reference.pdf",
+  },
+  {
+    title: "Python coding reference",
+    description: "Every Python command plus variables, decisions, loops, and functions",
+    path: "information/09-python-coding-reference.pdf",
+  },
+  {
+    title: "JavaScript API reference",
+    description: "Student-facing functions, variables, and examples",
+    path: "information/04-javascript-api-reference.pdf",
+  },
+  {
+    title: "Thresholding with Hopper",
+    description: "Binary vision and finding white paper in an indoor room",
+    path: "information/05-thresholding-with-hopper.pdf",
+  },
+  {
+    title: "Object detection and COCO",
+    description: "Object detection, the COCO dataset, and Hopper's built-in network",
+    path: "information/06-object-detection-and-coco.pdf",
+  },
+  {
+    title: "Teachable Machine models",
+    description: "Train, export, and load a custom image model",
+    path: "information/07-teachable-machine-models.pdf",
+  },
+  {
+    title: "AprilTags with Hopper",
+    description: "How AprilTags work and classroom drone activities",
+    path: "information/08-apriltags-with-hopper.pdf",
+  },
+] as const;
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (
   ...args: string[]
 ) => (...values: unknown[]) => Promise<void>;
@@ -134,11 +193,22 @@ type HopperStudioProps = {
   cameraProxyAvailable?: boolean;
 };
 
+type SessionPhoto = {
+  id: number;
+  url: string;
+  capturedAt: number;
+  source: "real" | "simulated";
+  width: number;
+  height: number;
+};
+
 export default function HopperStudio({ cameraProxyAvailable = false }: HopperStudioProps) {
   const workspaceHostRef = useRef<HTMLDivElement>(null);
   const workspaceRef = useRef<WorkspaceSvg | null>(null);
   const blocklyRef = useRef<BlocklyToolkit | null>(null);
   const autosaveTimerRef = useRef<number | null>(null);
+  const javascriptAutosaveTimerRef = useRef<number | null>(null);
+  const pythonAutosaveTimerRef = useRef<number | null>(null);
   const controllerRef = useRef<DroneController | null>(null);
   const simulationControllerRef = useRef<SimulatedDroneController | null>(null);
   const simulatorWindowRef = useRef<Window | null>(null);
@@ -149,6 +219,11 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   const simulationTelemetryCameraRef = useRef<HTMLCanvasElement>(null);
   const analysisCanvasRef = useRef<HTMLCanvasElement>(null);
   const thresholdOverlayRef = useRef<HTMLCanvasElement>(null);
+  const javascriptHighlightRef = useRef<HTMLPreElement>(null);
+  const javascriptLineNumbersRef = useRef<HTMLDivElement>(null);
+  const pythonHighlightRef = useRef<HTMLPreElement>(null);
+  const pythonLineNumbersRef = useRef<HTMLDivElement>(null);
+  const informationMenuRef = useRef<HTMLDetailsElement>(null);
   const visionRef = useRef<VisionRuntime | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
   const customModelInputRef = useRef<HTMLInputElement>(null);
@@ -158,17 +233,22 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   const latestThresholdRef = useRef<ThresholdResult | null>(null);
   const latestAprilTagsRef = useRef<AprilTagDetection[]>([]);
   const manualNudgeSequenceRef = useRef(0);
+  const photoSequenceRef = useRef(0);
+  const photoUrlsRef = useRef(new Set<string>());
   const projectNameRef = useRef("Binary Landing Lab");
   const javascriptCodeRef = useRef("");
+  const pythonCodeRef = useRef(PYTHON_STARTER_PROGRAM);
 
-  const [editorMode, setEditorMode] = useState<"blocks" | "javascript">("blocks");
+  const [editorMode, setEditorMode] = useState<EditorMode>(DEFAULT_EDITOR_MODE);
   const [generatedCode, setGeneratedCode] = useState("");
   const [javascriptCode, setJavascriptCode] = useState("");
+  const [pythonCode, setPythonCode] = useState(PYTHON_STARTER_PROGRAM);
   const [projectName, setProjectName] = useState("Binary Landing Lab");
   const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected");
   const [connectionMode, setConnectionMode] = useState<"real" | "simulated" | null>(null);
   const [simulationController, setSimulationController] = useState<SimulatedDroneController | null>(null);
   const [simulatorWindow, setSimulatorWindow] = useState<Window | null>(null);
+  const [simulatorInline, setSimulatorInline] = useState(false);
   const [simulatorMinimized, setSimulatorMinimized] = useState(false);
   const [droneName, setDroneName] = useState("No drone selected");
   const [telemetry, setTelemetry] = useState<DroneTelemetry>(createEmptyDroneTelemetry);
@@ -206,6 +286,15 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   const [customModelState, setCustomModelState] = useState<ModelState>("off");
   const [customLabels, setCustomLabels] = useState<string[]>([]);
   const [customPredictions, setCustomPredictions] = useState<CustomPrediction[]>([]);
+  const [missionPhotos, setMissionPhotos] = useState<SessionPhoto[]>([]);
+  const javascriptTokens = useMemo(
+    () => tokenizeJavaScript(javascriptCode),
+    [javascriptCode],
+  );
+  const pythonTokens = useMemo(
+    () => tokenizePython(pythonCode),
+    [pythonCode],
+  );
   const simulationConnected = connectionMode === "simulated";
   const cameraLive = cameraState === "live" || simulationConnected;
   const manualControlsAvailable = running
@@ -222,7 +311,107 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     window.setTimeout(() => setToast(null), 3200);
   }, []);
 
+  const syncJavaScriptScroll = useCallback(
+    (target: HTMLTextAreaElement) => {
+      if (javascriptHighlightRef.current) {
+        javascriptHighlightRef.current.scrollTop = target.scrollTop;
+        javascriptHighlightRef.current.scrollLeft = target.scrollLeft;
+      }
+      if (javascriptLineNumbersRef.current) {
+        javascriptLineNumbersRef.current.scrollTop = target.scrollTop;
+      }
+    },
+    [],
+  );
+
+  const syncPythonScroll = useCallback(
+    (target: HTMLTextAreaElement) => {
+      if (pythonHighlightRef.current) {
+        pythonHighlightRef.current.scrollTop = target.scrollTop;
+        pythonHighlightRef.current.scrollLeft = target.scrollLeft;
+      }
+      if (pythonLineNumbersRef.current) {
+        pythonLineNumbersRef.current.scrollTop = target.scrollTop;
+      }
+    },
+    [],
+  );
+
+  const handleCodeEditorKeyDown = useCallback(
+    (
+      event: ReactKeyboardEvent<HTMLTextAreaElement>,
+      mode: "python" | "javascript",
+    ) => {
+      const textarea = event.currentTarget;
+      const source = mode === "python" ? pythonCodeRef.current : javascriptCodeRef.current;
+      const setSource = mode === "python" ? setPythonCode : setJavascriptCode;
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+
+      if (event.key === "Tab") {
+        event.preventDefault();
+        const indentation = mode === "python" ? "    " : "  ";
+        const next = `${source.slice(0, start)}${indentation}${source.slice(end)}`;
+        setSource(next);
+        window.requestAnimationFrame(() => {
+          const cursor = start + indentation.length;
+          textarea.setSelectionRange(cursor, cursor);
+        });
+        return;
+      }
+
+      if (mode !== "python" || event.key !== "Enter" || start !== end) return;
+      event.preventDefault();
+      const lineStart = source.lastIndexOf("\n", start - 1) + 1;
+      const currentLine = source.slice(lineStart, start);
+      const existingIndent = currentLine.match(/^ */)?.[0] ?? "";
+      const extraIndent = currentLine.trimEnd().endsWith(":") ? "    " : "";
+      const insertion = `\n${existingIndent}${extraIndent}`;
+      const next = `${source.slice(0, start)}${insertion}${source.slice(end)}`;
+      setSource(next);
+      window.requestAnimationFrame(() => {
+        const cursor = start + insertion.length;
+        textarea.setSelectionRange(cursor, cursor);
+      });
+    },
+    [],
+  );
+
+  const openInformationSlideDeck = useCallback(
+    (path: string, title: string) => {
+      const pdfWindow = window.open("about:blank", "_blank");
+      if (!pdfWindow) {
+        notify(`Allow pop-ups to open “${title}”.`);
+        return;
+      }
+      pdfWindow.opener = null;
+      pdfWindow.location.href = new URL(path, document.baseURI).href;
+      if (informationMenuRef.current) informationMenuRef.current.open = false;
+    },
+    [notify],
+  );
+
+  const clearMissionPhotos = useCallback(() => {
+    if (missionPhotos.length === 0) return;
+    if (!window.confirm(`Clear all ${missionPhotos.length} mission photos from this session?`)) return;
+    photoUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    photoUrlsRef.current.clear();
+    setMissionPhotos([]);
+    appendLog("Mission photo gallery cleared.");
+  }, [appendLog, missionPhotos]);
+
   const openSimulatorWindow = useCallback(() => {
+    const useInlineSimulator = window.matchMedia(
+      "(max-width: 900px), (pointer: coarse) and (max-width: 1180px)",
+    ).matches;
+    if (useInlineSimulator) {
+      simulatorWindowRef.current = null;
+      setSimulatorWindow(null);
+      setSimulatorInline(true);
+      setSimulatorMinimized(false);
+      return true;
+    }
+
     const availableWidth = window.screen.availWidth || 1440;
     const availableHeight = window.screen.availHeight || 900;
     const popupWidth = Math.min(1280, Math.max(760, Math.round(availableWidth * 0.68)));
@@ -241,6 +430,10 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     popup.document.title = `${STUDIO_NAME} · Simulated Drone Room`;
     popup.document.documentElement.lang = "en";
     popup.document.head.replaceChildren();
+    const viewport = popup.document.createElement("meta");
+    viewport.name = "viewport";
+    viewport.content = "width=device-width, initial-scale=1, viewport-fit=cover";
+    popup.document.head.appendChild(viewport);
     const base = popup.document.createElement("base");
     base.href = document.baseURI;
     popup.document.head.appendChild(base);
@@ -258,6 +451,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     popup.focus();
     simulatorWindowRef.current = popup;
     setSimulatorWindow(popup);
+    setSimulatorInline(false);
     setSimulatorMinimized(false);
     return popup;
   }, [notify]);
@@ -266,8 +460,18 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     const popup = simulatorWindowRef.current;
     simulatorWindowRef.current = null;
     setSimulatorWindow(null);
+    setSimulatorInline(false);
     if (popup && !popup.closed) popup.close();
   }, []);
+
+  useEffect(() => {
+    if (!simulatorInline || simulatorMinimized) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [simulatorInline, simulatorMinimized]);
 
   const persistProject = useCallback(
     (showConfirmation = false) => {
@@ -275,10 +479,11 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
       const toolkit = blocklyRef.current;
       if (!workspace || !toolkit) return;
       const project = {
-        version: 1,
+        version: 2,
         name: projectNameRef.current,
         workspace: toolkit.saveWorkspace(workspace),
         javascriptCode: javascriptCodeRef.current,
+        pythonCode: pythonCodeRef.current,
         savedAt: new Date().toISOString(),
       };
       localStorage.setItem(PROJECT_KEY, JSON.stringify(project));
@@ -363,7 +568,44 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
 
   useEffect(() => {
     javascriptCodeRef.current = javascriptCode;
-  }, [javascriptCode]);
+    if (!workspaceRef.current) return;
+    if (javascriptAutosaveTimerRef.current !== null) {
+      window.clearTimeout(javascriptAutosaveTimerRef.current);
+    }
+    javascriptAutosaveTimerRef.current = window.setTimeout(
+      () => persistProject(false),
+      500,
+    );
+    return () => {
+      if (javascriptAutosaveTimerRef.current !== null) {
+        window.clearTimeout(javascriptAutosaveTimerRef.current);
+        javascriptAutosaveTimerRef.current = null;
+      }
+    };
+  }, [javascriptCode, persistProject]);
+
+  useEffect(() => {
+    pythonCodeRef.current = pythonCode;
+    if (!workspaceRef.current) return;
+    if (pythonAutosaveTimerRef.current !== null) {
+      window.clearTimeout(pythonAutosaveTimerRef.current);
+    }
+    pythonAutosaveTimerRef.current = window.setTimeout(
+      () => persistProject(false),
+      500,
+    );
+    return () => {
+      if (pythonAutosaveTimerRef.current !== null) {
+        window.clearTimeout(pythonAutosaveTimerRef.current);
+        pythonAutosaveTimerRef.current = null;
+      }
+    };
+  }, [persistProject, pythonCode]);
+
+  useEffect(() => () => {
+    photoUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    photoUrlsRef.current.clear();
+  }, []);
 
   useEffect(() => {
     let disposed = false;
@@ -374,6 +616,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
       blocklyRef.current = toolkit;
       const workspace = toolkit.createHopperWorkspace(workspaceHostRef.current);
       workspaceRef.current = workspace;
+      let seedJavascriptFromBlocks = true;
 
       const savedProject = localStorage.getItem(PROJECT_KEY);
       if (savedProject) {
@@ -382,10 +625,19 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
             name?: string;
             workspace?: object;
             javascriptCode?: string;
+            pythonCode?: string;
           };
           if (project.workspace) toolkit.restoreWorkspace(workspace, project.workspace);
           if (project.name) setProjectName(project.name);
-          if (project.javascriptCode) setJavascriptCode(project.javascriptCode);
+          if (typeof project.javascriptCode === "string") {
+            javascriptCodeRef.current = project.javascriptCode;
+            setJavascriptCode(project.javascriptCode);
+            seedJavascriptFromBlocks = false;
+          }
+          if (typeof project.pythonCode === "string") {
+            pythonCodeRef.current = project.pythonCode;
+            setPythonCode(project.pythonCode);
+          }
         } catch {
           appendLog("Saved project could not be read; opened a fresh workspace.");
         }
@@ -393,7 +645,13 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
 
       const refreshCode = () => {
         try {
-          setGeneratedCode(toolkit.generateWorkspaceCode(workspace));
+          const nextGeneratedCode = toolkit.generateWorkspaceCode(workspace);
+          setGeneratedCode(nextGeneratedCode);
+          if (seedJavascriptFromBlocks) {
+            javascriptCodeRef.current = nextGeneratedCode;
+            setJavascriptCode(nextGeneratedCode);
+            seedJavascriptFromBlocks = false;
+          }
           if (autosaveTimerRef.current !== null) window.clearTimeout(autosaveTimerRef.current);
           autosaveTimerRef.current = window.setTimeout(() => persistProject(false), 500);
         } catch (error) {
@@ -412,6 +670,12 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     return () => {
       disposed = true;
       if (autosaveTimerRef.current !== null) window.clearTimeout(autosaveTimerRef.current);
+      if (javascriptAutosaveTimerRef.current !== null) {
+        window.clearTimeout(javascriptAutosaveTimerRef.current);
+      }
+      if (pythonAutosaveTimerRef.current !== null) {
+        window.clearTimeout(pythonAutosaveTimerRef.current);
+      }
       workspaceRef.current?.dispose();
       workspaceRef.current = null;
     };
@@ -694,6 +958,30 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     appendLog("Drone disconnected.");
   };
 
+  const captureAndStorePhoto = useCallback(async () => {
+    const vision = visionRef.current;
+    if (!vision) throw new Error("Camera capture is not ready yet.");
+    const captured = await vision.capturePhoto();
+    const url = URL.createObjectURL(captured.blob);
+    const id = ++photoSequenceRef.current;
+    const source = simulationControllerRef.current ? "simulated" : "real";
+    photoUrlsRef.current.add(url);
+    setMissionPhotos((current) => [
+      ...current,
+      {
+        id,
+        url,
+        capturedAt: Date.now(),
+        source,
+        width: captured.width,
+        height: captured.height,
+      },
+    ]);
+    appendLog(
+      `📷 Photo ${String(id).padStart(2, "0")} stored from the ${source === "simulated" ? "simulator" : "drone camera"}.`,
+    );
+  }, [appendLog]);
+
   const runProgram = async () => {
     if (running || runtimeRef.current || stopProgramPromiseRef.current) return;
     const controller = controllerRef.current;
@@ -704,12 +992,34 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     }
     if (!vision) return;
 
-    const code =
+    const source =
       editorMode === "blocks"
         ? blocklyRef.current?.generateWorkspaceCode(workspaceRef.current!) || ""
-        : javascriptCode;
-    if (!code.trim()) {
-      notify("Add some blocks or JavaScript first");
+        : editorMode === "python"
+          ? pythonCode
+          : javascriptCode;
+    if (!source.trim()) {
+      notify(`Add some ${editorMode === "blocks" ? "blocks" : editorMode === "python" ? "Python" : "JavaScript"} first`);
+      return;
+    }
+    let code = source;
+    if (editorMode === "python") {
+      try {
+        code = transpilePython(source);
+      } catch (error) {
+        setShowConsole(true);
+        appendLog("Python error:", error);
+        notify(error instanceof Error ? error.message : "The Python program could not be translated.");
+        return;
+      }
+    }
+    let execute: (...values: unknown[]) => Promise<void>;
+    try {
+      execute = new AsyncFunction("drone", "vision", "runtime", "console", code);
+    } catch (error) {
+      setShowConsole(true);
+      appendLog(`${editorMode === "python" ? "Python" : "JavaScript"} syntax error:`, error);
+      notify("Fix the syntax error shown in the console before running.");
       return;
     }
 
@@ -723,7 +1033,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     runtimeRef.current = runtime;
     setRunning(true);
     setShowConsole(true);
-    appendLog("▶ Program started");
+    appendLog(`▶ ${editorMode === "python" ? "Python" : editorMode === "javascript" ? "JavaScript" : "Blocks"} program started`);
 
     const programConsole = {
       log: (...values: unknown[]) => appendLog(...values),
@@ -732,6 +1042,14 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     };
     const programDrone = new Proxy(controller, {
       get(target, property, receiver) {
+        if (property === "takePicture") {
+          return async () => {
+            if (runtime.stopped || runtimeRef.current !== runtime) {
+              throw new Error("Program stopped");
+            }
+            await captureAndStorePhoto();
+          };
+        }
         const member = Reflect.get(target, property, receiver);
         if (typeof member !== "function") return member;
         return (...argumentsList: unknown[]) => {
@@ -745,7 +1063,6 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
 
     try {
       await controller.startRun();
-      const execute = new AsyncFunction("drone", "vision", "runtime", "console", code);
       await execute(programDrone, vision, runtime, programConsole);
       if (runtime.hasEvents && !runtime.stopped) {
         appendLog("Listening for events. Press Stop when finished.");
@@ -1090,9 +1407,16 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     if (!window.confirm("Start a fresh project? Your saved project will stay on this computer.")) return;
     const workspace = workspaceRef.current;
     const toolkit = blocklyRef.current;
-    if (workspace && toolkit) toolkit.loadDefaultWorkspace(workspace);
+    if (workspace && toolkit) {
+      toolkit.loadDefaultWorkspace(workspace);
+      const nextJavascriptCode = toolkit.generateWorkspaceCode(workspace);
+      javascriptCodeRef.current = nextJavascriptCode;
+      setJavascriptCode(nextJavascriptCode);
+    }
+    pythonCodeRef.current = PYTHON_STARTER_PROGRAM;
+    setPythonCode(PYTHON_STARTER_PROGRAM);
     setProjectName("Untitled Hopper Project");
-    setJavascriptCode("");
+    setEditorMode(DEFAULT_EDITOR_MODE);
     notify("Fresh project opened");
   };
 
@@ -1102,10 +1426,11 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     if (!workspace || !toolkit) return;
     const contents = JSON.stringify(
       {
-        version: 1,
+        version: 2,
         name: projectName,
         workspace: toolkit.saveWorkspace(workspace),
         javascriptCode,
+        pythonCode,
       },
       null,
       2,
@@ -1124,11 +1449,19 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
         name?: string;
         workspace?: object;
         javascriptCode?: string;
+        pythonCode?: string;
       };
       if (!project.workspace) throw new Error("This file has no block workspace.");
       blocklyRef.current?.restoreWorkspace(workspaceRef.current!, project.workspace);
       setProjectName(project.name || "Imported Hopper Project");
-      setJavascriptCode(project.javascriptCode || "");
+      const importedJavascriptCode = project.javascriptCode
+        ?? blocklyRef.current?.generateWorkspaceCode(workspaceRef.current!)
+        ?? "";
+      javascriptCodeRef.current = importedJavascriptCode;
+      setJavascriptCode(importedJavascriptCode);
+      const importedPythonCode = project.pythonCode ?? PYTHON_STARTER_PROGRAM;
+      pythonCodeRef.current = importedPythonCode;
+      setPythonCode(importedPythonCode);
       notify("Project imported");
     } catch (error) {
       appendLog("Import:", error);
@@ -1221,7 +1554,11 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
             aria-label={`Hard refresh ${STUDIO_NAME} and update its offline files`}
             title={`Hard refresh: check for and save the newest ${STUDIO_NAME} files`}
           >
-            <img src={wrcLogo} alt="World Robotics Championship" className="wrc-logo" />
+            <img
+              src={wrcLogo}
+              alt="Weapons, Robotics and Control Engineering"
+              className="wrc-logo"
+            />
             <span aria-hidden="true">↻</span>
           </button>
           <span className="brand-divider" />
@@ -1304,27 +1641,67 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
             accept=".json,.hopper.json"
             onChange={(event) => void importProject(event.target.files?.[0])}
           />
+          <details className="information-menu" ref={informationMenuRef}>
+            <summary aria-label="Open information slide decks" title="Information slide decks">
+              <span aria-hidden="true">ⓘ</span>
+              <span className="information-menu-label">Information</span>
+              <i aria-hidden="true">▾</i>
+            </summary>
+            <nav className="information-menu-panel" aria-label="Information slide decks">
+              <div className="information-menu-heading">
+                <b>INFORMATION</b>
+                <small>PDF slide decks</small>
+              </div>
+              <ol>
+                {INFORMATION_SLIDE_DECKS.map((deck, index) => (
+                  <li key={deck.path}>
+                    <a
+                      href={deck.path}
+                      target="_blank"
+                      rel="noopener"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        openInformationSlideDeck(deck.path, deck.title);
+                      }}
+                    >
+                      <span>{String(index + 1).padStart(2, "0")}</span>
+                      <span>
+                        <b>{deck.title}</b>
+                        <small>{deck.description}</small>
+                      </span>
+                    </a>
+                  </li>
+                ))}
+              </ol>
+            </nav>
+          </details>
         </div>
         <div className="editor-tabs" role="tablist" aria-label="Editor mode">
-          <button
-            role="tab"
-            aria-selected={editorMode === "blocks"}
-            className={editorMode === "blocks" ? "active" : ""}
-            onClick={() => setEditorMode("blocks")}
-          >
-            <span className="blocks-icon">◫</span> BLOCKS
-          </button>
-          <button
-            role="tab"
-            aria-selected={editorMode === "javascript"}
-            className={editorMode === "javascript" ? "active" : ""}
-            onClick={() => {
-              if (!javascriptCode.trim()) setJavascriptCode(generatedCode);
-              setEditorMode("javascript");
-            }}
-          >
-            <span className="code-icon">&lt;/&gt;</span> JAVASCRIPT
-          </button>
+          {ENABLED_EDITOR_MODES.map((mode) => (
+            <button
+              key={mode}
+              role="tab"
+              aria-selected={editorMode === mode}
+              className={editorMode === mode ? "active" : ""}
+              onClick={() => {
+                if (mode === "javascript" && !javascriptCode.trim()) {
+                  setJavascriptCode(generatedCode);
+                }
+                setEditorMode(mode);
+              }}
+            >
+              <span className={
+                mode === "blocks"
+                  ? "blocks-icon"
+                  : mode === "python"
+                    ? "python-icon"
+                    : "code-icon"
+              }>
+                {mode === "blocks" ? "◫" : mode === "python" ? "Py" : "</>"}
+              </span>
+              {mode === "blocks" ? "BLOCKS" : mode === "python" ? "PYTHON" : "JAVASCRIPT"}
+            </button>
+          ))}
         </div>
         <div className="flight-actions">
           <button className="console-button" onClick={() => setShowConsole((open) => !open)}>
@@ -1335,8 +1712,13 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
           ) : (
             <button className="run-button" onClick={() => void runProgram()}><span>▶</span> RUN PROGRAM</button>
           )}
-          <button className="cutoff-button" onClick={() => void emergencyCutoff()} title="Emergency motor cutoff">
-            ⚠
+          <button
+            className="cutoff-button"
+            onClick={() => void emergencyCutoff()}
+            title="Emergency motor cutoff"
+            aria-label="Emergency motor cutoff"
+          >
+            <span aria-hidden="true">⚠</span><b>CUT MOTORS</b>
           </button>
         </div>
       </section>
@@ -1397,17 +1779,58 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
               >↓<small>BACK</small></button>
             </div>
           )}
+          {editorMode === "python" && (
+            <div className="python-editor">
+              <div ref={pythonLineNumbersRef} className="line-numbers" aria-hidden="true">
+                {pythonCode.split("\n").map((_, index) => <span key={index}>{index + 1}</span>)}
+              </div>
+              <div className="python-code-pane">
+                <pre
+                  ref={pythonHighlightRef}
+                  className="python-highlight"
+                  aria-hidden="true"
+                ><code>{pythonTokens.map((token, index) => (
+                    <span className={`py-token-${token.kind}`} key={`${index}-${token.kind}`}>
+                      {token.text}
+                    </span>
+                  ))}{"\u200b"}</code></pre>
+                <textarea
+                  value={pythonCode}
+                  onChange={(event) => setPythonCode(event.target.value)}
+                  onScroll={(event) => syncPythonScroll(event.currentTarget)}
+                  onKeyDown={(event) => handleCodeEditorKeyDown(event, "python")}
+                  wrap="off"
+                  spellCheck={false}
+                  aria-label="Python program"
+                />
+              </div>
+            </div>
+          )}
           {editorMode === "javascript" && (
             <div className="javascript-editor">
-              <div className="line-numbers" aria-hidden="true">
+              <div ref={javascriptLineNumbersRef} className="line-numbers" aria-hidden="true">
                 {javascriptCode.split("\n").map((_, index) => <span key={index}>{index + 1}</span>)}
               </div>
-              <textarea
-                value={javascriptCode}
-                onChange={(event) => setJavascriptCode(event.target.value)}
-                spellCheck={false}
-                aria-label="JavaScript program"
-              />
+              <div className="javascript-code-pane">
+                <pre
+                  ref={javascriptHighlightRef}
+                  className="javascript-highlight"
+                  aria-hidden="true"
+                ><code>{javascriptTokens.map((token, index) => (
+                    <span className={`js-token-${token.kind}`} key={`${index}-${token.kind}`}>
+                      {token.text}
+                    </span>
+                  ))}{"\u200b"}</code></pre>
+                <textarea
+                  value={javascriptCode}
+                  onChange={(event) => setJavascriptCode(event.target.value)}
+                  onScroll={(event) => syncJavaScriptScroll(event.currentTarget)}
+                  onKeyDown={(event) => handleCodeEditorKeyDown(event, "javascript")}
+                  wrap="off"
+                  spellCheck={false}
+                  aria-label="JavaScript program"
+                />
+              </div>
             </div>
           )}
           {showConsole && (
@@ -1555,6 +1978,60 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
               Direct video is available. Start the local app to use thresholding, object detection, or AprilTag detection.
             </p>
           )}
+
+          <section className="mission-photo-gallery" aria-label="Mission photos from this session">
+            <div className="mission-photo-heading">
+              <div>
+                <span>SESSION CAMERA ROLL</span>
+                <h2>MISSION PHOTOS <b>{missionPhotos.length}</b></h2>
+              </div>
+              <button
+                type="button"
+                onClick={clearMissionPhotos}
+                disabled={missionPhotos.length === 0}
+              >
+                CLEAR ALL
+              </button>
+            </div>
+            {missionPhotos.length === 0 ? (
+              <p className="mission-photo-empty">
+                Run the <b>take and store photo</b> block to save the current camera frame here.
+              </p>
+            ) : (
+              <>
+                <div className="mission-photo-strip" role="list">
+                  {missionPhotos.map((photo) => (
+                    <a
+                      className="mission-photo-card"
+                      href={photo.url}
+                      download={`mission-photo-${String(photo.id).padStart(2, "0")}.jpg`}
+                      key={photo.id}
+                      role="listitem"
+                      title="Download this mission photo"
+                    >
+                      <img
+                        src={photo.url}
+                        alt={`Mission photo ${photo.id} from the ${photo.source === "simulated" ? "simulator" : "real drone"}`}
+                      />
+                      <span>
+                        <b>PHOTO {String(photo.id).padStart(2, "0")}</b>
+                        <small>
+                          {photo.source === "simulated" ? "SIM" : "DRONE"} ·{" "}
+                          {new Date(photo.capturedAt).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            second: "2-digit",
+                          })}
+                        </small>
+                        <em>{photo.width} × {photo.height}</em>
+                      </span>
+                    </a>
+                  ))}
+                </div>
+                <p className="mission-photo-help">Scroll the camera roll · select a photo to download it</p>
+              </>
+            )}
+          </section>
 
           <section className="vision-tool threshold-tool">
             <div className="tool-title">
@@ -1759,6 +2236,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
           cameraCanvasRef={simulationCameraRef}
           telemetryCanvasRef={simulationTelemetryCameraRef}
           popupWindow={simulatorWindow}
+          inline={simulatorInline}
           minimized={simulatorMinimized}
           detections={visibleSimulatorDetections}
           thresholdResult={simulatorThresholdResult}

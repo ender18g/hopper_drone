@@ -21,6 +21,7 @@ const CONTENT_TYPES = new Map([
   [".json", "application/json; charset=utf-8"],
   [".mjs", "text/javascript; charset=utf-8"],
   [".mp3", "audio/mpeg"],
+  [".pdf", "application/pdf"],
   [".png", "image/png"],
   [".svg", "image/svg+xml"],
   [".wasm", "application/wasm"],

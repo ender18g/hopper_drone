@@ -45,6 +45,12 @@ export type CustomPrediction = {
   probability: number;
 };
 
+export type CapturedPhoto = {
+  blob: Blob;
+  width: number;
+  height: number;
+};
+
 const clampCoordinate = (value: number) => Math.max(-100, Math.min(100, value));
 const clampPercent = (value: number) => Math.max(0, Math.min(100, Number(value) || 0));
 
@@ -408,6 +414,46 @@ export class VisionRuntime {
         prediction.className.trim().toLowerCase() === wanted &&
         prediction.probability >= Number(minimumConfidence),
     );
+  }
+
+  async capturePhoto(maxWidth = 960): Promise<CapturedPhoto> {
+    const safeMaxWidth = Math.max(1, Math.round(Number(maxWidth) || 960));
+    let canvas: HTMLCanvasElement;
+    try {
+      canvas = this.captureCanvas(safeMaxWidth, true);
+    } catch (error) {
+      if (
+        error instanceof Error
+        && error.message === "Connect the camera feed before using vision blocks."
+      ) {
+        throw new Error("Connect the camera feed before taking and storing a photo.");
+      }
+      throw error;
+    }
+
+    try {
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob(
+          (encoded) => {
+            if (encoded) resolve(encoded);
+            else reject(new Error("The current camera frame could not be encoded. Try again."));
+          },
+          "image/jpeg",
+          0.9,
+        );
+      });
+      return { blob, width: canvas.width, height: canvas.height };
+    } catch (error) {
+      if (
+        (error instanceof DOMException && error.name === "SecurityError")
+        || (error instanceof Error && error.name === "SecurityError")
+      ) {
+        throw new Error(
+          "The camera is visible, but this browser blocked saving its pixels. Use the desktop/local app or connect through the camera proxy.",
+        );
+      }
+      throw error;
+    }
   }
 
   dispose() {

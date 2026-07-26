@@ -28,17 +28,19 @@ import {
 
 type ObjectTemplate = Pick<
   SimulationObject,
-  "label" | "src" | "emoji" | "size" | "kind"
+  "label" | "src" | "emoji" | "flagColor" | "size" | "kind"
 > & {
   menuLabel: string;
 };
 
 const OBJECT_LIBRARY: ObjectTemplate[] = [
-  { label: "person", menuLabel: "Person (soldier)", emoji: "💂", size: 0.82, kind: "object" },
+  { label: "person", menuLabel: "Person (Marine)", src: "sim-assets/marine-digicam.png", size: 0.92, kind: "object" },
   { label: "knife", menuLabel: "Knife", emoji: "🔪", size: 0.68, kind: "object" },
   { label: "stop sign", menuLabel: "Stop sign", emoji: "🛑", size: 0.72, kind: "object" },
   { label: "laptop", menuLabel: "Computer (laptop)", emoji: "💻", size: 0.76, kind: "object" },
   { label: "truck", menuLabel: "Truck", emoji: "🚚", size: 0.82, kind: "object" },
+  { label: "red flag", menuLabel: "Flag (red)", flagColor: "red", size: 0.78, kind: "object" },
+  { label: "blue flag", menuLabel: "Flag (blue)", flagColor: "blue", size: 0.78, kind: "object" },
   { label: "car", menuLabel: "Car", src: "sim-assets/car.png", size: 0.72, kind: "object" },
   { label: "airplane", menuLabel: "Airplane", src: "sim-assets/airplane.png", size: 0.7, kind: "object" },
   { label: "banana", menuLabel: "Banana", src: "sim-assets/banana.png", size: 0.58, kind: "object" },
@@ -61,7 +63,7 @@ const createDefaultObjects = (): SimulationObject[] => {
   }
   const randomRotation = () => Math.round(Math.random() * 100 - 50);
   return [
-    { id: "person-soldier-default", label: "person", emoji: "💂", x: 5, y: 3.5, size: 0.82, rotation: 0, kind: "object" },
+    { id: "person-soldier-default", label: "person", src: "sim-assets/marine-digicam.png", x: 5, y: 3.5, size: 0.92, rotation: 0, kind: "object" },
     { id: "apriltag-7-left", label: "AprilTag 7", x: 2.7, y: 3.5, size: 0.62, rotation: 0, kind: "apriltag", tagId: 7 },
     { id: "apriltag-19-right", label: "AprilTag 19", x: 7.3, y: 3.5, size: 0.62, rotation: 180, kind: "apriltag", tagId: 19 },
     { id: "knife-default", label: "knife", emoji: "🔪", ...locations[0], size: 0.68, rotation: randomRotation(), kind: "object" },
@@ -82,6 +84,7 @@ type SimulatedDroneAreaProps = {
   cameraCanvasRef: RefObject<HTMLCanvasElement | null>;
   telemetryCanvasRef: RefObject<HTMLCanvasElement | null>;
   popupWindow: Window | null;
+  inline: boolean;
   minimized: boolean;
   detections: VisionDetection[];
   thresholdResult: ThresholdResult | null;
@@ -102,6 +105,7 @@ export default function SimulatedDroneArea({
   cameraCanvasRef,
   telemetryCanvasRef,
   popupWindow,
+  inline,
   minimized,
   detections,
   thresholdResult,
@@ -257,6 +261,38 @@ export default function SimulatedDroneArea({
         context.strokeRect(-projection.size / 2, -projection.size / 2, projection.size, projection.size * 0.78);
       } else if (object.kind === "apriltag" && object.tagId !== undefined) {
         drawAprilTag(context, object.tagId, projection.size);
+      } else if (object.flagColor) {
+        const poleHeight = projection.size * 0.92;
+        const poleX = -projection.size * 0.28;
+        const flagTop = -poleHeight * 0.46;
+        const flagWidth = projection.size * 0.7;
+        const flagHeight = projection.size * 0.42;
+        context.shadowBlur = 0;
+        context.strokeStyle = "#d5dde1";
+        context.lineWidth = Math.max(2, projection.size * 0.055);
+        context.lineCap = "round";
+        context.beginPath();
+        context.moveTo(poleX, -poleHeight / 2);
+        context.lineTo(poleX, poleHeight / 2);
+        context.stroke();
+        context.fillStyle = object.flagColor === "red" ? "#cf3346" : "#1769b2";
+        context.beginPath();
+        context.moveTo(poleX, flagTop);
+        context.quadraticCurveTo(
+          poleX + flagWidth * 0.5,
+          flagTop + flagHeight * 0.13,
+          poleX + flagWidth,
+          flagTop,
+        );
+        context.lineTo(poleX + flagWidth * 0.82, flagTop + flagHeight);
+        context.quadraticCurveTo(
+          poleX + flagWidth * 0.42,
+          flagTop + flagHeight * 0.86,
+          poleX,
+          flagTop + flagHeight,
+        );
+        context.closePath();
+        context.fill();
       } else if (object.emoji) {
         context.font = `${projection.size * 0.78}px "Apple Color Emoji", "Segoe UI Emoji", sans-serif`;
         context.textAlign = "center";
@@ -328,6 +364,7 @@ export default function SimulatedDroneArea({
         label: template.label,
         src: template.src,
         emoji: template.emoji,
+        flagColor: template.flagColor,
         x: 5,
         y: 3.5,
         size: template.size,
@@ -465,7 +502,7 @@ export default function SimulatedDroneArea({
     "--sim-roll-flip": `${sidePose.rollFlipDegrees}deg`,
   } as CSSProperties;
 
-  if (minimized || !popupWindow || popupWindow.closed) {
+  if (minimized || (!inline && (!popupWindow || popupWindow.closed))) {
     return (
       <>
         <canvas ref={cameraCanvasRef} className="sim-minimized-camera" aria-hidden="true" />
@@ -477,7 +514,7 @@ export default function SimulatedDroneArea({
   }
 
   const simulatorWindowContent = (
-    <section className="sim-window detached" role="dialog" aria-label="Simulated drone room">
+    <section className={`sim-window detached ${inline ? "inline" : ""}`} role="dialog" aria-label="Simulated drone room">
       <header className="sim-titlebar">
         <div>
           <span className="sim-window-icon">SIM</span>
@@ -538,34 +575,64 @@ export default function SimulatedDroneArea({
           accept="image/png,image/jpeg,image/webp,image/gif"
           onChange={(event) => uploadImage(event.target.files?.[0])}
         />
-        <span className="sim-toolbar-spacer" />
-        <button onClick={duplicateSelected} disabled={!selectedObject}>DUPLICATE</button>
-        <button className="sim-delete-button" onClick={deleteSelected} disabled={!selectedObject}>DELETE</button>
-        {selectedObject && (
-          <>
-            <label className="sim-size-control">SIZE {round(selectedObject.size, 2)} m
-              <input
-                type="range"
-                min="0.25"
-                max="1.8"
-                step="0.05"
-                value={selectedObject.size}
-                onChange={(event) => updateSelectedSize(Number(event.target.value))}
-              />
-            </label>
-            <label className="sim-size-control">ROTATE {Math.round(selectedObject.rotation)}°
-              <input
-                type="range"
-                min="-180"
-                max="180"
-                step="5"
-                value={selectedObject.rotation}
-                onChange={(event) => updateSelectedRotation(Number(event.target.value))}
-              />
-            </label>
-          </>
-        )}
+        <div className="sim-desktop-inspector">
+          <span className="sim-toolbar-spacer" />
+          <button onClick={duplicateSelected} disabled={!selectedObject}>DUPLICATE</button>
+          <button className="sim-delete-button" onClick={deleteSelected} disabled={!selectedObject}>DELETE</button>
+          {selectedObject && (
+            <>
+              <label className="sim-size-control">SIZE {round(selectedObject.size, 2)} m
+                <input
+                  type="range"
+                  min="0.25"
+                  max="1.8"
+                  step="0.05"
+                  value={selectedObject.size}
+                  onChange={(event) => updateSelectedSize(Number(event.target.value))}
+                />
+              </label>
+              <label className="sim-size-control">ROTATE {Math.round(selectedObject.rotation)}°
+                <input
+                  type="range"
+                  min="-180"
+                  max="180"
+                  step="5"
+                  value={selectedObject.rotation}
+                  onChange={(event) => updateSelectedRotation(Number(event.target.value))}
+                />
+              </label>
+            </>
+          )}
+        </div>
       </div>
+
+      {selectedObject && (
+        <div className="sim-mobile-inspector" aria-label={`Selected ${selectedObject.label} controls`}>
+          <span><small>SELECTED</small><b>{selectedObject.label.toUpperCase()}</b></span>
+          <button onClick={duplicateSelected}>DUPLICATE</button>
+          <button className="sim-delete-button" onClick={deleteSelected}>DELETE</button>
+          <label>SIZE {round(selectedObject.size, 2)} m
+            <input
+              type="range"
+              min="0.25"
+              max="1.8"
+              step="0.05"
+              value={selectedObject.size}
+              onChange={(event) => updateSelectedSize(Number(event.target.value))}
+            />
+          </label>
+          <label>ROTATE {Math.round(selectedObject.rotation)}°
+            <input
+              type="range"
+              min="-180"
+              max="180"
+              step="5"
+              value={selectedObject.rotation}
+              onChange={(event) => updateSelectedRotation(Number(event.target.value))}
+            />
+          </label>
+        </div>
+      )}
 
       <div className="sim-body">
         <div className="sim-arena-column">
@@ -600,6 +667,11 @@ export default function SimulatedDroneArea({
                 >
                   {object.kind === "paper" ? (
                     <span className="sim-paper-sheet">WHITE PAPER</span>
+                  ) : object.flagColor ? (
+                    <span className={`sim-capture-flag ${object.flagColor}`} aria-hidden="true">
+                      <i />
+                      <b />
+                    </span>
                   ) : object.emoji ? (
                     <span className="sim-object-emoji" aria-hidden="true">{object.emoji}</span>
                   ) : (
@@ -778,12 +850,14 @@ export default function SimulatedDroneArea({
             <span><small>GROUND SPEED</small><b>{round(speed(snapshot), 2)} m/s</b></span>
             <span><small>BATTERY</small><b>{Math.round(snapshot.batteryLevel)}%</b></span>
           </div>
-          <p className="sim-license">Floor objects by <a href="https://openmoji.org/" target="_blank" rel="noreferrer">OpenMoji</a> · CC BY-SA 4.0</p>
+          <p className="sim-license">Vehicle and object icons by <a href="https://openmoji.org/" target="_blank" rel="noreferrer">OpenMoji</a> · CC BY-SA 4.0</p>
         </aside>
       </div>
     </section>
   );
-  return createPortal(simulatorWindowContent, popupWindow.document.body);
+  return inline
+    ? simulatorWindowContent
+    : createPortal(simulatorWindowContent, popupWindow!.document.body);
 }
 
 const clampRoomX = (value: number) => Math.max(0.2, Math.min(SIMULATION_ROOM.width - 0.2, value));

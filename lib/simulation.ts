@@ -15,6 +15,7 @@ export type SimulationObject = {
   label: string;
   src?: string;
   emoji?: string;
+  flagColor?: "red" | "blue";
   x: number;
   y: number;
   size: number;

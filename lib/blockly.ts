@@ -1,9 +1,9 @@
 import * as Blockly from "blockly";
 import { javascriptGenerator, Order } from "blockly/javascript";
 
-const DRONE = "#17212b";
-const GENERAL = "#d8444e";
-const VISION = "#6b4eff";
+const DRONE = "#00205b";
+const GENERAL = "#008c95";
+const VISION = "#006b78";
 const APRIL_TAG_OPTIONS = [
   ["any", "any"],
   ...Array.from({ length: 587 }, (_, id) => [String(id), String(id)]),
@@ -114,7 +114,7 @@ export function registerHopperBlocks() {
       args1: [{ type: "input_statement", name: "DO" }],
       previousStatement: null,
       nextStatement: null,
-      colour: "#2f9d66",
+      colour: "#9a7820",
     },
     {
       type: "repeat_seconds",
@@ -124,7 +124,7 @@ export function registerHopperBlocks() {
       args1: [{ type: "input_statement", name: "DO" }],
       previousStatement: null,
       nextStatement: null,
-      colour: "#2f9d66",
+      colour: "#9a7820",
     },
     {
       type: "minidrone_takeoff",
@@ -247,10 +247,11 @@ export function registerHopperBlocks() {
     },
     {
       type: "minidrone_take_picture",
-      message0: "take drone picture",
+      message0: "take and store photo",
       previousStatement: null,
       nextStatement: null,
       colour: DRONE,
+      tooltip: "Capture the current camera view and store it in this session's mission photo gallery.",
     },
     {
       type: "minidrone_fire_bb",
@@ -838,6 +839,46 @@ export const defaultWorkspaceXml = `
   </block>
 </xml>`;
 
+class SingleBlockDragStrategy extends Blockly.dragging.BlockDragStrategy {
+  protected override shouldHealStack() {
+    return true;
+  }
+}
+
+function enableSingleBlockDragging(workspace: Blockly.WorkspaceSvg) {
+  let configureScheduled = false;
+
+  const configureBlocks = () => {
+    configureScheduled = false;
+    if (workspace.isDragging()) return;
+
+    for (const block of workspace.getAllBlocks(false)) {
+      if (
+        block instanceof Blockly.BlockSvg &&
+        !(block.getDragStrategy() instanceof SingleBlockDragStrategy)
+      ) {
+        block.setDragStrategy(new SingleBlockDragStrategy(block));
+      }
+    }
+  };
+
+  const configureBlocksWhenIdle = () => {
+    if (configureScheduled) return;
+    configureScheduled = true;
+    window.setTimeout(configureBlocks, 0);
+  };
+
+  workspace.addChangeListener((event) => {
+    const blockDragEnded =
+      event.type === Blockly.Events.BLOCK_DRAG &&
+      (event as Blockly.Events.BlockDrag).isStart === false;
+    if (event.type === Blockly.Events.BLOCK_CREATE || blockDragEnded) {
+      configureBlocksWhenIdle();
+    }
+  });
+  configureBlocks();
+}
+
 export function createHopperWorkspace(container: HTMLElement) {
   registerHopperBlocks();
   const media = new URL("blockly/media/", document.baseURI).href;
@@ -845,17 +886,17 @@ export function createHopperWorkspace(container: HTMLElement) {
     name: "hopper",
     base: Blockly.Themes.Classic,
     componentStyles: {
-      workspaceBackgroundColour: "#f7f6f2",
+      workspaceBackgroundColour: "#eef3f5",
       toolboxBackgroundColour: "#ffffff",
-      toolboxForegroundColour: "#24313a",
-      flyoutBackgroundColour: "#f0efea",
-      flyoutForegroundColour: "#24313a",
+      toolboxForegroundColour: "#0c284a",
+      flyoutBackgroundColour: "#e7eef1",
+      flyoutForegroundColour: "#0c284a",
       flyoutOpacity: 1,
-      scrollbarColour: "#c1c6c8",
+      scrollbarColour: "#9cafb9",
       scrollbarOpacity: 0.65,
-      insertionMarkerColour: "#f04d59",
+      insertionMarkerColour: "#00a3a8",
       insertionMarkerOpacity: 0.45,
-      cursorColour: "#6b4eff",
+      cursorColour: "#c9a227",
     },
     fontStyle: { family: "Arial, sans-serif", weight: "600", size: 12 },
   });
@@ -868,10 +909,11 @@ export function createHopperWorkspace(container: HTMLElement) {
     trashcan: true,
     sounds: false,
     move: { scrollbars: true, drag: true, wheel: true },
-    grid: { spacing: 24, length: 2, colour: "#d9dad5", snap: true },
+    grid: { spacing: 24, length: 2, colour: "#cbd7dc", snap: true },
     zoom: { controls: true, wheel: true, startScale: 0.92, maxScale: 1.5, minScale: 0.45 },
   });
   loadDefaultWorkspace(workspace);
+  enableSingleBlockDragging(workspace);
   return workspace;
 }
 

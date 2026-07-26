@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -8,6 +8,11 @@ import { startDesktopServer } from "../desktop/server.mjs";
 async function withDesktopServer(callback) {
   const staticRoot = await mkdtemp(join(tmpdir(), "hopper-desktop-test-"));
   await writeFile(join(staticRoot, "hopper-studio.html"), "<!doctype html><title>Hopper</title>");
+  await mkdir(join(staticRoot, "information"));
+  await writeFile(
+    join(staticRoot, "information", "01-hopper-sensor-suite.pdf"),
+    "%PDF-1.4\n% Hopper information test\n",
+  );
   const cameraRequests = [];
   const server = await startDesktopServer({
     staticRoot,
@@ -36,6 +41,11 @@ test("desktop server binds a loopback origin and serves the app securely", async
     assert.equal(response.headers.get("x-frame-options"), "DENY");
     assert.match(response.headers.get("content-security-policy"), /frame-ancestors 'none'/);
     assert.match(response.headers.get("set-cookie"), /HttpOnly; SameSite=Strict/);
+
+    const pdfResponse = await fetch(`${origin}/information/01-hopper-sensor-suite.pdf`);
+    assert.equal(pdfResponse.status, 200);
+    assert.equal(pdfResponse.headers.get("content-type"), "application/pdf");
+    assert.match(await pdfResponse.text(), /^%PDF-1\.4/);
   });
 });
 

@@ -1,11 +1,21 @@
 # Hopper Studio
 
-Hopper Studio is a fully local block-coding, JavaScript, Bluetooth flight-control, and camera-vision app for the FTW Hopper drone. It preserves the FTW Code / Parrot Mambo command protocol and adds binary thresholding, tag36h11 AprilTag detection and 2D pose alignment, local COCO-SSD object detection, and support for custom Teachable Machine image classifiers.
+Hopper Studio is a fully local Python, block-coding, JavaScript, Bluetooth flight-control, and camera-vision app for the FTW Hopper drone. It preserves the FTW Code / Parrot Mambo command protocol and adds binary thresholding, tag36h11 AprilTag detection and 2D pose alignment, local COCO-SSD object detection, and support for custom Teachable Machine image classifiers.
 
 To rename the app and its subtitle everywhere in the web and desktop builds,
 edit `config/branding.json`. The desktop executable/app name, window titles,
 web metadata, visible header, simulator title, and release title all read from
-that shared file.
+that shared file. The `codingOptions` object in the same file controls the
+student coding surface:
+
+- `defaultEditor` accepts `"python"`, `"blocks"`, or `"javascript"`.
+- `enabledEditors` controls which tabs are visible and their order. Remove
+  `"javascript"` from that list before building when students should not see
+  the JavaScript editor. Keep at least one editor enabled.
+
+Python is the default. Hopper Studio translates its documented classroom
+Python subset locally into the existing asynchronous JavaScript flight runtime;
+students do not install Python and do not write `await`.
 
 ## Download the desktop app
 
@@ -46,6 +56,7 @@ builds unsigned downloads instead of failing.
 ## What is included
 
 - Blockly workspace with the original flight, battery, event, logic, loop, math, variable, function, and accessory capabilities. Newly dragged `fly forward` blocks default to 15% power.
+- Python editor with source-preserving syntax highlighting, automatic indentation, familiar loops and decisions, snake_case Hopper commands, and line-numbered translation errors.
 - JavaScript editor for advanced students.
 - Web Bluetooth control for Hopper, FTW, Mambo, Travis, and Mars device names.
 - A 10 m × 7 m simulated flight room with damped pitch/roll physics, wall crashes, a flight-path trail, side-view attitude, and a downward camera that uses the same blocks as the real Hopper. New rooms include a rotated AprilTag 0 floor marker.
@@ -111,7 +122,7 @@ The local camera proxy accepts only `192.168.2.1`; it cannot be used as a genera
 
 ## Use the simulated drone
 
-Select **Connect simulated drone** beside the Bluetooth button. The flight room opens in a separate browser window that you can move beside the coding workspace. If the browser blocks it, allow pop-ups for Hopper Studio and select the button again. The blue connected state means **Run Program** is sending the current Blockly or JavaScript program to the simulator. Switching between the simulator and a real Hopper never clears the workspace.
+Select **Connect simulated drone** beside the Bluetooth button. The flight room opens in a separate browser window that you can move beside the coding workspace. If the browser blocks it, allow pop-ups for Hopper Studio and select the button again. The blue connected state means **Run Program** is sending the current Blockly, Python, or JavaScript program to the simulator. Switching between the simulator and a real Hopper never clears the workspace.
 
 The room starts with airplane, car, banana, and apple targets plus one plain white sheet at the center of the dark floor. Drag them anywhere on the floor, select one to resize or rotate, duplicate or delete it, or upload a local image. Choose a tag36h11 ID from the AprilTag dropdown and add as many printable floor tags as the lab needs. A translucent red X-axis arrow rotates with each simulated tag to make visual alignment easy; that helper is intentionally omitted from the simulated drone camera. Drag the Hopper marker itself whenever you want to reposition its starting point; the simulator stops its horizontal motion and continues from the new location. The simulated downward camera feeds the same threshold, object, AprilTag, coordinate, and custom-model blocks used by the physical camera.
 

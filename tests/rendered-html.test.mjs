@@ -7,6 +7,17 @@ const root = new URL("../", import.meta.url);
 const branding = JSON.parse(
   await readFile(new URL("../config/branding.json", import.meta.url), "utf8"),
 );
+const informationSlidePaths = [
+  "information/01-hopper-sensor-suite.pdf",
+  "information/02-quadrotor-aerodynamics.pdf",
+  "information/03-coding-blocks-reference.pdf",
+  "information/04-javascript-api-reference.pdf",
+  "information/09-python-coding-reference.pdf",
+  "information/05-thresholding-with-hopper.pdf",
+  "information/06-object-detection-and-coco.pdf",
+  "information/07-teachable-machine-models.pdf",
+  "information/08-apriltags-with-hopper.pdf",
+];
 
 async function render() {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
@@ -23,6 +34,8 @@ async function render() {
 }
 
 test("server-renders shared branding metadata and product shell", async () => {
+  assert.ok(["python", "javascript", "blocks"].includes(branding.codingOptions.defaultEditor));
+  assert.ok(branding.codingOptions.enabledEditors.includes(branding.codingOptions.defaultEditor));
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
@@ -38,7 +51,7 @@ test("server-renders shared branding metadata and product shell", async () => {
 });
 
 test("ships the local flight, simulation, vision, offline cache, and student-build surfaces", async () => {
-  const [component, simulatorComponent, drone, simulation, runtime, vision, aprilTags, blockly, serviceWorker, offlineManifestScript, builtOfflineManifest, styles, readme, packageJson, brandingModule, desktopBuilder] = await Promise.all([
+  const [component, simulatorComponent, drone, simulation, runtime, vision, aprilTags, blockly, serviceWorker, offlineManifestScript, builtOfflineManifest, styles, readme, packageJson, brandingModule, desktopBuilder, javascriptHighlighting, pythonSurface] = await Promise.all([
     readFile(new URL("../components/HopperStudio.tsx", import.meta.url), "utf8"),
     readFile(new URL("../components/SimulatedDroneArea.tsx", import.meta.url), "utf8"),
     readFile(new URL("../lib/drone.ts", import.meta.url), "utf8"),
@@ -55,6 +68,8 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
     readFile(new URL("../package.json", import.meta.url), "utf8"),
     readFile(new URL("../lib/branding.ts", import.meta.url), "utf8"),
     readFile(new URL("../desktop/electron-builder.config.cjs", import.meta.url), "utf8"),
+    readFile(new URL("../lib/javascript-highlighting.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/python.ts", import.meta.url), "utf8"),
   ]);
 
   assert.match(component, /VISION TESTING/);
@@ -85,6 +100,21 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(component, /useState<WifiState>\("disconnected"\)/);
   assert.match(component, /type="range"/);
   assert.match(component, /MINIMUM CONFIDENCE/);
+  assert.match(component, /useState<EditorMode>\(DEFAULT_EDITOR_MODE\)/);
+  assert.match(component, /setEditorMode\(DEFAULT_EDITOR_MODE\)/);
+  assert.match(component, /ENABLED_EDITOR_MODES\.map/);
+  assert.match(component, /tokenizePython\(pythonCode\)/);
+  assert.match(component, /transpilePython\(source\)/);
+  assert.match(component, /aria-label="Python program"/);
+  assert.match(component, /pythonCode:/);
+  assert.match(component, /seedJavascriptFromBlocks/);
+  assert.match(component, /tokenizeJavaScript\(javascriptCode\)/);
+  assert.match(component, /className="javascript-highlight"/);
+  assert.match(component, /syncJavaScriptScroll/);
+  assert.match(component, /className="information-menu"/);
+  assert.match(component, /window\.open\("about:blank", "_blank"\)/);
+  assert.match(component, /new URL\(path, document\.baseURI\)\.href/);
+  assert.match(component, /javascriptAutosaveTimerRef/);
   assert.match(component, /objectConfidencePercent \/ 100/);
   assert.match(component, /visibleDetections/);
   assert.match(component, /detection\.confidence/);
@@ -134,11 +164,17 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(simulatorComponent, /createPortal/);
   assert.match(simulatorComponent, /Drag Hopper drone to reposition it/);
   assert.match(simulatorComponent, /sim-vision-box/);
-  assert.match(simulatorComponent, /Person \(soldier\)/);
+  assert.match(simulatorComponent, /Person \(Marine\)/);
+  assert.match(simulatorComponent, /sim-assets\/marine-digicam\.png/);
+  assert.doesNotMatch(simulatorComponent, /💂/);
   assert.match(simulatorComponent, /menuLabel: "Knife"/);
   assert.match(simulatorComponent, /menuLabel: "Stop sign"/);
   assert.match(simulatorComponent, /Computer \(laptop\)/);
   assert.match(simulatorComponent, /menuLabel: "Truck"/);
+  assert.match(simulatorComponent, /menuLabel: "Flag \(red\)"/);
+  assert.match(simulatorComponent, /menuLabel: "Flag \(blue\)"/);
+  assert.match(simulatorComponent, /sim-capture-flag/);
+  assert.match(simulatorComponent, /object\.flagColor === "red"/);
   assert.match(simulatorComponent, /person-soldier-default/);
   assert.match(simulatorComponent, /apriltag-7-left/);
   assert.match(simulatorComponent, /apriltag-19-right/);
@@ -146,6 +182,10 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(simulatorComponent, /Choose an object to add/);
   assert.match(simulatorComponent, /ADD TAG/);
   assert.match(simulatorComponent, /sim-tag-x-axis-arrow/);
+  assert.match(simulatorComponent, /sim-mobile-inspector/);
+  assert.match(component, /simulatorInline/);
+  assert.match(component, /viewport-fit=cover/);
+  assert.match(component, /wrap="off"/);
   assert.match(simulatorComponent, /sim-scan-line/);
   assert.match(simulatorComponent, /sideDroneRef/);
   assert.match(simulatorComponent, /FRONT/);
@@ -158,6 +198,7 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(simulation, /Wall impact/);
   assert.match(simulation, /placeDrone/);
   assert.match(simulation, /manualFlightOverride/);
+  assert.match(simulation, /flagColor\?: "red" \| "blue"/);
   assert.match(runtime, /runBlock/);
   assert.match(vision, /lite_mobilenet_v2/);
   assert.match(vision, /scanThreshold/);
@@ -173,6 +214,9 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(vision, /detectionCenterCoordinate/);
   assert.match(vision, /lastObjectCoordinates/);
   assert.match(vision, /loadCustomModel/);
+  assert.match(vision, /async capturePhoto\(maxWidth = 960\)/);
+  assert.match(vision, /canvas\.toBlob/);
+  assert.match(vision, /desktop\/local app or connect through the camera proxy/);
   assert.match(vision, /new URL\("models\/coco-ssd\/model\.json", document\.baseURI\)/);
   assert.match(aprilTags, /detectAprilTags/);
   assert.match(aprilTags, /buildAprilTagPdf/);
@@ -190,12 +234,30 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(blockly, /vision_sees_custom_label/);
   assert.match(blockly, /vision_object_coordinate/);
   assert.match(blockly, /minidrone_takeoff/);
+  assert.match(blockly, /message0: "take and store photo"/);
+  assert.match(blockly, /await drone\.takePicture\(\)/);
   assert.match(blockly, /activeStatement/);
   assert.match(blockly, /activeExpression/);
+  assert.match(blockly, /class SingleBlockDragStrategy/);
+  assert.match(blockly, /shouldHealStack\([^)]*\)[\s\S]*?return true/);
+  assert.match(blockly, /enableSingleBlockDragging\(workspace\)/);
+  assert.match(blockly, /workspace\.isDragging\(\)/);
+  assert.match(blockly, /getDragStrategy\(\) instanceof SingleBlockDragStrategy/);
+  assert.match(blockly, /Blockly\.Events\.BLOCK_DRAG/);
+  assert.match(blockly, /isStart === false/);
+  assert.match(component, /property === "takePicture"/);
+  assert.match(component, /captureAndStorePhoto/);
+  assert.match(component, /MISSION PHOTOS/);
+  assert.match(component, /CLEAR ALL/);
+  assert.match(component, /URL\.revokeObjectURL/);
+  assert.match(component, /missionPhotos\.map/);
+  assert.match(styles, /--header: #001b3a/);
+  assert.match(styles, /--red: #008c95/);
   assert.match(blockly, /new URL\("blockly\/media\/", document\.baseURI\)/);
   assert.doesNotThrow(() => new Function(serviceWorker));
   assert.match(serviceWorker, /HARD_REFRESH/);
   assert.match(serviceWorker, /request\.mode === "navigate"/);
+  assert.match(serviceWorker, /cachedNavigation/);
   assert.match(serviceWorker, /refreshAppCache/);
   assert.match(serviceWorker, /text\/css,\*\/\*;q=0\.1/);
   assert.match(serviceWorker, /promoteCache/);
@@ -209,6 +271,11 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.ok(offlineManifest.assets.some((asset) => /^assets\/HopperStudio-.+\.js$/.test(asset)));
   assert.ok(offlineManifest.assets.includes("models/coco-ssd/model.json"));
   assert.ok(offlineManifest.assets.includes("sw.js"));
+  for (const slidePath of informationSlidePaths) {
+    assert.ok(component.includes(slidePath), `${slidePath} is listed in the Information menu`);
+    assert.ok(serviceWorker.includes(slidePath), `${slidePath} is cached by the offline worker`);
+    assert.ok(offlineManifest.assets.includes(slidePath), `${slidePath} is in the offline manifest`);
+  }
   assert.match(styles, /activeBlockGlow/);
   assert.match(styles, /sim-pitch-reference/);
   assert.match(styles, /visionScanSweep/);
@@ -218,6 +285,13 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(styles, /height: 232px/);
   assert.match(styles, /wrcRefreshSpin/);
   assert.match(styles, /local-pill\.saving/);
+  assert.match(styles, /\.js-token-keyword/);
+  assert.match(styles, /\.py-token-keyword/);
+  assert.match(styles, /\.javascript-highlight/);
+  assert.match(styles, /\.python-highlight/);
+  assert.match(styles, /\.information-menu-panel/);
+  assert.match(styles, /\.mission-photo-strip/);
+  assert.match(styles, /\.sim-capture-flag\.red/);
   assert.match(readme, /start-windows\.bat/);
   assert.match(readme, /local-network access prompt/i);
   assert.match(readme, /Bluetooth flight control is independent/);
@@ -225,12 +299,20 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(readme, /Altitude telemetry/);
   assert.match(readme, /Use the simulated drone/);
   assert.match(readme, /Use Hopper Studio offline/);
+  assert.match(readme, /codingOptions/);
+  assert.match(readme, /enabledEditors/);
   assert.match(readme, /OpenMoji/);
   assert.match(readme, /Standard model versus embedded model/);
   assert.match(packageJson, /"build:student"/);
   assert.match(packageJson, /"build:pages"/);
   assert.match(packageJson, /"apriltag"/);
   assert.match(brandingModule, /config\/branding\.json/);
+  assert.match(brandingModule, /DEFAULT_EDITOR_MODE/);
+  assert.match(brandingModule, /ENABLED_EDITOR_MODES/);
+  assert.match(javascriptHighlighting, /export function tokenizeJavaScript/);
+  assert.match(pythonSurface, /export function tokenizePython/);
+  assert.match(pythonSurface, /export function transpilePython/);
+  assert.match(pythonSurface, /PYTHON_STARTER_PROGRAM/);
   assert.match(desktopBuilder, /config\/branding\.json/);
   assert.match(desktopBuilder, /productName: studioName/);
   assert.doesNotMatch(packageJson, /WRANGLER_LOG_PATH=.*vinext/);
@@ -245,10 +327,215 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
     access(new URL("../public/sim-assets/car.png", import.meta.url)),
     access(new URL("../public/sim-assets/banana.png", import.meta.url)),
     access(new URL("../public/sim-assets/apple.png", import.meta.url)),
+    access(new URL("../public/sim-assets/marine-digicam.png", import.meta.url)),
     access(new URL("../public/sw.js", import.meta.url)),
     access(new URL("../scripts/write-offline-manifest.mjs", import.meta.url)),
+    ...informationSlidePaths.flatMap((slidePath) => [
+      access(new URL(`../public/${slidePath}`, import.meta.url)),
+      access(new URL(`../student-build/${slidePath}`, import.meta.url)),
+    ]),
   ]);
   await assert.rejects(access(new URL("app/_sites-preview", root)));
+});
+
+test("tokenizes JavaScript for safe source-preserving syntax highlighting", async () => {
+  const source = await readFile(
+    new URL("../lib/javascript-highlighting.ts", import.meta.url),
+    "utf8",
+  );
+  const compiled = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const highlighting = await import(
+    `data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`
+  );
+  const program = [
+    "// mission",
+    "const retries = 2;",
+    "const result = await drone.takePicture();",
+    "console.log(`photo ${result ?? 1}`);",
+  ].join("\n");
+  const tokens = highlighting.tokenizeJavaScript(program);
+
+  assert.equal(tokens.map((token) => token.text).join(""), program);
+  assert.ok(tokens.some((token) => token.kind === "comment"));
+  assert.ok(tokens.some((token) => token.kind === "keyword" && token.text.includes("await")));
+  assert.ok(tokens.some((token) => token.kind === "function" && token.text.includes("takePicture")));
+  assert.ok(tokens.some((token) => token.kind === "string"));
+  assert.ok(tokens.some((token) => token.kind === "number"));
+});
+
+test("highlights and translates the classroom Python surface to the async runtime", async () => {
+  const source = await readFile(new URL("../lib/python.ts", import.meta.url), "utf8");
+  const compiled = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const python = await import(
+    `data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}#python`
+  );
+  const program = [
+    "# safe search",
+    "def search(steps):",
+    "    photos = 0",
+    "    for step in range(steps):",
+    "        fly(\"forward\", seconds=0.1, power=12)",
+    "        photos += 1",
+    "    return photos",
+    "",
+    "take_off()",
+    "try:",
+    "    result = search(2)",
+    "    if result == 2 and not stopped():",
+    "        take_photo()",
+    "finally:",
+    "    land()",
+  ].join("\n");
+  const tokens = python.tokenizePython(program);
+  assert.equal(tokens.map((token) => token.text).join(""), program);
+  assert.ok(tokens.some((token) => token.kind === "keyword" && token.text.includes("for")));
+  assert.ok(tokens.some((token) => token.kind === "function" && token.text.includes("fly")));
+  assert.ok(tokens.some((token) => token.kind === "comment"));
+  assert.ok(tokens.some((token) => token.kind === "string"));
+
+  const javascript = python.transpilePython(program);
+  assert.match(javascript, /async function search/);
+  assert.match(javascript, /await drone\.fly\("forward", 0\.1, 12\)/);
+  assert.match(javascript, /await runtime\.tick\(\)/);
+  assert.match(javascript, /await drone\.takePicture\(\)/);
+  const calls = [];
+  const drone = {
+    async takeOff() { calls.push("takeoff"); },
+    async fly(direction, seconds, power) { calls.push(["fly", direction, seconds, power]); },
+    async takePicture() { calls.push("photo"); },
+    async land() { calls.push("land"); },
+  };
+  const runtime = {
+    stopped: false,
+    async tick() { calls.push("tick"); },
+  };
+  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+  await new AsyncFunction("drone", "vision", "runtime", "console", javascript)(
+    drone,
+    {},
+    runtime,
+    console,
+  );
+  assert.deepEqual(calls, [
+    "takeoff",
+    ["fly", "forward", 0.1, 12],
+    "tick",
+    ["fly", "forward", 0.1, 12],
+    "tick",
+    "photo",
+    "land",
+  ]);
+  assert.throws(
+    () => python.transpilePython("take_off()\n  land()"),
+    /Python line 2: unexpected indentation/,
+  );
+});
+
+test("captures real and simulated camera frames as session JPEG photos", async () => {
+  const source = await readFile(new URL("../lib/vision.ts", import.meta.url), "utf8");
+  const compiled = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+  }).outputText.replace(
+    /^import \{ detectAprilTags \} from "\.\/apriltags";$/m,
+    "const detectAprilTags = () => [];",
+  );
+  const visionModule = await import(
+    `data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}#photo`
+  );
+  const originalDocument = globalThis.document;
+  const originalImageElement = globalThis.HTMLImageElement;
+  const originalCanvasElement = globalThis.HTMLCanvasElement;
+
+  class MockImage {
+    naturalWidth = 1280;
+    naturalHeight = 720;
+  }
+
+  class MockCanvas {
+    width = 640;
+    height = 360;
+    securityError = false;
+
+    getContext() {
+      return { drawImage() {} };
+    }
+
+    toBlob(callback, type) {
+      if (this.securityError) throw new DOMException("Blocked", "SecurityError");
+      callback(new Blob(["jpeg"], { type }));
+    }
+  }
+
+  globalThis.HTMLImageElement = MockImage;
+  globalThis.HTMLCanvasElement = MockCanvas;
+  globalThis.document = { createElement: () => new MockCanvas() };
+
+  try {
+    const noOp = () => undefined;
+    let cameraSource = new MockImage();
+    const runtime = new visionModule.VisionRuntime(
+      () => cameraSource,
+      () => null,
+      noOp,
+      noOp,
+      noOp,
+      noOp,
+      noOp,
+      noOp,
+      noOp,
+      noOp,
+    );
+    const realPhoto = await runtime.capturePhoto();
+    assert.equal(realPhoto.width, 960);
+    assert.equal(realPhoto.height, 540);
+    assert.equal(realPhoto.blob.type, "image/jpeg");
+
+    cameraSource = new MockCanvas();
+    const simulatedPhoto = await runtime.capturePhoto();
+    assert.equal(simulatedPhoto.width, 640);
+    assert.equal(simulatedPhoto.height, 360);
+
+    const missingRuntime = new visionModule.VisionRuntime(
+      () => null,
+      () => null,
+      noOp,
+      noOp,
+      noOp,
+      noOp,
+      noOp,
+      noOp,
+      noOp,
+      noOp,
+    );
+    await assert.rejects(
+      missingRuntime.capturePhoto(),
+      /Connect the camera feed before taking and storing a photo/,
+    );
+
+    globalThis.document = {
+      createElement: () => {
+        const canvas = new MockCanvas();
+        canvas.securityError = true;
+        return canvas;
+      },
+    };
+    cameraSource = new MockImage();
+    await assert.rejects(
+      runtime.capturePhoto(),
+      /desktop\/local app or connect through the camera proxy/,
+    );
+  } finally {
+    if (originalDocument === undefined) delete globalThis.document;
+    else globalThis.document = originalDocument;
+    if (originalImageElement === undefined) delete globalThis.HTMLImageElement;
+    else globalThis.HTMLImageElement = originalImageElement;
+    if (originalCanvasElement === undefined) delete globalThis.HTMLCanvasElement;
+    else globalThis.HTMLCanvasElement = originalCanvasElement;
+  }
 });
 
 test("refreshes local CSS as a stylesheet and promotes offline caches atomically", async () => {
@@ -319,11 +606,14 @@ test("refreshes local CSS as a stylesheet and promotes offline caches atomically
     }
     return new Response("asset", { status: 200, headers: { "content-type": "application/octet-stream" } });
   };
+  const serviceWorkerListeners = new Map();
   const serviceWorkerSelf = {
     registration: { scope: "https://hopper.test/" },
     clients: { claim: async () => undefined },
     skipWaiting: async () => undefined,
-    addEventListener() {},
+    addEventListener(type, listener) {
+      serviceWorkerListeners.set(type, listener);
+    },
   };
   const createWorker = new Function(
     "self",
@@ -346,6 +636,23 @@ test("refreshes local CSS as a stylesheet and promotes offline caches atomically
   assert.equal(cachedCss.headers.get("content-type"), "text/css");
   assert.match(await cachedCss.text(), /display: grid/);
   assert.equal(await cacheStorage.has("hopper-studio-offline-v1"), false);
+
+  const cachedPdfUrl = "https://hopper.test/information/01-hopper-sensor-suite.pdf";
+  const cachedPdf = await activeCache.match(new Request(cachedPdfUrl));
+  assert.equal(await cachedPdf.text(), "asset");
+  unavailablePath = "/information/01-hopper-sensor-suite.pdf";
+  const offlinePdfRequest = new Request(cachedPdfUrl);
+  Object.defineProperty(offlinePdfRequest, "mode", { value: "navigate" });
+  let offlinePdfResponse;
+  serviceWorkerListeners.get("fetch")({
+    request: offlinePdfRequest,
+    respondWith(response) {
+      offlinePdfResponse = Promise.resolve(response);
+    },
+    waitUntil() {},
+  });
+  assert.ok(offlinePdfResponse);
+  assert.equal(await (await offlinePdfResponse).text(), "asset");
 
   unavailablePath = "/sim-assets/car.png";
   const failedRefresh = await worker.performAppCacheRefresh({ strict: true });

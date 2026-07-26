@@ -1,5 +1,13 @@
 {
   "studioName": "Hopper Studio",
   "labName": "Flight + Vision Lab",
-  "organizationPrefix": "USNA"
+  "organizationPrefix": "USNA",
+  "codingOptions": {
+    "defaultEditor": "python",
+    "enabledEditors": [
+      "python",
+      "blocks",
+      "javascript"
+    ]
+  }
 }
