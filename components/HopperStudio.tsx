@@ -48,6 +48,7 @@ import {
   tokenizePython,
   transpilePython,
 } from "../lib/python";
+import { JAVASCRIPT_STARTER_PROGRAM } from "../lib/coding-starters";
 import SimulatedDroneArea from "./SimulatedDroneArea";
 import wrcLogo from "../logos/wrc_logo.png?inline";
 
@@ -236,12 +237,12 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   const photoSequenceRef = useRef(0);
   const photoUrlsRef = useRef(new Set<string>());
   const projectNameRef = useRef("Binary Landing Lab");
-  const javascriptCodeRef = useRef("");
+  const javascriptCodeRef = useRef(JAVASCRIPT_STARTER_PROGRAM);
   const pythonCodeRef = useRef(PYTHON_STARTER_PROGRAM);
 
   const [editorMode, setEditorMode] = useState<EditorMode>(DEFAULT_EDITOR_MODE);
   const [generatedCode, setGeneratedCode] = useState("");
-  const [javascriptCode, setJavascriptCode] = useState("");
+  const [javascriptCode, setJavascriptCode] = useState(JAVASCRIPT_STARTER_PROGRAM);
   const [pythonCode, setPythonCode] = useState(PYTHON_STARTER_PROGRAM);
   const [projectName, setProjectName] = useState("Binary Landing Lab");
   const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected");
@@ -616,7 +617,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
       blocklyRef.current = toolkit;
       const workspace = toolkit.createHopperWorkspace(workspaceHostRef.current);
       workspaceRef.current = workspace;
-      let seedJavascriptFromBlocks = true;
+      let seedJavascriptFromBlocks = false;
 
       const savedProject = localStorage.getItem(PROJECT_KEY);
       if (savedProject) {
@@ -1409,9 +1410,8 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     const toolkit = blocklyRef.current;
     if (workspace && toolkit) {
       toolkit.loadDefaultWorkspace(workspace);
-      const nextJavascriptCode = toolkit.generateWorkspaceCode(workspace);
-      javascriptCodeRef.current = nextJavascriptCode;
-      setJavascriptCode(nextJavascriptCode);
+      javascriptCodeRef.current = JAVASCRIPT_STARTER_PROGRAM;
+      setJavascriptCode(JAVASCRIPT_STARTER_PROGRAM);
     }
     pythonCodeRef.current = PYTHON_STARTER_PROGRAM;
     setPythonCode(PYTHON_STARTER_PROGRAM);

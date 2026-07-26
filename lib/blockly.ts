@@ -826,11 +826,43 @@ export const defaultWorkspaceXml = `
   <block type="program_start" x="42" y="42">
     <statement name="DO">
       <block type="minidrone_takeoff">
+        <comment pinned="false">Take off and wait until the drone is ready.</comment>
         <next>
           <block type="wait">
+            <comment pinned="false">Wait for 2 seconds.</comment>
             <value name="SECONDS"><shadow type="math_number"><field name="NUM">2</field></shadow></value>
             <next>
-              <block type="minidrone_land"></block>
+              <block type="minidrone_fly">
+                <comment pinned="false">Fly forward for 2 seconds at 15% power.</comment>
+                <field name="DIRECTION">forward</field>
+                <value name="SECONDS"><shadow type="math_number"><field name="NUM">2</field></shadow></value>
+                <value name="POWER"><shadow type="math_number"><field name="NUM">15</field></shadow></value>
+                <next>
+                  <block type="minidrone_take_picture">
+                    <comment pinned="false">Take and store a photo from the current camera view.</comment>
+                    <next>
+                      <block type="minidrone_rotate">
+                        <comment pinned="false">Turn clockwise by 180 degrees.</comment>
+                        <value name="DEGREES"><shadow type="math_number"><field name="NUM">180</field></shadow></value>
+                        <field name="DIRECTION">clockwise</field>
+                        <next>
+                          <block type="minidrone_fly">
+                            <comment pinned="false">Fly forward for 2 seconds at 15% power.</comment>
+                            <field name="DIRECTION">forward</field>
+                            <value name="SECONDS"><shadow type="math_number"><field name="NUM">2</field></shadow></value>
+                            <value name="POWER"><shadow type="math_number"><field name="NUM">15</field></shadow></value>
+                            <next>
+                              <block type="minidrone_land">
+                                <comment pinned="false">Land safely at the end of the mission.</comment>
+                              </block>
+                            </next>
+                          </block>
+                        </next>
+                      </block>
+                    </next>
+                  </block>
+                </next>
+              </block>
             </next>
           </block>
         </next>

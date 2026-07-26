@@ -36,6 +36,7 @@ async function render() {
 test("server-renders shared branding metadata and product shell", async () => {
   assert.ok(["python", "javascript", "blocks"].includes(branding.codingOptions.defaultEditor));
   assert.ok(branding.codingOptions.enabledEditors.includes(branding.codingOptions.defaultEditor));
+  assert.equal(branding.codingOptions.defaultEditor, "blocks");
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
@@ -236,6 +237,10 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(blockly, /minidrone_takeoff/);
   assert.match(blockly, /message0: "take and store photo"/);
   assert.match(blockly, /await drone\.takePicture\(\)/);
+  assert.match(
+    blockly,
+    /Fly forward for 2 seconds at 15% power\.[\s\S]*?<next>[\s\S]*?<block type="minidrone_land">[\s\S]*?Land safely at the end of the mission\./,
+  );
   assert.match(blockly, /activeStatement/);
   assert.match(blockly, /activeExpression/);
   assert.match(blockly, /class SingleBlockDragStrategy/);
@@ -373,6 +378,24 @@ test("highlights and translates the classroom Python surface to the async runtim
   const python = await import(
     `data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}#python`
   );
+  const starterJavascript = python.transpilePython(python.PYTHON_STARTER_PROGRAM);
+  const starterSteps = [
+    "await drone.takeOff()",
+    "await drone.wait(2)",
+    'await drone.fly("forward", 2, 15)',
+    "await drone.takePicture()",
+    'await drone.rotate(180, "clockwise")',
+    'await drone.fly("forward", 2, 15)',
+  ];
+  let previousStarterStep = -1;
+  for (const step of starterSteps) {
+    const stepIndex = starterJavascript.indexOf(step, previousStarterStep + 1);
+    assert.ok(stepIndex > previousStarterStep, `Starter mission is missing or reorders: ${step}`);
+    previousStarterStep = stepIndex;
+  }
+  assert.match(python.PYTHON_STARTER_PROGRAM, /15% power/);
+  assert.match(python.PYTHON_STARTER_PROGRAM, /180 degrees/);
+
   const program = [
     "# safe search",
     "def search(steps):",

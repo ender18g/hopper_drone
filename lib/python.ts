@@ -14,15 +14,12 @@ export type PythonToken = {
 };
 
 export const PYTHON_STARTER_PROGRAM = `# Hopper Studio Python
-# Commands wait automatically - no "await" is needed.
-take_off()
-
-try:
-    fly("forward", 1, 15)
-    hover()
-    take_photo()
-finally:
-    land()
+take_off()  # Take off and wait until the drone is ready.
+wait(2)  # Wait for 2 seconds.
+fly("forward", 2, 15)  # Fly forward for 2 seconds at 15% power.
+take_photo()  # Take and store a photo from the current camera view.
+rotate(180, "clockwise")  # Turn clockwise by 180 degrees.
+fly("forward", 2, 15)  # Fly forward for 2 seconds at 15% power.
 `;
 
 const PYTHON_KEYWORDS = new Set([
