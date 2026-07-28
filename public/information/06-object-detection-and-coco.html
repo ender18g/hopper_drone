@@ -130,7 +130,6 @@
   </div>
           
   <aside class="lesson-callout lesson-callout--caution">
-    <span aria-hidden="true"></span>
     <div><b>Simulator caveat</b><p>The simulator supplies synthetic object detections and bypasses the neural network. A successful simulator detection validates program logic, not real-model accuracy.</p></div>
   </aside>
         
@@ -198,7 +197,6 @@
   </div>
           
   <aside class="lesson-callout lesson-callout--gold">
-    <span aria-hidden="true"></span>
     <div><b>Why “stored coefficients” is the careful term</b><p>This is a frozen GraphModel with no trainable flag or checkpoint state in the browser. Some coefficients encode folded batch-normalization statistics. Counting “trainable parameters” as if the browser were training it would be misleading.</p></div>
   </aside>
           <p>There is no single useful neuron count. The number of activation values changes at every layer and depends on spatial resolution; the feature-map shapes above are more informative.</p>

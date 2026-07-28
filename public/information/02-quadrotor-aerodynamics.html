@@ -142,7 +142,6 @@
   </div>
           
   <aside class="lesson-callout lesson-callout--caution">
-    <span aria-hidden="true"></span>
     <div><b>Rotor-arrow caveat</b><p>The paper’s yaw row is unambiguous, but its figure does not define whether curved arrows show propeller spin or the resulting body reaction. The lesson follows Equation (10)’s torque signs and does not reinterpret those arrows.</p></div>
   </aside>
         
@@ -167,7 +166,6 @@
   </div>
           
   <aside class="lesson-callout lesson-callout--caution">
-    <span aria-hidden="true"></span>
     <div><b>Sign trap</b><p>At zero yaw, small roll/pitch, and near hover (<span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>F</mi><mi>T</mi></msub><mo>≈</mo><mi>m</mi><mi>g</mi></mrow><annotation encoding="application/x-tex">F_T\approx mg</annotation></semantics></math></span>), the paper’s convention gives <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mover accent="true"><mi>x</mi><mo>¨</mo></mover><mo>≈</mo><mo>−</mo><mi>g</mi><msub><mi>ϕ</mi><mn>2</mn></msub></mrow><annotation encoding="application/x-tex">\ddot{x}\approx -g\phi_2</annotation></semantics></math></span> and <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mover accent="true"><mi>y</mi><mo>¨</mo></mover><mo>≈</mo><mo>+</mo><mi>g</mi><msub><mi>ϕ</mi><mn>1</mn></msub></mrow><annotation encoding="application/x-tex">\ddot{y}\approx +g\phi_1</annotation></semantics></math></span>. Copying a z-up formula without changing signs produces the wrong acceleration direction.</p></div>
   </aside>
         
@@ -250,7 +248,6 @@
   </div>
           
   <aside class="lesson-callout lesson-callout--gold">
-    <span aria-hidden="true"></span>
     <div><b>Why tilted hover needs more thrust</b><p>The vertical part is <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>F</mi><mi>T</mi></msub><mi>cos</mi><mo>⁡</mo><msub><mi>ϕ</mi><mn>1</mn></msub><mi>cos</mi><mo>⁡</mo><msub><mi>ϕ</mi><mn>2</mn></msub></mrow><annotation encoding="application/x-tex">F_T\cos\phi_1\cos\phi_2</annotation></semantics></math></span>. As <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="normal">∣</mi><msub><mi>ϕ</mi><mn>1</mn></msub><mi mathvariant="normal">∣</mi></mrow><annotation encoding="application/x-tex">|\phi_1|</annotation></semantics></math></span> or <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="normal">∣</mi><msub><mi>ϕ</mi><mn>2</mn></msub><mi mathvariant="normal">∣</mi></mrow><annotation encoding="application/x-tex">|\phi_2|</annotation></semantics></math></span> grows away from zero within the normal <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi mathvariant="normal">∣</mi><mi>ϕ</mi><mi mathvariant="normal">∣</mi><mo>&lt;</mo><msup><mn>90</mn><mo>∘</mo></msup></mrow><annotation encoding="application/x-tex">|\phi|&lt;90^\circ</annotation></semantics></math></span> flight range, the cosine product shrinks, so total lift must increase to keep the same altitude.</p></div>
   </aside>
         
@@ -313,7 +310,6 @@
           </ol>
           
   <aside class="lesson-callout lesson-callout--caution">
-    <span aria-hidden="true"></span>
     <div><b>Model responsibly</b><p>Do not substitute a Studio power percentage directly for <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>ω</mi><mi>i</mi></msub><mi mathvariant="normal">∣</mi><msub><mi>ω</mi><mi>i</mi></msub><mi mathvariant="normal">∣</mi></mrow><annotation encoding="application/x-tex">\omega_i|\omega_i|</annotation></semantics></math></span> (or <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msubsup><mi>ω</mi><mi>i</mi><mn>2</mn></msubsup></mrow><annotation encoding="application/x-tex">\omega_i^2</annotation></semantics></math></span> in the nonnegative-speed simplification), newtons, or RPM. It is a normalized control command, and its physical meaning depends on the controller and vehicle.</p></div>
   </aside>
           

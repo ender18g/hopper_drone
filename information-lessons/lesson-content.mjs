@@ -44,7 +44,6 @@ const codeBlock = (language, title, source) => {
 
 const callout = (title, body, kind = "") => `
   <aside class="lesson-callout${kind ? ` lesson-callout--${kind}` : ""}">
-    <span aria-hidden="true"></span>
     <div><b>${title}</b><p>${body}</p></div>
   </aside>`;
 

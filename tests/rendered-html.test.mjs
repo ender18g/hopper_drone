@@ -408,9 +408,16 @@ test("generates nine semantic, self-contained HTML information lessons", async (
   assert.match(combined, /class="token keyword"/i);
   assert.match(combined, /hopper-underbody-generated\.jpg/i);
   assert.match(combined, /x-quadrotor-top-generated\.jpg/i);
+  assert.doesNotMatch(
+    combined,
+    /<aside class="lesson-callout[^"]*">\s*<span/i,
+    "callouts must not insert an empty grid item before their text",
+  );
   assert.match(combined, /class="nn-pipeline"/i);
   assert.match(combined, /Stored inference coefficients[\s\S]*?4,500,927/i);
   assert.match(lessonCss, /\.token\.keyword/);
+  assert.match(lessonCss, /\.lesson-callout\s*\{[^}]*position:\s*relative/s);
+  assert.match(lessonCss, /\.lesson-callout::before\s*\{[^}]*position:\s*absolute/s);
   assert.match(lessonCss, /@media \(max-width: 760px\)/);
   assert.match(lessonCss, /@media print/);
 

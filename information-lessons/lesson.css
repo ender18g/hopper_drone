@@ -494,11 +494,9 @@
 
 .lesson-callout {
   max-width: 850px;
-  display: grid;
-  grid-template-columns: 5px minmax(0, 1fr);
-  gap: 18px;
+  position: relative;
   margin: 28px 0;
-  padding: 20px 22px 20px 0;
+  padding: 20px 22px 20px 30px;
   border: 1px solid #c8d5d7;
   border-radius: 14px;
   background: #fffdf8;
@@ -506,8 +504,17 @@
 
 .lesson-callout::before {
   content: "";
+  width: 5px;
+  position: absolute;
+  top: 14px;
+  bottom: 14px;
+  left: 10px;
   border-radius: 999px;
   background: var(--lesson-teal);
+}
+
+.lesson-callout > div {
+  min-width: 0;
 }
 
 .lesson-callout--caution::before {
@@ -531,6 +538,7 @@
   margin: 0;
   color: var(--lesson-muted);
   font-size: 15px;
+  line-height: 1.55;
 }
 
 .lesson-figure {
@@ -1335,6 +1343,13 @@ body.lesson-document {
     border-bottom: 0;
     border-left: 6px solid transparent;
     transform: translateX(-50%);
+  }
+}
+
+@media (max-width: 900px) {
+  .lesson-objectives {
+    grid-template-columns: 1fr;
+    gap: 16px;
   }
 }
 

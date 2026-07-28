@@ -117,7 +117,6 @@
           <p><code>await</code> means “pause this program here until the command finishes.” Without it, a later command can begin while a movement or scan is still active.</p>
           
   <aside class="lesson-callout lesson-callout--gold">
-    <span aria-hidden="true"></span>
     <div><b>Landing behavior</b><p>Normal non-event completion requests landing automatically, and errors force-land. Still write an explicit finally/land block: it documents intent and makes copied code safer outside the runner.</p></div>
   </aside>
         
@@ -200,7 +199,6 @@
   </div>
           
   <aside class="lesson-callout lesson-callout--caution">
-    <span aria-hidden="true"></span>
     <div><b>App-owned controller methods</b><p>Do not call startRun, stopRun, abortRun, landNoWait, forceLand, disconnect, or telemetry callback fields from student code. The Studio owns connection and emergency behavior.</p></div>
   </aside>
         
@@ -278,7 +276,6 @@
   </div>
           
   <aside class="lesson-callout lesson-callout--caution">
-    <span aria-hidden="true"></span>
     <div><b>Stored means stale is possible</b><p>objectCoordinate() remembers a prior match. A later missed scan does not erase that coordinate. Call seesObject() or detectObjects() when a decision requires current visibility.</p></div>
   </aside>
         
