@@ -123,6 +123,11 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(codeQuickReference, /binary_at/);
   assert.match(codeQuickReference, /center_on_object/);
   assert.match(codeQuickReference, /Decisions \+ loops/);
+  assert.match(codeQuickReference, /Parameters:/);
+  assert.match(codeQuickReference, /Returns:/);
+  assert.match(codeQuickReference, /\\"white\\" \| \\"black\\"/);
+  assert.match(codeQuickReference, /Promise<boolean>/);
+  assert.match(codeQuickReference, /minimumConfidence/);
   assert.match(component, /className="information-menu"/);
   assert.match(component, /INFORMATION_LESSONS\.map/);
   assert.match(component, /#\/information/);

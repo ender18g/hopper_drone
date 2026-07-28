@@ -1039,7 +1039,7 @@ body.resizing-vision * {
   position: absolute;
   inset: 29px 0 0;
   display: grid;
-  grid-template-columns: minmax(270px, 34%) 52px minmax(0, 1fr);
+  grid-template-columns: minmax(300px, 36%) 52px minmax(0, 1fr);
   background: #001b3a;
   color: #e5e9e7;
 }
@@ -1253,35 +1253,98 @@ body.resizing-vision * {
   font: inherit;
 }
 
-.code-reference-sections article p {
+.reference-summary {
   margin: 0;
-  padding: 7px 10px 8px;
+  padding: 7px 10px;
   border-top: 1px solid #233e55;
   background: #0b243d;
-  color: #91a9b9;
+  color: #b2c2ce;
   font-size: 9px;
   line-height: 1.45;
 }
 
-.reference-return {
-  position: absolute;
-  z-index: 1;
-  top: 5px;
-  right: 5px;
-  padding: 2px 4px;
-  border-radius: 3px;
-  background: #1a3b57;
-  color: #a7bdd0;
-  font-family: var(--mono);
-  font-size: 6px;
-  font-weight: 900;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+.reference-contract {
+  padding: 8px 10px 10px;
+  border-top: 1px solid #233e55;
+  background: #061a31;
 }
 
-.reference-return.bool { background: #3d2c5c; color: #ddc5ff; }
-.reference-return.number { background: #55421e; color: #f7d783; }
-.reference-return.data { background: #124a45; color: #8ce0ce; }
+.reference-contract h3 {
+  margin: 0 0 7px;
+  padding: 3px 6px;
+  background: #26394c;
+  color: #e0e8ee;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.03em;
+}
+
+.reference-arguments dl {
+  margin: 0;
+}
+
+.reference-arguments dl > div {
+  margin: 0 0 8px;
+}
+
+.reference-arguments dt {
+  color: #cfdbe3;
+  font-family: var(--mono);
+  font-size: 8px;
+  font-weight: 750;
+  line-height: 1.45;
+}
+
+.reference-arguments dt > code {
+  color: #f0f5f8;
+  font-weight: 900;
+}
+
+.reference-arguments dt i {
+  color: #d9c57a;
+  font-style: italic;
+  font-weight: 800;
+}
+
+.reference-arguments dt span > code {
+  color: #e5a8d5;
+  white-space: normal;
+}
+
+.reference-arguments dd,
+.reference-none,
+.reference-result p {
+  margin: 2px 0 0 12px;
+  color: #91a9b9;
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.reference-none {
+  margin-bottom: 9px;
+}
+
+.reference-result {
+  margin-top: 2px;
+}
+
+.reference-result > code {
+  display: block;
+  margin-left: 4px;
+  color: #8ce0ce;
+  font-family: var(--mono);
+  font-size: 8px;
+  font-weight: 900;
+  line-height: 1.45;
+}
+
+.reference-result.bool > code { color: #ddc5ff; }
+.reference-result.number > code { color: #f7d783; }
+.reference-result.none > code { color: #a7bdd0; }
+
+.reference-result p {
+  margin-left: 12px;
+}
 
 .code-reference-empty {
   color: #90a8b8;
