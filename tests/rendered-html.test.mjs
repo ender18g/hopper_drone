@@ -121,7 +121,8 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(component, /#\/information/);
   assert.match(component, /InformationLessonLauncher/);
   assert.match(lessonLauncher, /lazy\(\(\) => import\("\.\/InformationLessonReader"\)\)/);
-  assert.match(lessonLauncher, /window\.location\.hash\.startsWith\("#\/information"\)/);
+  assert.match(lessonLauncher, /hash === "#\/information"/);
+  assert.match(lessonLauncher, /hash\.startsWith\("#\/information\/"\)/);
   assert.doesNotMatch(component, /PDF slide decks/);
   assert.match(lessonReader, /role="dialog"/);
   assert.match(lessonReader, /aria-modal="true"/);

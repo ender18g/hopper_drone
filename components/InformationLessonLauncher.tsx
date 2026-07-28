@@ -4,8 +4,11 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react"
 
 const LazyInformationLessonReader = lazy(() => import("./InformationLessonReader"));
 
-const lessonHashIsOpen = () =>
-  typeof window !== "undefined" && window.location.hash.startsWith("#/information");
+const lessonHashIsOpen = () => {
+  if (typeof window === "undefined") return false;
+  const hash = window.location.hash;
+  return hash === "#/information" || hash.startsWith("#/information/");
+};
 
 export default function InformationLessonLauncher() {
   const [open, setOpen] = useState(false);
