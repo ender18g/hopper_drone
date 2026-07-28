@@ -63,6 +63,12 @@ export type SimulationSideViewPose = {
 
 type Axis = "pitch" | "roll" | "yaw" | "gaz";
 type FrameListener = (snapshot: SimulationSnapshot) => void;
+type SimulationTimingWindow = Pick<
+  Window,
+  "requestAnimationFrame" | "cancelAnimationFrame" | "setTimeout" | "dispatchEvent" | "performance"
+> & {
+  CustomEvent: typeof CustomEvent;
+};
 
 const radians = (angle: number) => (angle * Math.PI) / 180;
 const clamp = (value: number, minimum: number, maximum: number) =>
@@ -185,12 +191,14 @@ export class SimulatedDroneController implements DroneController {
   } | null = null;
   private snapshot: SimulationSnapshot = this.initialSnapshot();
 
+  constructor(private readonly timingWindow: SimulationTimingWindow = window) {}
+
   connect() {
     if (this.connected) return;
     this.connected = true;
     this.snapshot = { ...this.snapshot, connected: true };
-    this.previousFrame = performance.now();
-    this.animationFrame = window.requestAnimationFrame(this.frame);
+    this.previousFrame = this.now();
+    this.animationFrame = this.timingWindow.requestAnimationFrame(this.frame);
     this.emitTelemetry();
     this.emitFrame();
   }
@@ -198,7 +206,7 @@ export class SimulatedDroneController implements DroneController {
   disconnect() {
     this.abortRun();
     this.connected = false;
-    if (this.animationFrame !== null) window.cancelAnimationFrame(this.animationFrame);
+    if (this.animationFrame !== null) this.timingWindow.cancelAnimationFrame(this.animationFrame);
     this.animationFrame = null;
     this.snapshot = { ...this.snapshot, connected: false };
     this.emitTelemetry();
@@ -325,7 +333,7 @@ export class SimulatedDroneController implements DroneController {
     const safeAngle = clamp(Number(angle) || 0, -15, 15);
     this.manualPitch = axis === "pitch" ? safeAngle : 0;
     this.manualRoll = axis === "roll" ? safeAngle : 0;
-    this.manualOverrideUntil = performance.now() + duration * 1000;
+    this.manualOverrideUntil = this.now() + duration * 1000;
     await this.wait(duration);
   }
 
@@ -377,9 +385,9 @@ export class SimulatedDroneController implements DroneController {
     if (this.snapshot.crashed) return;
     this.abortRun();
     await this.landNoWait();
-    const endAt = performance.now() + 3500;
-    while (this.snapshot.z > 0.01 && !this.snapshot.crashed && performance.now() < endAt) {
-      await new Promise<void>((resolve) => window.setTimeout(resolve, 25));
+    const endAt = this.now() + 3500;
+    while (this.snapshot.z > 0.01 && !this.snapshot.crashed && this.now() < endAt) {
+      await this.delay(25);
     }
   }
 
@@ -427,7 +435,7 @@ export class SimulatedDroneController implements DroneController {
       yaw: 0,
       gaz: 0,
     };
-    await new Promise<void>((resolve) => window.setTimeout(resolve, safeSeconds * 1000));
+    await this.delay(safeSeconds * 1000);
     if (this.manualFlightOverride?.token === token) this.manualFlightOverride = null;
   }
 
@@ -477,7 +485,7 @@ export class SimulatedDroneController implements DroneController {
     const transform = getSimulationFlipTransform(direction, 0);
     const animation = {
       direction,
-      startedAt: performance.now(),
+      startedAt: this.now(),
       durationMs: 820,
       anchorX: this.snapshot.x,
       anchorY: this.snapshot.y,
@@ -510,9 +518,9 @@ export class SimulatedDroneController implements DroneController {
 
   async wait(seconds: number) {
     const generation = this.runGeneration;
-    const endAt = performance.now() + Math.max(0, Number(seconds) || 0) * 1000;
-    while (this.isRunActive(generation) && performance.now() < endAt) {
-      await new Promise<void>((resolve) => window.setTimeout(resolve, 25));
+    const endAt = this.now() + Math.max(0, Number(seconds) || 0) * 1000;
+    while (this.isRunActive(generation) && this.now() < endAt) {
+      await this.delay(25);
     }
   }
 
@@ -546,7 +554,7 @@ export class SimulatedDroneController implements DroneController {
     const elapsed = clamp((now - this.previousFrame) / 1000, 0.001, 0.035);
     this.previousFrame = now;
     this.step(elapsed, now);
-    this.animationFrame = window.requestAnimationFrame(this.frame);
+    this.animationFrame = this.timingWindow.requestAnimationFrame(this.frame);
   };
 
   private step(elapsed: number, now: number) {
@@ -775,14 +783,22 @@ export class SimulatedDroneController implements DroneController {
 
   private async waitFor(predicate: () => boolean, timeoutSeconds: number) {
     const generation = this.runGeneration;
-    const endAt = performance.now() + timeoutSeconds * 1000;
-    while (this.isRunActive(generation) && !predicate() && performance.now() < endAt) {
-      await new Promise<void>((resolve) => window.setTimeout(resolve, 25));
+    const endAt = this.now() + timeoutSeconds * 1000;
+    while (this.isRunActive(generation) && !predicate() && this.now() < endAt) {
+      await this.delay(25);
     }
   }
 
   private isRunActive(generation: number) {
     return !this.cancelRunFlag && generation === this.runGeneration;
+  }
+
+  private now() {
+    return this.timingWindow.performance.now();
+  }
+
+  private delay(milliseconds: number) {
+    return new Promise<void>((resolve) => this.timingWindow.setTimeout(resolve, milliseconds));
   }
 
   private initialSnapshot(): SimulationSnapshot {
@@ -812,7 +828,9 @@ export class SimulatedDroneController implements DroneController {
 
   private emitEvent(eventName: DroneEventName) {
     this.onEvent?.(eventName);
-    window.dispatchEvent(new CustomEvent("hopper-drone-event", { detail: eventName }));
+    this.timingWindow.dispatchEvent(
+      new this.timingWindow.CustomEvent("hopper-drone-event", { detail: eventName }),
+    );
   }
 
   private emitTelemetry() {

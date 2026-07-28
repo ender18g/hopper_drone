@@ -56,8 +56,8 @@ builds unsigned downloads instead of failing.
 ## What is included
 
 - Blockly workspace with the original flight, battery, event, logic, loop, math, variable, function, and accessory capabilities. Newly dragged `fly forward` blocks default to 15% power.
-- Python editor with source-preserving syntax highlighting, automatic indentation, familiar loops and decisions, snake_case Hopper commands, and line-numbered translation errors.
-- JavaScript editor for advanced students.
+- Python editor (the default view) with source-preserving syntax highlighting, automatic indentation, familiar loops and decisions, snake_case Hopper commands, and line-numbered translation errors.
+- JavaScript editor for advanced students. Both text editors include a searchable, syntax-highlighted Hopper API guide in their left column.
 - Web Bluetooth control for Hopper, FTW, Mambo, Travis, and Mars device names.
 - A 10 m × 7 m simulated flight room with damped pitch/roll physics, wall crashes, a flight-path trail, side-view attitude, and a downward camera that uses the same blocks as the real Hopper. New rooms include a rotated AprilTag 0 floor marker.
 - A live execution glow that follows each active flight, wait, accessory, and camera-vision block on both simulated and physical Hopper runs.
@@ -65,11 +65,12 @@ builds unsigned downloads instead of failing.
 - Simultaneous Bluetooth flight control and Wi-Fi camera display.
 - Separate Bluetooth and Hopper Wi-Fi indicators. The Wi-Fi indicator checks whether `192.168.2.1` actually responds; select it to check again immediately.
 - A draggable Vision Testing panel divider. Drag it left to enlarge the camera and live readouts, or right to give Blockly more room. The Left and Right arrow keys also work when the divider is focused.
-- A 0–100% binary brightness threshold, an invert option, white/black frame coverage, and a center-pixel readout.
-- `camera sees binary white/black` frame-coverage and center-pixel blocks.
+- A 0–100% binary brightness threshold, an invert option, white/black frame coverage, and an X 0 / Y 0 center-pixel readout.
+- `camera sees binary white/black` frame-coverage and X/Y pixel blocks. Pixel coordinates run from `-100` to `+100`; `(0, 0)` is center and `(100, 100)` is the top right.
 - A local tag36h11 AprilTag generator/detector with ID, centered X/Y coordinates, tag-axis overlays, and yaw alignment.
 - A full-page printable US Letter PDF generator for every tag36h11 ID; the PDF opens in a separate browser tab and remains vector-sharp when printed.
-- `scan for april tags`, `camera sees april tag with ID`, and `center on april tag` blocks. The centering block has adjustable roll/pitch power, while its gear edits center/angle tolerances and the missed-scan limit.
+- `scan for april tags`, `camera sees april tag with ID`, and `center on april tag` blocks. The centering block has adjustable roll/pitch power, while its grouped settings edit center/angle tolerances, the post-correction rescan delay, and the missed-scan limit.
+- `center on object [label]` centers the drone over the matching object-detection bounding box with roll/pitch corrections only. It does not change yaw. Its grouped settings control confidence, center tolerance, rescan delay, and the missed-scan limit.
 - Optional local COCO-SSD blocks and live labels. The neural network is stored locally and loads only when requested.
 - Object results include confidence and centered X/Y coordinates on a signed `-100` to `+100` scale. `(0, 0)` is the frame center; right and up are positive.
 - A local file loader and block for standard Teachable Machine image classifiers.
@@ -122,7 +123,7 @@ The local camera proxy accepts only `192.168.2.1`; it cannot be used as a genera
 
 ## Use the simulated drone
 
-Select **Connect simulated drone** beside the Bluetooth button. The flight room opens in a separate browser window that you can move beside the coding workspace. If the browser blocks it, allow pop-ups for Hopper Studio and select the button again. The blue connected state means **Run Program** is sending the current Blockly, Python, or JavaScript program to the simulator. Switching between the simulator and a real Hopper never clears the workspace.
+Select **Connect simulated drone** beside the Bluetooth button. On a desktop with a mouse, the flight room opens in a separate browser window that you can move beside the coding workspace. Simulator physics, waits, and events use that visible window's timing loop so flight continues when the coding window is behind it. If the browser blocks the window, allow pop-ups for Hopper Studio and select the button again. On iPad and other touch devices the room stays inline: iPadOS may suspend a background coding tab when a popup becomes a full tab, so inline mode is the reliable way to keep code and simulation synchronized. The blue connected state means **Run Program** is sending the current Blockly, Python, or JavaScript program to the simulator. Switching between the simulator and a real Hopper never clears the workspace.
 
 The room starts with airplane, car, banana, and apple targets plus one plain white sheet at the center of the dark floor. Drag them anywhere on the floor, select one to resize or rotate, duplicate or delete it, or upload a local image. Choose a tag36h11 ID from the AprilTag dropdown and add as many printable floor tags as the lab needs. A translucent red X-axis arrow rotates with each simulated tag to make visual alignment easy; that helper is intentionally omitted from the simulated drone camera. Drag the Hopper marker itself whenever you want to reposition its starting point; the simulator stops its horizontal motion and continues from the new location. The simulated downward camera feeds the same threshold, object, AprilTag, coordinate, and custom-model blocks used by the physical camera.
 
@@ -150,12 +151,13 @@ The three Vision Testing toggles are mutually exclusive: thresholding, object de
 
 - Threshold 0% makes almost every pixel white; increasing the threshold requires more brightness for white. **Invert** swaps the binary output after thresholding.
 - `camera sees binary white with threshold at 60%, invert false, in 10% of frame` scans once and returns true when at least 10% of the processed frame is white. Its dropdown can check black instead.
-- `camera sees binary white/black at center pixel` performs the same scan but checks only the reticle pixel.
-- On a dark carpet, tune the threshold in the panel until a white sheet remains cleanly white, then use the binary coverage or center-pixel block to decide when to land.
+- `camera sees binary white/black at x [0] y [0]` performs the same scan but checks one requested pixel. `(0, 0)` is the reticle, `(100, 100)` is the top right, and `(-100, -100)` is the bottom left.
+- On a dark carpet, tune the threshold in the panel until a white sheet remains cleanly white, then use the binary coverage or X/Y pixel block to decide when to land.
 - `scan for objects` refreshes COCO results explicitly. The `camera sees [object]` predicate also performs a fresh object scan every time it is evaluated; the X/Y-coordinate block reads the most recently detected position.
 - `scan for april tags` refreshes tag36h11 IDs and 2D poses. `camera sees april tag with ID` also performs a fresh AprilTag scan every time it is evaluated, so it works directly inside an `if` without a preceding scan block; the ID dropdown includes `any`.
 - In AprilTag Detection, choose an ID under **Print a real tag** and select **Generate PDF**. Hopper Studio opens a full-page US Letter PDF in a new tab for printing; allow pop-ups if the browser asks.
-- `center on april tag` rescans after every movement while it centers X/Y and aligns the drone's forward axis with the tag x axis. Roll/pitch defaults to 10% power and uses a 0.30-second correction pulse before stabilizing and rescanning. Yaw uses the measured tag angle as a complete clockwise or counterclockwise `rotate` command, then scans the tag again. The program console reports each detection, lost-tag retry, translation direction, yaw correction, and completion result. It succeeds inside ±5% of frame center and ±5° by default. Select its gear to adjust both tolerances and how many consecutive lost-tag scans are allowed; the lost limit defaults to three and can be raised when the real camera temporarily loses the tag during movement. A 30-second overall timeout still prevents the block from becoming trapped forever.
+- `center on object [label]` runs a fresh object scan, pulses roll or pitch toward the center of the matching bounding box, levels the drone, waits 0.5 seconds by default, and scans again. It never changes yaw. It succeeds inside ±5% of frame center by default.
+- `center on april tag` rescans after every movement while it centers X/Y and aligns the drone's forward axis with the tag x axis. Roll/pitch defaults to 10% power and uses a 0.30-second correction pulse, then levels the drone and waits 0.5 seconds before rescanning so tilt does not distort the measured image position. Yaw uses the measured tag angle as a complete clockwise or counterclockwise `rotate` command, then scans the tag again. The program console reports each detection, lost-tag retry, translation direction, yaw correction, and completion result. It succeeds inside ±5% of frame center and ±5° by default. Select either centering block's gear to open clearly separated settings for tolerances, post-roll/pitch rescan delay, and consecutive lost scans. A 30-second overall timeout prevents either centering block from becoming trapped forever.
 - Every `camera sees`, `custom model sees`, and explicit `scan` block captures a fresh frame and shows the scan sweep. Saved detection state is still available to coordinate blocks after that scan.
 
 Lighting, camera auto-exposure, shadows, print quality, and target size affect vision. Tune with the real target and classroom lighting before flight. For AprilTags, print tag36h11 markers with a clean white margin and keep them flat.

@@ -179,7 +179,7 @@
           <span class="lesson-section__number">04 / 05</span>
           <h2 id="centering-title">The centering command is a bounded feedback loop</h2>
           
-          <p><code>centerOnAprilTag</code> scans after every movement. It corrects the dominant center error with a short roll or pitch pulse, stabilizes, rescans, and only then corrects image-plane yaw.</p>
+          <p><code>centerOnAprilTag</code> scans after every movement. It corrects the dominant center error with a short roll or pitch pulse, levels the drone, waits for the configured rescan delay, and only then reads a new image. This avoids measuring a target while roll or pitch is distorting its image position. Yaw alignment follows after X/Y centering.</p>
           
   <div class="lesson-api">
     
@@ -204,6 +204,10 @@
         <div class="lesson-api__detail"><b>1…20 scans</b><p>Consecutive missed scans allowed before returning false.</p></div>
       </article>
       <article class="lesson-api__item">
+        <div class="lesson-api__signature">rescanDelay = 0.5</div>
+        <div class="lesson-api__detail"><b>0…5 seconds</b><p>Wait after each roll/pitch correction and reset before capturing the next image.</p></div>
+      </article>
+      <article class="lesson-api__item">
         <div class="lesson-api__signature">30-second hard deadline</div>
         <div class="lesson-api__detail"><b>Timeout</b><p>Returns false and resets movement if the loop cannot finish in time.</p></div>
       </article>
@@ -223,6 +227,7 @@
     <span class="token number">5</span><span class="token punctuation">,</span>  <span class="token comment">// center slack %</span>
     <span class="token number">5</span><span class="token punctuation">,</span>  <span class="token comment">// angle slack degrees</span>
     <span class="token number">3</span><span class="token punctuation">,</span>  <span class="token comment">// allowed lost scans</span>
+    <span class="token number">0.5</span> <span class="token comment">// wait after roll/pitch before rescan</span>
   <span class="token punctuation">)</span><span class="token punctuation">;</span>
   console<span class="token punctuation">.</span><span class="token function">log</span><span class="token punctuation">(</span>aligned <span class="token operator">?</span> <span class="token string">"Aligned"</span> <span class="token operator">:</span> <span class="token string">"Alignment failed safely"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
 <span class="token punctuation">}</span> <span class="token keyword">finally</span> <span class="token punctuation">{</span>
@@ -256,7 +261,7 @@
       </figcaption>
       <pre><code class="language-python">take_off<span class="token punctuation">(</span><span class="token punctuation">)</span>
 <span class="token keyword">try</span><span class="token punctuation">:</span>
-    aligned <span class="token operator">=</span> center_on_april_tag<span class="token punctuation">(</span><span class="token builtin">id</span><span class="token operator">=</span><span class="token number">7</span><span class="token punctuation">,</span> power<span class="token operator">=</span><span class="token number">10</span><span class="token punctuation">,</span> center_slack<span class="token operator">=</span><span class="token number">5</span><span class="token punctuation">,</span> angle_slack<span class="token operator">=</span><span class="token number">5</span><span class="token punctuation">,</span> lost_searches<span class="token operator">=</span><span class="token number">3</span><span class="token punctuation">)</span>
+    aligned <span class="token operator">=</span> center_on_april_tag<span class="token punctuation">(</span><span class="token builtin">id</span><span class="token operator">=</span><span class="token number">7</span><span class="token punctuation">,</span> power<span class="token operator">=</span><span class="token number">10</span><span class="token punctuation">,</span> center_slack<span class="token operator">=</span><span class="token number">5</span><span class="token punctuation">,</span> angle_slack<span class="token operator">=</span><span class="token number">5</span><span class="token punctuation">,</span> lost_searches<span class="token operator">=</span><span class="token number">3</span><span class="token punctuation">,</span> rescan_delay<span class="token operator">=</span><span class="token number">0.5</span><span class="token punctuation">)</span>
     <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"aligned:"</span><span class="token punctuation">,</span> aligned<span class="token punctuation">)</span>
 <span class="token keyword">finally</span><span class="token punctuation">:</span>
     reset_motion<span class="token punctuation">(</span><span class="token punctuation">)</span>

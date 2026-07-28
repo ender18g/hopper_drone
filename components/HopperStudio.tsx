@@ -50,6 +50,7 @@ import {
 } from "../lib/python";
 import { JAVASCRIPT_STARTER_PROGRAM } from "../lib/coding-starters";
 import { INFORMATION_LESSONS } from "../lib/information-lessons.metadata.generated";
+import CodeQuickReference from "./CodeQuickReference";
 import InformationLessonLauncher from "./InformationLessonLauncher";
 import SimulatedDroneArea from "./SimulatedDroneArea";
 import wrcLogo from "../logos/wrc_logo.png?inline";
@@ -343,9 +344,12 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   }, [appendLog, missionPhotos]);
 
   const openSimulatorWindow = useCallback(() => {
+    const touchDevice =
+      navigator.maxTouchPoints > 0 ||
+      window.matchMedia("(pointer: coarse), (any-pointer: coarse)").matches;
     const useInlineSimulator = window.matchMedia(
-      "(max-width: 900px), (pointer: coarse) and (max-width: 1180px)",
-    ).matches;
+      "(max-width: 900px)",
+    ).matches || touchDevice;
     if (useInlineSimulator) {
       simulatorWindowRef.current = null;
       setSimulatorWindow(null);
@@ -812,7 +816,8 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
       await disconnectSimulation();
       return;
     }
-    if (!openSimulatorWindow()) return;
+    const simulatorSurface = openSimulatorWindow();
+    if (!simulatorSurface) return;
     if (controllerRef.current) {
       runtimeRef.current?.stop();
       controllerRef.current.disconnect();
@@ -820,7 +825,9 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
       setConnectionState("disconnected");
       setDroneName("No drone selected");
     }
-    const controller = new SimulatedDroneController();
+    const controller = new SimulatedDroneController(
+      simulatorSurface === true ? window : simulatorSurface,
+    );
     controller.onTelemetry = setTelemetry;
     controller.onEvent = (eventName) => appendLog("Simulator event:", eventName);
     simulationControllerRef.current = controller;
@@ -971,6 +978,9 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
         controller.abortRun();
       },
       (blockId) => workspaceRef.current?.highlightBlock(blockId),
+      simulationControllerRef.current
+        ? simulatorWindowRef.current ?? window
+        : window,
     );
     runtimeRef.current = runtime;
     setRunning(true);
@@ -1727,6 +1737,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
           )}
           {editorMode === "python" && (
             <div className="python-editor">
+              <CodeQuickReference language="python" />
               <div ref={pythonLineNumbersRef} className="line-numbers" aria-hidden="true">
                 {pythonCode.split("\n").map((_, index) => <span key={index}>{index + 1}</span>)}
               </div>
@@ -1754,6 +1765,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
           )}
           {editorMode === "javascript" && (
             <div className="javascript-editor">
+              <CodeQuickReference language="javascript" />
               <div ref={javascriptLineNumbersRef} className="line-numbers" aria-hidden="true">
                 {javascriptCode.split("\n").map((_, index) => <span key={index}>{index + 1}</span>)}
               </div>
@@ -2017,7 +2029,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
               <span className="white"><small>WHITE IN FRAME</small><b>{thresholdResult ? `${thresholdResult.whiteCoverage.toFixed(1)}%` : "—"}</b></span>
               <span className="black"><small>BLACK IN FRAME</small><b>{thresholdResult ? `${thresholdResult.blackCoverage.toFixed(1)}%` : "—"}</b></span>
               <span className={thresholdResult?.centerWhite ? "white" : "black"}>
-                <small>CENTER PIXEL</small><b>{thresholdResult ? thresholdResult.centerWhite ? "WHITE" : "BLACK" : "—"}</b>
+                <small>PIXEL X 0 · Y 0</small><b>{thresholdResult ? thresholdResult.centerWhite ? "WHITE" : "BLACK" : "—"}</b>
               </span>
             </div>
             <div className="threshold-actions">

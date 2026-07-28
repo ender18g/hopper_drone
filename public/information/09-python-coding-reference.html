@@ -241,8 +241,8 @@
         <div class="lesson-api__detail"><b>bool</b><p>Fresh scan; color is white or black; coverage is percent.</p></div>
       </article>
       <article class="lesson-api__item">
-        <div class="lesson-api__signature">binary_center(color, threshold=60, invert=False)</div>
-        <div class="lesson-api__detail"><b>bool</b><p>Fresh scan; checks only the center pixel.</p></div>
+        <div class="lesson-api__signature">binary_at(color, x=0, y=0, threshold=60, invert=False)</div>
+        <div class="lesson-api__detail"><b>bool</b><p>Fresh scan at one normalized pixel. Center is 0,0; top right is 100,100.</p></div>
       </article>
       <article class="lesson-api__item">
         <div class="lesson-api__signature">load_object_model()</div>
@@ -269,6 +269,10 @@
         <div class="lesson-api__detail"><b>number</b><p>Convenience wrappers for stored x or y.</p></div>
       </article>
       <article class="lesson-api__item">
+        <div class="lesson-api__signature">center_on_object(label, power=10, confidence=0.55, center_slack=5, lost_searches=3, rescan_delay=0.5)</div>
+        <div class="lesson-api__detail"><b>bool</b><p>Bounded object-box centering loop using roll/pitch only. It never changes yaw.</p></div>
+      </article>
+      <article class="lesson-api__item">
         <div class="lesson-api__signature">scan_april_tags()</div>
         <div class="lesson-api__detail"><b>tag detections</b><p>Fresh tag36h11 scan.</p></div>
       </article>
@@ -277,8 +281,8 @@
         <div class="lesson-api__detail"><b>bool</b><p>Fresh scan; any or ID 0…586.</p></div>
       </article>
       <article class="lesson-api__item">
-        <div class="lesson-api__signature">center_on_april_tag(id=&quot;any&quot;, power=10, center_slack=5, angle_slack=5, lost_searches=3)</div>
-        <div class="lesson-api__detail"><b>bool</b><p>Bounded 2D centering/alignment loop; no altitude or distance control.</p></div>
+        <div class="lesson-api__signature">center_on_april_tag(id=&quot;any&quot;, power=10, center_slack=5, angle_slack=5, lost_searches=3, rescan_delay=0.5)</div>
+        <div class="lesson-api__detail"><b>bool</b><p>Bounded 2D centering/alignment loop that waits for a level image before rescanning.</p></div>
       </article>
       <article class="lesson-api__item">
         <div class="lesson-api__signature">scan_custom_model()</div>

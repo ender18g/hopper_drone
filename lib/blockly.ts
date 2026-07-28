@@ -348,7 +348,7 @@ export function registerHopperBlocks() {
     },
     {
       type: "vision_binary_center",
-      message0: "camera sees binary %1 at center pixel with threshold at %2 %% invert %3",
+      message0: "camera sees binary %1 at x %2 y %3 with threshold at %4 %% invert %5",
       args0: [
         {
           type: "field_dropdown",
@@ -358,13 +358,16 @@ export function registerHopperBlocks() {
             ["black", "black"],
           ],
         },
+        { type: "input_value", name: "X", check: "Number" },
+        { type: "input_value", name: "Y", check: "Number" },
         { type: "input_value", name: "THRESHOLD", check: "Number" },
         { type: "field_checkbox", name: "INVERT", checked: false },
       ],
       output: "Boolean",
       inputsInline: true,
       colour: VISION,
-      tooltip: "Scans the camera and checks only the pixel at the center reticle.",
+      tooltip:
+        "Scans and checks one X/Y pixel. The center is 0,0; the top right is 100,100; the bottom left is -100,-100.",
     },
     {
       type: "vision_detect_objects",
@@ -446,40 +449,142 @@ export function registerHopperBlocks() {
   const settingsIcon = `data:image/svg+xml,${encodeURIComponent(
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="white" d="M19.4 13a7.7 7.7 0 0 0 .1-1 7.7 7.7 0 0 0-.1-1l2.1-1.6-2-3.4-2.5 1a7.9 7.9 0 0 0-1.7-1L15 3.3h-4L10.6 6a7.9 7.9 0 0 0-1.7 1L6.4 6l-2 3.4L6.5 11a7.7 7.7 0 0 0-.1 1 7.7 7.7 0 0 0 .1 1l-2.1 1.6 2 3.4 2.5-1a7.9 7.9 0 0 0 1.7 1l.4 2.7h4l.4-2.7a7.9 7.9 0 0 0 1.7-1l2.5 1 2-3.4L19.4 13ZM13 15.5A3.5 3.5 0 1 1 13 8a3.5 3.5 0 0 1 0 7.5Z"/></svg>',
   )}`;
+  const toggleSettings = (
+    field: Blockly.FieldImage,
+    inputNames: string[],
+  ) => {
+    const source = field.getSourceBlock();
+    const inputs = inputNames
+      .map((name) => source?.getInput(name))
+      .filter((input): input is Blockly.Input => Boolean(input));
+    const show = !inputs[0]?.isVisible();
+    inputs.forEach((input) => input.setVisible(show));
+    (source as Blockly.BlockSvg | null)?.render();
+  };
+  const appendSettingsButton = (
+    block: Blockly.Block,
+    inputNames: string[],
+    label: string,
+  ) => {
+    block.appendDummyInput("SETTINGS_TOGGLE")
+      .appendField(new Blockly.FieldImage(settingsIcon, 18, 18, label, (field) => {
+        toggleSettings(field, inputNames);
+      }))
+      .appendField("settings");
+  };
+
+  Blockly.Blocks.vision_center_object = {
+    init() {
+      this.appendValueInput("LABEL")
+        .setCheck("String")
+        .appendField("center on object");
+      this.appendValueInput("POWER")
+        .setCheck("Number")
+        .appendField("roll/pitch power");
+      this.appendDummyInput("SETTINGS_HEADING")
+        .appendField("CENTERING SETTINGS")
+        .setVisible(false);
+      this.appendDummyInput("CONFIDENCE_SETTING")
+        .appendField("— detection confidence")
+        .appendField(new Blockly.FieldNumber(55, 1, 100, 1), "CONFIDENCE")
+        .appendField("%")
+        .setVisible(false);
+      this.appendDummyInput("CENTER_SETTING")
+        .appendField("— center tolerance")
+        .appendField(new Blockly.FieldNumber(5, 1, 35, 1), "CENTER_SLACK")
+        .appendField("%")
+        .setVisible(false);
+      this.appendDummyInput("RESCAN_SETTING")
+        .appendField("— rescan after roll/pitch")
+        .appendField(new Blockly.FieldNumber(0.5, 0, 5, 0.1), "RESCAN_DELAY")
+        .appendField("seconds")
+        .setVisible(false);
+      this.appendDummyInput("LOST_SETTING")
+        .appendField("— give up after")
+        .appendField(new Blockly.FieldNumber(3, 1, 20, 1), "LOST_SEARCHES")
+        .appendField("lost object scans")
+        .setVisible(false);
+      appendSettingsButton(
+        this,
+        [
+          "SETTINGS_HEADING",
+          "CONFIDENCE_SETTING",
+          "CENTER_SETTING",
+          "RESCAN_SETTING",
+          "LOST_SETTING",
+        ],
+        "Object centering settings",
+      );
+      this.setPreviousStatement(true);
+      this.setNextStatement(true);
+      this.setInputsInline(false);
+      this.setColour(DRONE);
+      this.setTooltip(
+        "Centers the requested object-detection bounding box with roll and pitch only. It never changes yaw. The settings control confidence, exit tolerance, post-correction rescan delay, and missed scans.",
+      );
+    },
+  };
+
   Blockly.Blocks.vision_center_apriltag = {
     init() {
       this.appendDummyInput()
         .appendField("center on april tag")
-        .appendField(new Blockly.FieldDropdown(APRIL_TAG_OPTIONS as [string, string][]), "TAG_ID")
-        .appendField("at");
-      this.appendValueInput("POWER").setCheck("Number").appendField("roll/pitch %");
-      this.appendDummyInput("SLACK_SETTINGS")
-        .appendField("finish within")
-        .appendField(new Blockly.FieldNumber(5, 1, 35, 1), "CENTER_SLACK")
-        .appendField("% center and")
-        .appendField(new Blockly.FieldNumber(5, 1, 45, 1), "ANGLE_SLACK")
-        .appendField("° alignment; give up after")
-        .appendField(new Blockly.FieldNumber(3, 1, 20, 1), "LOST_SEARCHES")
-        .appendField("lost tag searches")
+        .appendField(new Blockly.FieldDropdown(APRIL_TAG_OPTIONS as [string, string][]), "TAG_ID");
+      this.appendValueInput("POWER")
+        .setCheck("Number")
+        .appendField("roll/pitch power");
+      this.appendDummyInput("SETTINGS_HEADING")
+        .appendField("CENTERING SETTINGS")
         .setVisible(false);
-      this.appendDummyInput()
-        .appendField(new Blockly.FieldImage(settingsIcon, 18, 18, "Alignment settings", (field) => {
-          const source = field.getSourceBlock();
-          const input = source?.getInput("SLACK_SETTINGS");
-          if (!input) return;
-          input.setVisible(!input.isVisible());
-          (source as Blockly.BlockSvg | null)?.render();
-        }));
+      this.appendDummyInput("CENTER_SETTING")
+        .appendField("— center tolerance")
+        .appendField(new Blockly.FieldNumber(5, 1, 35, 1), "CENTER_SLACK")
+        .appendField("%")
+        .setVisible(false);
+      this.appendDummyInput("ANGLE_SETTING")
+        .appendField("— yaw tolerance")
+        .appendField(new Blockly.FieldNumber(5, 1, 45, 1), "ANGLE_SLACK")
+        .appendField("°")
+        .setVisible(false);
+      this.appendDummyInput("RESCAN_SETTING")
+        .appendField("— rescan after roll/pitch")
+        .appendField(new Blockly.FieldNumber(0.5, 0, 5, 0.1), "RESCAN_DELAY")
+        .appendField("seconds")
+        .setVisible(false);
+      this.appendDummyInput("LOST_SETTING")
+        .appendField("— give up after")
+        .appendField(new Blockly.FieldNumber(3, 1, 20, 1), "LOST_SEARCHES")
+        .appendField("lost tag scans")
+        .setVisible(false);
+      appendSettingsButton(
+        this,
+        [
+          "SETTINGS_HEADING",
+          "CENTER_SETTING",
+          "ANGLE_SETTING",
+          "RESCAN_SETTING",
+          "LOST_SETTING",
+        ],
+        "AprilTag centering settings",
+      );
       this.setPreviousStatement(true);
       this.setNextStatement(true);
-      this.setInputsInline(true);
+      this.setInputsInline(false);
       this.setColour(DRONE);
-      this.setTooltip("Scans after every movement, centers the tag, then aligns the drone forward axis with the tag x axis. The gear changes exit tolerances and missed-scan limit.");
+      this.setTooltip(
+        "Centers the tag, waits for a level image after roll/pitch, then aligns yaw. The settings control both tolerances, rescan delay, and missed scans.",
+      );
     },
   };
 
   const value = (block: Blockly.Block, name: string, fallback = "0") =>
     javascriptGenerator.valueToCode(block, name, Order.ATOMIC) || fallback;
+  const fieldNumber = (block: Blockly.Block, name: string, fallback: number) => {
+    const raw = block.getFieldValue(name);
+    if (raw === null || raw === undefined || raw === "") return fallback;
+    const numeric = Number(raw);
+    return Number.isFinite(numeric) ? numeric : fallback;
+  };
   const activeStatement = (block: Blockly.Block, statement: string) =>
     `await runtime.runBlock(${JSON.stringify(block.id)}, async () => {\n${statement}});\n`;
   const activeExpression = (block: Blockly.Block, expression: string) => [
@@ -572,7 +677,7 @@ export function registerHopperBlocks() {
   );
   javascriptGenerator.forBlock.vision_binary_center = (block) => activeExpression(
     block,
-    `await vision.binaryCenter("${block.getFieldValue("COLOR")}", ${value(block, "THRESHOLD", "60")}, ${block.getFieldValue("INVERT") === "TRUE"})`,
+    `await vision.binaryAt("${block.getFieldValue("COLOR")}", ${value(block, "X", "0")}, ${value(block, "Y", "0")}, ${value(block, "THRESHOLD", "60")}, ${block.getFieldValue("INVERT") === "TRUE"})`,
   );
   javascriptGenerator.forBlock.vision_detect_objects = (block) =>
     activeStatement(block, "await vision.detectObjects();\n");
@@ -594,9 +699,13 @@ export function registerHopperBlocks() {
     block,
     `await vision.seesAprilTag(${JSON.stringify(block.getFieldValue("TAG_ID"))})`,
   );
+  javascriptGenerator.forBlock.vision_center_object = (block) => activeStatement(
+    block,
+    `await vision.centerOnObject(drone, ${value(block, "LABEL", '"person"')}, ${value(block, "POWER", "10")}, ${fieldNumber(block, "CONFIDENCE", 55) / 100}, ${fieldNumber(block, "CENTER_SLACK", 5)}, ${fieldNumber(block, "LOST_SEARCHES", 3)}, ${Math.max(0, fieldNumber(block, "RESCAN_DELAY", 0.5))});\n`,
+  );
   javascriptGenerator.forBlock.vision_center_apriltag = (block) => activeStatement(
     block,
-    `await vision.centerOnAprilTag(drone, ${JSON.stringify(block.getFieldValue("TAG_ID"))}, ${value(block, "POWER", "10")}, ${Number(block.getFieldValue("CENTER_SLACK")) || 5}, ${Number(block.getFieldValue("ANGLE_SLACK")) || 5}, ${Number(block.getFieldValue("LOST_SEARCHES")) || 3});\n`,
+    `await vision.centerOnAprilTag(drone, ${JSON.stringify(block.getFieldValue("TAG_ID"))}, ${value(block, "POWER", "10")}, ${fieldNumber(block, "CENTER_SLACK", 5)}, ${fieldNumber(block, "ANGLE_SLACK", 5)}, ${fieldNumber(block, "LOST_SEARCHES", 3)}, ${Math.max(0, fieldNumber(block, "RESCAN_DELAY", 0.5))});\n`,
   );
 
   const asyncProcedureDefinition = (
@@ -687,6 +796,14 @@ export const hopperToolbox: Blockly.utils.toolbox.ToolboxDefinition = {
             },
             {
               kind: "block",
+              type: "vision_center_object",
+              inputs: {
+                LABEL: { shadow: { type: "text", fields: { TEXT: "person" } } },
+                POWER: numberShadow(10),
+              },
+            },
+            {
+              kind: "block",
               type: "minidrone_rotate",
               inputs: { DEGREES: numberShadow(90) },
             },
@@ -736,7 +853,11 @@ export const hopperToolbox: Blockly.utils.toolbox.ToolboxDefinition = {
         {
           kind: "block",
           type: "vision_binary_center",
-          inputs: { THRESHOLD: numberShadow(60) },
+          inputs: {
+            X: numberShadow(0),
+            Y: numberShadow(0),
+            THRESHOLD: numberShadow(60),
+          },
         },
         { kind: "block", type: "vision_detect_objects" },
         {

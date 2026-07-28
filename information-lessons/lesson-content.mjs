@@ -588,7 +588,8 @@ export const lessons = [
               ["land", "None", "Zeros motion, sends land, and waits for the landing interval."],
               ["hover", "None", "Zeros all axes and waits 1 second."],
               ["fly", "Direction; 1 s; 15% power", "Directions: forward, backward, left, right, up, down. Block power is a positive percentage."],
-              ["center on AprilTag", "ID; 10% power; optional tolerances", "Pulses roll/pitch, rescans, then corrects image-plane yaw. It does not control height or distance."],
+              ["center on object", "Object label; 10% power; grouped settings", "Centers the matching bounding box with roll/pitch only. It does not change yaw."],
+              ["center on AprilTag", "ID; 10% power; grouped settings", "Pulses roll/pitch, waits for a level image, rescans, then corrects image-plane yaw."],
               ["rotate", "Degrees; clockwise/counterclockwise; default 90°", "Uses a nominal 180°/s yaw command, then settles."],
               ["flip", "Forward/backward/left/right", "Runs the accessory maneuver and waits 2.5 seconds. Use only with clearance."],
               ["set pitch/roll/yaw/altitude", "Signed −100…100%", "Persists until reset or another command. “Altitude” maps to the gaz/throttle-like axis."],
@@ -619,7 +620,7 @@ export const lessons = [
             ["Block", "Inputs / defaults", "Fresh scan?"],
             [
               ["camera sees binary", "White/black; threshold 60%; invert; coverage 10%", "Yes. Returns a boolean after measuring full-frame coverage."],
-              ["binary center pixel", "White/black; threshold 60%; invert", "Yes. Checks only the center reticle pixel."],
+              ["binary at X/Y pixel", "White/black; X 0; Y 0; threshold 60%; invert", "Yes. Center is 0,0 and top right is 100,100."],
               ["scan for objects", "Model confidence comes from the Vision panel", "Yes. Saves up to 10 real detections."],
               ["camera sees object", "Exact COCO label; confidence 55%", "Yes. Confidence is entered as a percentage in blocks."],
               ["x/y coordinate of object", "Label; confidence 55%", "No. Reads the last stored matching coordinate; right/up are positive."],
@@ -755,14 +756,15 @@ export const lessons = [
           ${apiList([
             { signature: "await vision.scanThreshold(threshold = 60, invert = false, announceScan = true)", label: "ThresholdResult", detail: "Fresh scan at up to 320 px wide. Threshold clamps to 0…100. Result fields: threshold, invert, whiteCoverage, blackCoverage, centerWhite, frameWidth, frameHeight, binaryData. Set announceScan false only to suppress the Studio scan animation/event." },
             { signature: "await vision.seesBinary(color, threshold = 60, invert = false, minimumCoverage = 10)", label: "boolean", detail: "Fresh scan. Color is white or black. Coverage clamps to 0…100%." },
-            { signature: "await vision.binaryCenter(color, threshold = 60, invert = false)", label: "boolean", detail: "Fresh scan; tests only the center reticle pixel." },
+            { signature: "await vision.binaryAt(color, x = 0, y = 0, threshold = 60, invert = false)", label: "boolean", detail: "Fresh scan at one normalized pixel. Center is 0,0; top right is 100,100; bottom left is −100,−100." },
             { signature: "await vision.loadObjectModel()", label: "ObjectDetection", detail: "Loads the local COCO-SSD model once. Requires a local/hosted server; direct file:// loading is unsupported." },
             { signature: "await vision.detectObjects(minimumConfidence = 0.55, announceScan = true)", label: "VisionDetection[]", detail: "Fresh scan. Confidence is 0…1. Real inference returns at most 10 boxes with bbox, class, score, frame size, centerX, and centerY. Set announceScan false only to suppress the Studio scan animation/event." },
             { signature: "await vision.seesObject(label, minimumConfidence = 0.55)", label: "boolean", detail: "Fresh scan and case-insensitive exact COCO class match." },
             { signature: "vision.objectCoordinate(label, axis, minimumConfidence = 0.55)", label: "number", detail: "No fresh scan. Reads the last stored coordinate for x or y, from −100 to +100; right/up are positive. Returns 0 before a match or when stored confidence is too low." },
+            { signature: "await vision.centerOnObject(drone, label, translationPower = 10, minimumConfidence = 0.55, centerSlack = 5, lostObjectSearches = 3, rescanDelay = 0.5)", label: "boolean", detail: "Pulses roll/pitch toward the matching bounding-box center for up to 30 seconds. It levels the drone and waits before each rescan. No yaw, altitude, distance, or collision control." },
             { signature: "await vision.scanAprilTags(announceScan = true)", label: "AprilTagDetection[]", detail: "Fresh tag36h11 scan at up to 520 px wide. Set announceScan false only to suppress the Studio scan animation/event." },
             { signature: "await vision.seesAprilTag(id = \"any\")", label: "boolean", detail: "Fresh scan. ID is any or a number from 0 through 586." },
-            { signature: "await vision.centerOnAprilTag(drone, id = \"any\", translationPower = 10, centerSlack = 5, angleSlack = 5, lostTagSearches = 3)", label: "boolean", detail: "Pulses roll/pitch and image-plane yaw for up to 30 seconds. Returns true only when position and angle tolerances are met. No altitude, distance, or collision control." },
+            { signature: "await vision.centerOnAprilTag(drone, id = \"any\", translationPower = 10, centerSlack = 5, angleSlack = 5, lostTagSearches = 3, rescanDelay = 0.5)", label: "boolean", detail: "Pulses roll/pitch, waits for a level image before rescanning, and corrects image-plane yaw for up to 30 seconds. No altitude, distance, or collision control." },
             { signature: "await vision.loadCustomModel(modelFile, weightsFile, metadataFile)", label: "Promise<string[]> · advanced", detail: "Loads the three Teachable Machine File objects and returns their metadata labels. The Vision Testing file picker normally owns this step." },
             { signature: "await vision.classifyCustomModel(announceScan = true)", label: "CustomPrediction[]", detail: "Fresh whole-frame Teachable Machine classification. Requires model.json, weights.bin, and metadata.json loaded in Vision Testing. Set announceScan false only to suppress the Studio scan animation/event." },
             { signature: "await vision.seesCustomLabel(label, minimumConfidence = 0.75)", label: "boolean", detail: "Fresh classification and case-insensitive exact label match." },
@@ -871,7 +873,7 @@ export const lessons = [
     level: "Vision foundations",
     objectives: [
       "Compute luminance from RGB pixels and map a percentage threshold to 0…255.",
-      "Distinguish whole-frame coverage from a center-pixel test.",
+      "Distinguish whole-frame coverage from a normalized X/Y pixel test.",
       "Calibrate with representative light and background conditions.",
       "Use repeated evidence or hysteresis instead of one brittle frame.",
     ],
@@ -912,12 +914,12 @@ export const lessons = [
           )}
           ${cards([
             { tag: "Whole frame", title: "seesBinary", body: "Useful for large regions: a white landing sheet, dark doorway, or broad lighting change. It compares coverage with a minimum percentage." },
-            { tag: "Single reticle", title: "binaryCenter", body: "Useful for alignment. It checks the one pixel at the image center, so it is sensitive to noise and tiny shifts." },
+            { tag: "Single coordinate", title: "binaryAt", body: "Checks one normalized X/Y pixel. The default 0,0 is the reticle; 100,100 is the top right. A one-pixel test is sensitive to noise and tiny shifts." },
           ])}
           <p>A center test can be true while total coverage is nearly zero. Conversely, a bright wall can dominate coverage even while the center points at a dark target.</p>
           ${check(
             "A white card covers 8% of the frame and the center reticle is on it. What can each test report?",
-            "<p><code>binaryCenter(\"white\", 60)</code> can be true. <code>seesBinary(\"white\", 60, false, 10)</code> is false because 8% is below the 10% coverage requirement.</p>",
+            "<p><code>binaryAt(\"white\", 0, 0, 60)</code> can be true. <code>seesBinary(\"white\", 60, false, 10)</code> is false because 8% is below the 10% coverage requirement.</p>",
           )}
         `,
       },
@@ -966,19 +968,19 @@ export const lessons = [
             "",
             "console.log(`Confirming frames: ${confirmingFrames}/3`);",
           ].join("\n"))}
-          ${codeBlock("python", "Python · center and coverage are separate tests", [
+          ${codeBlock("python", "Python · one X/Y pixel and coverage are separate tests", [
             "threshold = 60",
             "coverage = 10",
             "",
             "enough_white = sees_binary(\"white\", threshold=threshold, invert=False, coverage=coverage)",
-            "center_is_white = binary_center(\"white\", threshold=threshold, invert=False)",
+            "center_is_white = binary_at(\"white\", x=0, y=0, threshold=threshold, invert=False)",
             "",
             "print(\"area:\", enough_white, \"center:\", center_is_white)",
           ].join("\n"))}
           ${apiList([
             { signature: "scanThreshold(threshold = 60, invert = false)", label: "Measure", detail: "Returns both coverages, centerWhite, frame size, and binary pixel data." },
             { signature: "seesBinary(color, threshold = 60, invert = false, minimumCoverage = 10)", label: "Decide", detail: "Fresh scan and a whole-frame percentage comparison." },
-            { signature: "binaryCenter(color, threshold = 60, invert = false)", label: "Align", detail: "Fresh scan and a single center-pixel comparison." },
+            { signature: "binaryAt(color, x = 0, y = 0, threshold = 60, invert = false)", label: "Align", detail: "Fresh scan and one normalized X/Y pixel comparison." },
           ])}
         `,
       },
@@ -994,7 +996,7 @@ export const lessons = [
           ])}
           ${callout(
             "Flight decision rule",
-            "Never make a high-consequence maneuver from one center pixel. Combine area, repeated frames, timeouts, and a safe fallback such as hover or land.",
+            "Never make a high-consequence maneuver from one sampled pixel. Combine area, repeated frames, timeouts, and a safe fallback such as hover or land.",
             "caution",
           )}
         `,
@@ -1462,13 +1464,14 @@ export const lessons = [
         id: "centering",
         title: "The centering command is a bounded feedback loop",
         html: `
-          <p><code>centerOnAprilTag</code> scans after every movement. It corrects the dominant center error with a short roll or pitch pulse, stabilizes, rescans, and only then corrects image-plane yaw.</p>
+          <p><code>centerOnAprilTag</code> scans after every movement. It corrects the dominant center error with a short roll or pitch pulse, levels the drone, waits for the configured rescan delay, and only then reads a new image. This avoids measuring a target while roll or pitch is distorting its image position. Yaw alignment follows after X/Y centering.</p>
           ${apiList([
             { signature: "id = \"any\"", label: "Target", detail: "Use any or a rounded numeric ID. any chooses the visible tag nearest image center." },
             { signature: "translationPower = 10", label: "0…100%", detail: "Clamped motor-control percentage used for roll/pitch correction pulses." },
             { signature: "centerSlack = 5", label: "1…35%", detail: "Required absolute x and y image error before translation is considered centered." },
             { signature: "angleSlack = 5", label: "1…45°", detail: "Required absolute image-plane yaw error." },
             { signature: "lostTagSearches = 3", label: "1…20 scans", detail: "Consecutive missed scans allowed before returning false." },
+            { signature: "rescanDelay = 0.5", label: "0…5 seconds", detail: "Wait after each roll/pitch correction and reset before capturing the next image." },
             { signature: "30-second hard deadline", label: "Timeout", detail: "Returns false and resets movement if the loop cannot finish in time." },
           ])}
           ${codeBlock("javascript", "Center, check return value, and land", [
@@ -1481,6 +1484,7 @@ export const lessons = [
             "    5,  // center slack %",
             "    5,  // angle slack degrees",
             "    3,  // allowed lost scans",
+            "    0.5 // wait after roll/pitch before rescan",
             "  );",
             "  console.log(aligned ? \"Aligned\" : \"Alignment failed safely\");",
             "} finally {",
@@ -1510,7 +1514,7 @@ export const lessons = [
           ${codeBlock("python", "Python · a conservative tag check", [
             "take_off()",
             "try:",
-            "    aligned = center_on_april_tag(id=7, power=10, center_slack=5, angle_slack=5, lost_searches=3)",
+            "    aligned = center_on_april_tag(id=7, power=10, center_slack=5, angle_slack=5, lost_searches=3, rescan_delay=0.5)",
             "    print(\"aligned:\", aligned)",
             "finally:",
             "    reset_motion()",
@@ -1615,16 +1619,17 @@ export const lessons = [
           ${apiList([
             { signature: "scan_threshold(threshold=60, invert=False)", label: "ThresholdResult", detail: "Fresh binary scan. Fields use camelCase: whiteCoverage, blackCoverage, centerWhite, frameWidth, frameHeight." },
             { signature: "sees_binary(color, threshold=60, invert=False, coverage=10)", label: "bool", detail: "Fresh scan; color is white or black; coverage is percent." },
-            { signature: "binary_center(color, threshold=60, invert=False)", label: "bool", detail: "Fresh scan; checks only the center pixel." },
+            { signature: "binary_at(color, x=0, y=0, threshold=60, invert=False)", label: "bool", detail: "Fresh scan at one normalized pixel. Center is 0,0; top right is 100,100." },
             { signature: "load_object_model()", label: "model", detail: "Loads the local COCO-SSD model. Usually the first object scan can load it automatically." },
             { signature: "scan_objects(confidence=0.55)", label: "detections", detail: "Fresh COCO-SSD scan. Confidence is 0…1." },
             { signature: "detect_objects(confidence=0.55)", label: "detections", detail: "Exact alias of scan_objects." },
             { signature: "sees_object(label, confidence=0.55)", label: "bool", detail: "Fresh scan and exact case-insensitive COCO label." },
             { signature: "object_coordinate(label, axis, confidence=0.55)", label: "number", detail: "Stored coordinate, no fresh scan. Axis x or y; −100…100; right/up positive." },
             { signature: "object_x(label, confidence=0.55) / object_y(...)", label: "number", detail: "Convenience wrappers for stored x or y." },
+            { signature: "center_on_object(label, power=10, confidence=0.55, center_slack=5, lost_searches=3, rescan_delay=0.5)", label: "bool", detail: "Bounded object-box centering loop using roll/pitch only. It never changes yaw." },
             { signature: "scan_april_tags()", label: "tag detections", detail: "Fresh tag36h11 scan." },
             { signature: "sees_april_tag(id=\"any\")", label: "bool", detail: "Fresh scan; any or ID 0…586." },
-            { signature: "center_on_april_tag(id=\"any\", power=10, center_slack=5, angle_slack=5, lost_searches=3)", label: "bool", detail: "Bounded 2D centering/alignment loop; no altitude or distance control." },
+            { signature: "center_on_april_tag(id=\"any\", power=10, center_slack=5, angle_slack=5, lost_searches=3, rescan_delay=0.5)", label: "bool", detail: "Bounded 2D centering/alignment loop that waits for a level image before rescanning." },
             { signature: "scan_custom_model()", label: "predictions", detail: "Fresh whole-frame Teachable Machine classification." },
             { signature: "sees_custom_label(label, confidence=0.75)", label: "bool", detail: "Fresh classification and exact label." },
           ])}

@@ -54,6 +54,15 @@ export type CapturedPhoto = {
 const clampCoordinate = (value: number) => Math.max(-100, Math.min(100, value));
 const clampPercent = (value: number) => Math.max(0, Math.min(100, Number(value) || 0));
 
+export const normalizedCoordinateToPixel = (
+  coordinate: ObjectCoordinate,
+  frameWidth: number,
+  frameHeight: number,
+) => ({
+  x: Math.round(((clampCoordinate(Number(coordinate.x) || 0) + 100) / 200) * Math.max(0, frameWidth - 1)),
+  y: Math.round(((100 - clampCoordinate(Number(coordinate.y) || 0)) / 200) * Math.max(0, frameHeight - 1)),
+});
+
 export const analyzeThreshold = (
   data: Uint8ClampedArray,
   width: number,
@@ -165,9 +174,27 @@ export class VisionRuntime {
     return coverage >= clampPercent(minimumCoverage);
   }
 
-  async binaryCenter(color: BinaryColor, threshold = 60, invert = false) {
+  async binaryAt(
+    color: BinaryColor,
+    x = 0,
+    y = 0,
+    threshold = 60,
+    invert = false,
+  ) {
     const result = await this.scanThreshold(threshold, invert);
-    return color === "white" ? result.centerWhite : !result.centerWhite;
+    const pixel = normalizedCoordinateToPixel(
+      { x, y },
+      result.frameWidth,
+      result.frameHeight,
+    );
+    const index = (pixel.y * result.frameWidth + pixel.x) * 4;
+    const pixelIsWhite = result.binaryData[index] === 255;
+    return color === "white" ? pixelIsWhite : !pixelIsWhite;
+  }
+
+  /** Compatibility alias for projects saved before coordinate sampling was added. */
+  async binaryCenter(color: BinaryColor, threshold = 60, invert = false) {
+    return this.binaryAt(color, 0, 0, threshold, invert);
   }
 
   async loadObjectModel() {
@@ -251,6 +278,113 @@ export class VisionRuntime {
       : 0;
   }
 
+  async centerOnObject(
+    drone: DroneController,
+    label: string,
+    translationPower = 10,
+    minimumConfidence = 0.55,
+    centerSlack = 5,
+    lostObjectSearches = 3,
+    rescanDelay = 0.5,
+  ) {
+    const wanted = String(label).trim().toLowerCase();
+    const safeTranslationPower = clampPercent(translationPower);
+    const safeConfidence = Math.max(0.01, Math.min(1, Number(minimumConfidence) || 0.55));
+    const safeCenterSlack = Math.max(1, Math.min(35, Number(centerSlack) || 5));
+    const safeLostObjectSearches = Math.max(
+      1,
+      Math.min(20, Math.round(Number(lostObjectSearches) || 3)),
+    );
+    const safeRescanDelay = Math.max(0, Math.min(5, Number(rescanDelay) || 0));
+    const deadline = performance.now() + 30_000;
+    let misses = 0;
+    const signed = (value: number) => {
+      const rounded = Math.round(value * 10) / 10;
+      return rounded > 0 ? `+${rounded}` : String(rounded);
+    };
+
+    if (!wanted) {
+      this.onLog("Object centering: enter an object detection label.");
+      return false;
+    }
+    this.onLog(`Object centering: looking for “${wanted}”.`);
+
+    while (!drone.cancelRunFlag && performance.now() < deadline) {
+      const detections = await this.detectObjects(safeConfidence, true);
+      const target = detections
+        .filter(
+          (detection) =>
+            detection.class.trim().toLowerCase() === wanted &&
+            detection.score >= safeConfidence,
+        )
+        .sort(
+          (left, right) =>
+            Math.hypot(left.centerX, left.centerY) -
+            Math.hypot(right.centerX, right.centerY),
+        )[0];
+      if (!target) {
+        misses += 1;
+        this.onLog(
+          `Object centering: “${wanted}” not detected — search ${misses} of ${safeLostObjectSearches}.`,
+        );
+        if (misses >= safeLostObjectSearches) {
+          drone.reset();
+          this.onLog(
+            `Object centering: gave up after ${safeLostObjectSearches} lost-object searches.`,
+          );
+          return false;
+        }
+        await drone.wait(0.45);
+        continue;
+      }
+
+      misses = 0;
+      const horizontalError = target.centerX;
+      const verticalError = target.centerY;
+      this.onLog(
+        `Object centering: ${target.class} detected at X ${signed(horizontalError)}%, Y ${signed(verticalError)}%.`,
+      );
+      if (
+        Math.abs(horizontalError) <= safeCenterSlack &&
+        Math.abs(verticalError) <= safeCenterSlack
+      ) {
+        drone.reset();
+        this.onLog(`Object centering: ${target.class} is centered; yaw was not changed.`);
+        return true;
+      }
+
+      if (Math.abs(horizontalError) >= Math.abs(verticalError)) {
+        const direction = horizontalError > 0 ? "right" : "left";
+        this.onLog(`Object centering: moving ${direction} at ${safeTranslationPower}% power.`);
+        drone.setAxis(
+          "roll",
+          direction === "right" ? safeTranslationPower : -safeTranslationPower,
+        );
+      } else {
+        const direction = verticalError > 0 ? "forward" : "backward";
+        this.onLog(`Object centering: moving ${direction} at ${safeTranslationPower}% power.`);
+        drone.setAxis(
+          "pitch",
+          direction === "forward" ? safeTranslationPower : -safeTranslationPower,
+        );
+      }
+      await drone.wait(0.3);
+      drone.reset();
+      this.onLog(
+        `Object centering: waiting ${safeRescanDelay.toFixed(1)} s for a level image before rescanning.`,
+      );
+      await drone.wait(safeRescanDelay);
+    }
+
+    drone.reset();
+    this.onLog(
+      drone.cancelRunFlag
+        ? "Object centering: stopped."
+        : "Object centering: timed out after 30 seconds.",
+    );
+    return false;
+  }
+
   async scanAprilTags(announceScan = true) {
     return this.scanned("apriltag", announceScan, async () => {
       let detections: AprilTagDetection[];
@@ -288,12 +422,14 @@ export class VisionRuntime {
     centerSlack = 5,
     angleSlack = 5,
     lostTagSearches = 3,
+    rescanDelay = 0.5,
   ) {
     const wanted = String(id).toLowerCase() === "any" ? "any" : Math.round(Number(id));
     const safeTranslationPower = clampPercent(translationPower);
     const safeCenterSlack = Math.max(1, Math.min(35, Number(centerSlack) || 5));
     const safeAngleSlack = Math.max(1, Math.min(45, Number(angleSlack) || 5));
     const safeLostTagSearches = Math.max(1, Math.min(20, Math.round(Number(lostTagSearches) || 3)));
+    const safeRescanDelay = Math.max(0, Math.min(5, Number(rescanDelay) || 0));
     const deadline = performance.now() + 30_000;
     let misses = 0;
     const requestedTag = wanted === "any" ? "any AprilTag" : `AprilTag ${wanted}`;
@@ -343,8 +479,10 @@ export class VisionRuntime {
         }
         await drone.wait(0.3);
         drone.reset();
-        this.onLog("AprilTag centering: stabilizing, then scanning again.");
-        await drone.wait(0.65);
+        this.onLog(
+          `AprilTag centering: waiting ${safeRescanDelay.toFixed(1)} s for a level image before rescanning.`,
+        );
+        await drone.wait(safeRescanDelay);
         continue;
       }
       if (Math.abs(target.yaw) > safeAngleSlack) {

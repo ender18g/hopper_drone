@@ -52,8 +52,9 @@ test("server-renders shared branding metadata and product shell", async () => {
 });
 
 test("ships the local flight, simulation, vision, offline cache, and student-build surfaces", async () => {
-  const [component, lessonLauncher, lessonReader, generatedLessons, simulatorComponent, drone, simulation, runtime, vision, aprilTags, blockly, serviceWorker, offlineManifestScript, builtOfflineManifest, styles, readme, packageJson, brandingModule, desktopBuilder, desktopMain, javascriptHighlighting, pythonSurface] = await Promise.all([
+  const [component, codeQuickReference, lessonLauncher, lessonReader, generatedLessons, simulatorComponent, drone, simulation, runtime, vision, aprilTags, blockly, serviceWorker, offlineManifestScript, builtOfflineManifest, styles, readme, packageJson, brandingModule, desktopBuilder, desktopMain, javascriptHighlighting, pythonSurface] = await Promise.all([
     readFile(new URL("../components/HopperStudio.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../components/CodeQuickReference.tsx", import.meta.url), "utf8"),
     readFile(new URL("../components/InformationLessonLauncher.tsx", import.meta.url), "utf8"),
     readFile(new URL("../components/InformationLessonReader.tsx", import.meta.url), "utf8"),
     readFile(new URL("../lib/information-lessons.generated.ts", import.meta.url), "utf8"),
@@ -92,7 +93,7 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(component, /visionMaximumWidth/);
   assert.match(component, /ALLAN ELSBERRY/);
   assert.match(component, /TEACHABLE MACHINE/);
-  assert.match(component, /CENTER PIXEL/);
+  assert.match(component, /PIXEL X 0 · Y 0/);
   assert.match(component, /THRESHOLDING/);
   assert.match(component, /APRILTAG DETECTION/);
   assert.match(component, /GENERATE PDF/);
@@ -116,6 +117,12 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(component, /tokenizeJavaScript\(javascriptCode\)/);
   assert.match(component, /className="javascript-highlight"/);
   assert.match(component, /syncJavaScriptScroll/);
+  assert.match(component, /CodeQuickReference language="python"/);
+  assert.match(component, /CodeQuickReference language="javascript"/);
+  assert.match(codeQuickReference, /Python" : "JavaScript"\} quick guide/);
+  assert.match(codeQuickReference, /binary_at/);
+  assert.match(codeQuickReference, /center_on_object/);
+  assert.match(codeQuickReference, /Decisions \+ loops/);
   assert.match(component, /className="information-menu"/);
   assert.match(component, /INFORMATION_LESSONS\.map/);
   assert.match(component, /#\/information/);
@@ -155,6 +162,8 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(component, /ArrowUp: "forward"/);
   assert.match(component, /event\.code === "Space"/);
   assert.match(component, /simulatorWindow \? \[window, simulatorWindow\]/);
+  assert.match(component, /navigator\.maxTouchPoints > 0/);
+  assert.match(component, /new SimulatedDroneController\([\s\S]*?simulatorSurface/);
   assert.match(component, /className="manual-land"[\s\S]*?onClick=\{\(\) => void stopProgram\(\)\}/);
   assert.match(component, /visionTestingMode !== "object"[\s\S]*?setInterval\(\(\) => void previewObjects\(\), 1800\)/);
   assert.match(component, /visionTestingMode !== "apriltag"[\s\S]*?setInterval\(\(\) => void previewAprilTags\(\), 900\)/);
@@ -231,6 +240,9 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(styles, /\.manual-flight-pad\.above-console/);
   assert.match(vision, /scanAprilTags/);
   assert.match(vision, /centerOnAprilTag/);
+  assert.match(vision, /centerOnObject/);
+  assert.match(vision, /binaryAt/);
+  assert.match(vision, /normalizedCoordinateToPixel/);
   assert.match(vision, /this\.scanned\("custom"/);
   assert.match(vision, /safeLostTagSearches/);
   assert.match(vision, /AprilTag centering: tag/);
@@ -251,9 +263,12 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(blockly, /vision_scan_apriltags/);
   assert.match(blockly, /vision_sees_apriltag/);
   assert.match(blockly, /vision_center_apriltag/);
+  assert.match(blockly, /vision_center_object/);
   assert.match(blockly, /POWER: numberShadow\(15\)/);
   assert.doesNotMatch(blockly, /YAW_POWER/);
   assert.match(blockly, /LOST_SEARCHES/);
+  assert.match(blockly, /RESCAN_DELAY/);
+  assert.match(blockly, /rescan after roll\/pitch/);
   assert.doesNotMatch(blockly, /vision_sees_color/);
   assert.match(blockly, /vision_sees_custom_label/);
   assert.match(blockly, /vision_object_coordinate/);
@@ -318,6 +333,7 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(styles, /\.py-token-keyword/);
   assert.match(styles, /\.javascript-highlight/);
   assert.match(styles, /\.python-highlight/);
+  assert.match(styles, /\.code-quick-reference/);
   assert.match(styles, /\.information-menu-panel/);
   assert.match(styles, /\.mission-photo-strip/);
   assert.match(styles, /\.sim-capture-flag\.red/);
@@ -551,6 +567,18 @@ test("highlights and translates the classroom Python surface to the async runtim
   assert.match(
     python.transpilePython('fly("forward", 2)'),
     /await drone\.fly\("forward", 2, 15\);/,
+  );
+  assert.match(
+    python.transpilePython('binary_at("white", x=100, y=100)'),
+    /await vision\.binaryAt\("white", 100, 100\);/,
+  );
+  assert.match(
+    python.transpilePython('center_on_object("person", rescan_delay=0.8)'),
+    /await vision\.centerOnObject\(drone, "person", 10, 0\.55, 5, 3, 0\.8\);/,
+  );
+  assert.match(
+    python.transpilePython("center_on_april_tag(id=7)"),
+    /await vision\.centerOnAprilTag\(drone, 7\);/,
   );
 
   const program = [
@@ -880,6 +908,14 @@ test("calculates binary threshold coverage and centered object coordinates", asy
     x: -100,
     y: -100,
   });
+  assert.deepEqual(visionMath.normalizedCoordinateToPixel({ x: 0, y: 0 }, 101, 101), {
+    x: 50,
+    y: 50,
+  });
+  assert.deepEqual(visionMath.normalizedCoordinateToPixel({ x: 100, y: 100 }, 101, 101), {
+    x: 100,
+    y: 0,
+  });
 
   const noOp = () => undefined;
   const centeringLogs = [];
@@ -895,6 +931,10 @@ test("calculates binary threshold coverage and centered object coordinates", asy
     noOp,
     (message) => centeringLogs.push(message),
   );
+  runtime.scanThreshold = async () => binary;
+  assert.equal(await runtime.binaryAt("white", 100, 100, 60, false), true);
+  assert.equal(await runtime.binaryAt("black", -100, 100, 60, false), true);
+
   let objectScans = 0;
   runtime.detectObjects = async () => {
     objectScans += 1;
@@ -902,6 +942,27 @@ test("calculates binary threshold coverage and centered object coordinates", asy
   };
   assert.equal(await runtime.seesObject("bottle", 0.55), true);
   assert.equal(objectScans, 1, "camera sees object performs its own scan");
+
+  const objectScanSequence = [
+    [{ class: "person", score: 0.97, centerX: -18, centerY: 0 }],
+    [],
+    [{ class: "person", score: 0.97, centerX: 0, centerY: 12 }],
+    [{ class: "person", score: 0.97, centerX: 0, centerY: 0 }],
+  ];
+  runtime.detectObjects = async () => objectScanSequence.shift() ?? [];
+  const objectCommands = [];
+  const objectDrone = {
+    cancelRunFlag: false,
+    setAxis(axis, power) { objectCommands.push(["axis", axis, power]); },
+    reset() { objectCommands.push(["reset"]); },
+    async wait(seconds) { objectCommands.push(["wait", seconds]); },
+  };
+  assert.equal(await runtime.centerOnObject(objectDrone, "person", 8, 0.55, 5, 3, 0.5), true);
+  assert.ok(objectCommands.some((command) => command[0] === "axis" && command[1] === "roll" && command[2] === -8));
+  assert.ok(objectCommands.some((command) => command[0] === "axis" && command[1] === "pitch" && command[2] === 8));
+  assert.equal(objectCommands.some((command) => command[1] === "yaw"), false);
+  assert.ok(objectCommands.some((command) => command[0] === "wait" && command[1] === 0.5));
+  assert.ok(centeringLogs.some((message) => message.includes("yaw was not changed")));
 
   let aprilScans = 0;
   runtime.scanAprilTags = async () => {
@@ -932,6 +993,7 @@ test("calculates binary threshold coverage and centered object coordinates", asy
   assert.ok(commands.some((command) => command[0] === "axis" && command[1] === "roll" && command[2] === 7));
   assert.ok(commands.some((command) => command[0] === "axis" && command[1] === "pitch" && command[2] === 7));
   assert.ok(commands.some((command) => command[0] === "wait" && command[1] === 0.3));
+  assert.ok(commands.some((command) => command[0] === "wait" && command[1] === 0.5));
   assert.ok(commands.some((command) => command[0] === "rotate" && command[1] === 20 && command[2] === "clockwise"));
   assert.ok(centeringLogs.some((message) => message.includes("tag 7 detected")));
   assert.ok(centeringLogs.some((message) => message.includes("moving right")));
@@ -1134,6 +1196,7 @@ test("sends real-drone flips on the acknowledged BLE channel and safely retries"
   globalThis.CustomEvent = class {
     constructor(type, init) { this.type = type; this.detail = init?.detail; }
   };
+  globalThis.window.CustomEvent = globalThis.CustomEvent;
 
   try {
     const characteristic = {
@@ -1197,10 +1260,12 @@ test("simulated takeoff, tilt acceleration, and damping behave as a flight contr
     cancelAnimationFrame() {},
     dispatchEvent() {},
     setTimeout,
+    performance,
   };
   globalThis.CustomEvent = class {
     constructor(type, init) { this.type = type; this.detail = init?.detail; }
   };
+  globalThis.window.CustomEvent = globalThis.CustomEvent;
 
   try {
     const controller = new simulation.SimulatedDroneController();

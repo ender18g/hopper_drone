@@ -219,8 +219,8 @@
         <div class="lesson-api__detail"><b>boolean</b><p>Fresh scan. Color is white or black. Coverage clamps to 0…100%.</p></div>
       </article>
       <article class="lesson-api__item">
-        <div class="lesson-api__signature">await vision.binaryCenter(color, threshold = 60, invert = false)</div>
-        <div class="lesson-api__detail"><b>boolean</b><p>Fresh scan; tests only the center reticle pixel.</p></div>
+        <div class="lesson-api__signature">await vision.binaryAt(color, x = 0, y = 0, threshold = 60, invert = false)</div>
+        <div class="lesson-api__detail"><b>boolean</b><p>Fresh scan at one normalized pixel. Center is 0,0; top right is 100,100; bottom left is −100,−100.</p></div>
       </article>
       <article class="lesson-api__item">
         <div class="lesson-api__signature">await vision.loadObjectModel()</div>
@@ -239,6 +239,10 @@
         <div class="lesson-api__detail"><b>number</b><p>No fresh scan. Reads the last stored coordinate for x or y, from −100 to +100; right/up are positive. Returns 0 before a match or when stored confidence is too low.</p></div>
       </article>
       <article class="lesson-api__item">
+        <div class="lesson-api__signature">await vision.centerOnObject(drone, label, translationPower = 10, minimumConfidence = 0.55, centerSlack = 5, lostObjectSearches = 3, rescanDelay = 0.5)</div>
+        <div class="lesson-api__detail"><b>boolean</b><p>Pulses roll/pitch toward the matching bounding-box center for up to 30 seconds. It levels the drone and waits before each rescan. No yaw, altitude, distance, or collision control.</p></div>
+      </article>
+      <article class="lesson-api__item">
         <div class="lesson-api__signature">await vision.scanAprilTags(announceScan = true)</div>
         <div class="lesson-api__detail"><b>AprilTagDetection[]</b><p>Fresh tag36h11 scan at up to 520 px wide. Set announceScan false only to suppress the Studio scan animation/event.</p></div>
       </article>
@@ -247,8 +251,8 @@
         <div class="lesson-api__detail"><b>boolean</b><p>Fresh scan. ID is any or a number from 0 through 586.</p></div>
       </article>
       <article class="lesson-api__item">
-        <div class="lesson-api__signature">await vision.centerOnAprilTag(drone, id = &quot;any&quot;, translationPower = 10, centerSlack = 5, angleSlack = 5, lostTagSearches = 3)</div>
-        <div class="lesson-api__detail"><b>boolean</b><p>Pulses roll/pitch and image-plane yaw for up to 30 seconds. Returns true only when position and angle tolerances are met. No altitude, distance, or collision control.</p></div>
+        <div class="lesson-api__signature">await vision.centerOnAprilTag(drone, id = &quot;any&quot;, translationPower = 10, centerSlack = 5, angleSlack = 5, lostTagSearches = 3, rescanDelay = 0.5)</div>
+        <div class="lesson-api__detail"><b>boolean</b><p>Pulses roll/pitch, waits for a level image before rescanning, and corrects image-plane yaw for up to 30 seconds. No altitude, distance, or collision control.</p></div>
       </article>
       <article class="lesson-api__item">
         <div class="lesson-api__signature">await vision.loadCustomModel(modelFile, weightsFile, metadataFile)</div>

@@ -91,7 +91,7 @@
   </header>
   <section class="lesson-objectives" aria-labelledby="objectives-title">
     <h2 id="objectives-title">Learning objectives</h2>
-    <ol><li>Compute luminance from RGB pixels and map a percentage threshold to 0…255.</li><li>Distinguish whole-frame coverage from a center-pixel test.</li><li>Calibrate with representative light and background conditions.</li><li>Use repeated evidence or hysteresis instead of one brittle frame.</li></ol>
+    <ol><li>Compute luminance from RGB pixels and map a percentage threshold to 0…255.</li><li>Distinguish whole-frame coverage from a normalized X/Y pixel test.</li><li>Calibrate with representative light and background conditions.</li><li>Use repeated evidence or hysteresis instead of one brittle frame.</li></ol>
   </section>
         <section class="lesson-section" id="one-pixel" aria-labelledby="one-pixel-title">
           <span class="lesson-section__number">01 / 05</span>
@@ -138,16 +138,16 @@
         <p>Useful for large regions: a white landing sheet, dark doorway, or broad lighting change. It compares coverage with a minimum percentage.</p>
       </article>
       <article class="lesson-card">
-        <span class="lesson-card__tag">Single reticle</span>
-        <h3>binaryCenter</h3>
-        <p>Useful for alignment. It checks the one pixel at the image center, so it is sensitive to noise and tiny shifts.</p>
+        <span class="lesson-card__tag">Single coordinate</span>
+        <h3>binaryAt</h3>
+        <p>Checks one normalized X/Y pixel. The default 0,0 is the reticle; 100,100 is the top right. A one-pixel test is sensitive to noise and tiny shifts.</p>
       </article>
   </div>
           <p>A center test can be true while total coverage is nearly zero. Conversely, a bright wall can dominate coverage even while the center points at a dark target.</p>
           
   <details class="lesson-check">
     <summary>Check your understanding · A white card covers 8% of the frame and the center reticle is on it. What can each test report?</summary>
-    <div class="lesson-check__answer"><p><code>binaryCenter("white", 60)</code> can be true. <code>seesBinary("white", 60, false, 10)</code> is false because 8% is below the 10% coverage requirement.</p></div>
+    <div class="lesson-check__answer"><p><code>binaryAt("white", 0, 0, 60)</code> can be true. <code>seesBinary("white", 60, false, 10)</code> is false because 8% is below the 10% coverage requirement.</p></div>
   </details>
         
         </section>
@@ -201,14 +201,14 @@ console<span class="token punctuation">.</span><span class="token function">log<
           
     <figure class="lesson-code">
       <figcaption class="lesson-code__bar">
-        <span>Python · center and coverage are separate tests · python</span>
+        <span>Python · one X/Y pixel and coverage are separate tests · python</span>
         <button class="lesson-copy" type="button" data-copy-code>Copy</button>
       </figcaption>
       <pre><code class="language-python">threshold <span class="token operator">=</span> <span class="token number">60</span>
 coverage <span class="token operator">=</span> <span class="token number">10</span>
 
 enough_white <span class="token operator">=</span> sees_binary<span class="token punctuation">(</span><span class="token string">"white"</span><span class="token punctuation">,</span> threshold<span class="token operator">=</span>threshold<span class="token punctuation">,</span> invert<span class="token operator">=</span><span class="token boolean">False</span><span class="token punctuation">,</span> coverage<span class="token operator">=</span>coverage<span class="token punctuation">)</span>
-center_is_white <span class="token operator">=</span> binary_center<span class="token punctuation">(</span><span class="token string">"white"</span><span class="token punctuation">,</span> threshold<span class="token operator">=</span>threshold<span class="token punctuation">,</span> invert<span class="token operator">=</span><span class="token boolean">False</span><span class="token punctuation">)</span>
+center_is_white <span class="token operator">=</span> binary_at<span class="token punctuation">(</span><span class="token string">"white"</span><span class="token punctuation">,</span> x<span class="token operator">=</span><span class="token number">0</span><span class="token punctuation">,</span> y<span class="token operator">=</span><span class="token number">0</span><span class="token punctuation">,</span> threshold<span class="token operator">=</span>threshold<span class="token punctuation">,</span> invert<span class="token operator">=</span><span class="token boolean">False</span><span class="token punctuation">)</span>
 
 <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"area:"</span><span class="token punctuation">,</span> enough_white<span class="token punctuation">,</span> <span class="token string">"center:"</span><span class="token punctuation">,</span> center_is_white<span class="token punctuation">)</span></code></pre>
     </figure>
@@ -224,8 +224,8 @@ center_is_white <span class="token operator">=</span> binary_center<span class="
         <div class="lesson-api__detail"><b>Decide</b><p>Fresh scan and a whole-frame percentage comparison.</p></div>
       </article>
       <article class="lesson-api__item">
-        <div class="lesson-api__signature">binaryCenter(color, threshold = 60, invert = false)</div>
-        <div class="lesson-api__detail"><b>Align</b><p>Fresh scan and a single center-pixel comparison.</p></div>
+        <div class="lesson-api__signature">binaryAt(color, x = 0, y = 0, threshold = 60, invert = false)</div>
+        <div class="lesson-api__detail"><b>Align</b><p>Fresh scan and one normalized X/Y pixel comparison.</p></div>
       </article>
   </div>
         
@@ -260,7 +260,7 @@ center_is_white <span class="token operator">=</span> binary_center<span class="
   </div>
           
   <aside class="lesson-callout lesson-callout--caution">
-    <div><b>Flight decision rule</b><p>Never make a high-consequence maneuver from one center pixel. Combine area, repeated frames, timeouts, and a safe fallback such as hover or land.</p></div>
+    <div><b>Flight decision rule</b><p>Never make a high-consequence maneuver from one sampled pixel. Combine area, repeated frames, timeouts, and a safe fallback such as hover or land.</p></div>
   </aside>
         
         </section>

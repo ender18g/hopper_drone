@@ -13,6 +13,7 @@ export class ExecutionRuntime {
   private pendingTasks = new Set<Promise<unknown>>();
   private idleResolvers = new Set<() => void>();
   private stopResolver: (() => void) | null = null;
+  private readonly eventWindows: Window[];
   private stopPromise = new Promise<void>((resolve) => {
     this.stopResolver = resolve;
   });
@@ -21,13 +22,19 @@ export class ExecutionRuntime {
     private readonly onError: (error: unknown) => void,
     private readonly onStop: () => void,
     private readonly onActiveBlock: ActiveBlockHandler = () => undefined,
+    private readonly timingWindow: Window = window,
   ) {
+    this.eventWindows = this.timingWindow === window
+      ? [window]
+      : [window, this.timingWindow];
     const keyDown = (event: KeyboardEvent) => this.pressedKeys.add(this.normalizeKey(event.key));
     const keyUp = (event: KeyboardEvent) => this.pressedKeys.delete(this.normalizeKey(event.key));
-    window.addEventListener("keydown", keyDown);
-    window.addEventListener("keyup", keyUp);
-    this.cleanupCallbacks.push(() => window.removeEventListener("keydown", keyDown));
-    this.cleanupCallbacks.push(() => window.removeEventListener("keyup", keyUp));
+    this.eventWindows.forEach((eventWindow) => {
+      eventWindow.addEventListener("keydown", keyDown);
+      eventWindow.addEventListener("keyup", keyUp);
+      this.cleanupCallbacks.push(() => eventWindow.removeEventListener("keydown", keyDown));
+      this.cleanupCallbacks.push(() => eventWindow.removeEventListener("keyup", keyUp));
+    });
   }
 
   registerKey(kind: "pressed" | "released", key: string, handler: AsyncHandler) {
@@ -38,8 +45,10 @@ export class ExecutionRuntime {
         void this.trackTask(Promise.resolve().then(handler)).catch(this.onError);
       }
     };
-    window.addEventListener(eventName, listener);
-    this.cleanupCallbacks.push(() => window.removeEventListener(eventName, listener));
+    this.eventWindows.forEach((eventWindow) => {
+      eventWindow.addEventListener(eventName, listener);
+      this.cleanupCallbacks.push(() => eventWindow.removeEventListener(eventName, listener));
+    });
   }
 
   registerDrone(eventName: DroneEventName, handler: AsyncHandler) {
@@ -50,8 +59,12 @@ export class ExecutionRuntime {
         void this.trackTask(Promise.resolve().then(handler)).catch(this.onError);
       }
     };
-    window.addEventListener("hopper-drone-event", listener);
-    this.cleanupCallbacks.push(() => window.removeEventListener("hopper-drone-event", listener));
+    this.eventWindows.forEach((eventWindow) => {
+      eventWindow.addEventListener("hopper-drone-event", listener);
+      this.cleanupCallbacks.push(
+        () => eventWindow.removeEventListener("hopper-drone-event", listener),
+      );
+    });
   }
 
   keyIsPressed(key: string) {
@@ -84,7 +97,7 @@ export class ExecutionRuntime {
   }
 
   async tick() {
-    await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+    await new Promise<void>((resolve) => this.timingWindow.setTimeout(resolve, 0));
     if (this.stopped) throw new Error("Program stopped");
   }
 

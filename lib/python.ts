@@ -249,12 +249,19 @@ const PYTHON_CALLS: Record<string, CallSpec> = {
     { threshold: "60", invert: "false", coverage: "10" },
     true,
   ),
-  binary_center: call(
-    "vision.binaryCenter",
-    ["color", "threshold", "invert"],
-    { threshold: "60", invert: "false" },
+  binary_at: call(
+    "vision.binaryAt",
+    ["color", "x", "y", "threshold", "invert"],
+    { x: "0", y: "0", threshold: "60", invert: "false" },
     true,
   ),
+  binary_center: {
+    asynchronous: true,
+    parameters: ["color", "threshold", "invert"],
+    defaults: { threshold: "60", invert: "false" },
+    build: (argumentsList) =>
+      `vision.binaryAt(${argumentsList[0]}, 0, 0, ${argumentsList[1] ?? "60"}, ${argumentsList[2] ?? "false"})`,
+  },
   load_object_model: call("vision.loadObjectModel", [], {}, true),
   scan_objects: call(
     "vision.detectObjects",
@@ -291,6 +298,26 @@ const PYTHON_CALLS: Record<string, CallSpec> = {
     build: (argumentsList) =>
       `vision.objectCoordinate(${argumentsList[0]}, "y", ${argumentsList[1] ?? "0.55"})`,
   },
+  center_on_object: {
+    asynchronous: true,
+    parameters: [
+      "label",
+      "power",
+      "confidence",
+      "center_slack",
+      "lost_searches",
+      "rescan_delay",
+    ],
+    defaults: {
+      power: "10",
+      confidence: "0.55",
+      center_slack: "5",
+      lost_searches: "3",
+      rescan_delay: "0.5",
+    },
+    build: (argumentsList) =>
+      `vision.centerOnObject(drone, ${argumentsList.join(", ")})`,
+  },
   scan_april_tags: call("vision.scanAprilTags", [], {}, true),
   sees_april_tag: call(
     "vision.seesAprilTag",
@@ -300,13 +327,21 @@ const PYTHON_CALLS: Record<string, CallSpec> = {
   ),
   center_on_april_tag: {
     asynchronous: true,
-    parameters: ["id", "power", "center_slack", "angle_slack", "lost_searches"],
+    parameters: [
+      "id",
+      "power",
+      "center_slack",
+      "angle_slack",
+      "lost_searches",
+      "rescan_delay",
+    ],
     defaults: {
       id: "\"any\"",
       power: "10",
       center_slack: "5",
       angle_slack: "5",
       lost_searches: "3",
+      rescan_delay: "0.5",
     },
     build: (argumentsList) =>
       argumentsList.length > 0
