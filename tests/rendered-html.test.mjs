@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { access, readFile } from "node:fs/promises";
+import { access, readFile, readdir } from "node:fs/promises";
 import test from "node:test";
 import ts from "typescript";
 
@@ -125,12 +125,14 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.doesNotMatch(component, /PDF slide decks/);
   assert.match(lessonReader, /role="dialog"/);
   assert.match(lessonReader, /aria-modal="true"/);
-  assert.match(lessonReader, /event\.key === "Escape"/);
+  assert.match(lessonLauncher, /event\.key === "Escape"/);
+  assert.match(lessonLauncher, /event\.key !== "Tab"/);
   assert.match(lessonReader, /hashchange/);
-  assert.match(lessonReader, /previousFocusRef/);
+  assert.match(lessonLauncher, /previousFocusRef/);
   assert.match(lessonReader, /embedInformationLessonAssets/);
-  assert.match(lessonReader, /setAttribute\("inert", ""\)/);
+  assert.match(lessonLauncher, /setAttribute\("inert", ""\)/);
   assert.match(lessonReader, /history\.replaceState/);
+  assert.match(lessonReader, /useState<LessonRoute>\(\(\) => routeFromHash\(\)\)/);
   assert.match(lessonReader, /decodeURIComponent[\s\S]*?catch/);
   assert.match(lessonReader, /document\.execCommand\("copy"\)/);
   assert.match(generatedLessons, /01-hopper-sensor-suite/);
@@ -420,6 +422,24 @@ test("generates nine semantic, self-contained HTML information lessons", async (
     assert.ok(singleFile.includes(slug), `${slug} is bundled into the single-file app`);
   }
   assert.match(singleFile, /data:image\/png;base64,/);
+
+  const hostedAssetNames = await readdir(
+    new URL("../dist/client/assets/", import.meta.url),
+  );
+  const readerAssetName = hostedAssetNames.find((name) =>
+    /^InformationLessonReader-.*\.js$/.test(name)
+  );
+  assert.ok(readerAssetName, "the hosted lesson reader is emitted as a lazy chunk");
+  const hostedReader = await readFile(
+    new URL(`../dist/client/assets/${readerAssetName}`, import.meta.url),
+    "utf8",
+  );
+  assert.doesNotMatch(
+    hostedReader,
+    /data:image\/(?:png|jpeg);base64,/,
+    "the hosted reader reuses cached image files instead of embedding duplicates",
+  );
+  assert.match(hostedReader, /\/information\/assets\/images\//);
 });
 
 test("every highlighted Python and JavaScript lesson example parses in Hopper Studio", async () => {

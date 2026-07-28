@@ -10,6 +10,9 @@ export default defineConfig({
   base: "./",
   publicDir: fileURLToPath(new URL("./public", import.meta.url)),
   plugins: [react(), viteSingleFile()],
+  define: {
+    "import.meta.env.VITE_HOPPER_EMBED_LESSON_ASSETS": JSON.stringify("true"),
+  },
   build: {
     outDir: fileURLToPath(new URL("./student-build", import.meta.url)),
     emptyOutDir: true,

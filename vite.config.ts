@@ -44,6 +44,9 @@ export default defineConfig(async () => {
   const { cloudflare } = await import("@cloudflare/vite-plugin");
 
   return {
+    define: {
+      "import.meta.env.VITE_HOPPER_EMBED_LESSON_ASSETS": JSON.stringify("false"),
+    },
     server: {
       // Keep localhost:3000 stable because Web Bluetooth grants are origin-specific.
       strictPort: true,

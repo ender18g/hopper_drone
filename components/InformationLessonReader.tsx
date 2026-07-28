@@ -53,12 +53,9 @@ const findLesson = (slug: string | null) =>
   slug ? INFORMATION_LESSONS.find((candidate) => candidate.slug === slug) ?? null : null;
 
 export default function InformationLessonReader() {
-  const [route, setRoute] = useState<LessonRoute>(null);
+  const [route, setRoute] = useState<LessonRoute>(() => routeFromHash());
   const [liveMessage, setLiveMessage] = useState("");
   const dialogRef = useRef<HTMLDivElement | null>(null);
-  const previousFocusRef = useRef<HTMLElement | null>(null);
-  const bodyOverflowRef = useRef("");
-  const readerOpen = route !== null;
 
   useEffect(() => {
     const updateRoute = () => setRoute(routeFromHash());
@@ -73,11 +70,6 @@ export default function InformationLessonReader() {
 
   useEffect(() => {
     if (!route) return;
-    if (!previousFocusRef.current) {
-      previousFocusRef.current = document.activeElement as HTMLElement | null;
-      bodyOverflowRef.current = document.body.style.overflow;
-    }
-    document.body.style.overflow = "hidden";
     const frame = window.requestAnimationFrame(() => {
       const dialog = dialogRef.current;
       if (!dialog) return;
@@ -91,70 +83,10 @@ export default function InformationLessonReader() {
     return () => window.cancelAnimationFrame(frame);
   }, [route]);
 
-  useEffect(() => {
-    if (route) return;
-    document.body.style.overflow = bodyOverflowRef.current;
-    previousFocusRef.current?.focus?.();
-    previousFocusRef.current = null;
-  }, [route]);
-
-  useEffect(
-    () => () => {
-      document.body.style.overflow = bodyOverflowRef.current;
-      previousFocusRef.current?.focus?.();
-    },
-    [],
-  );
-
-  useEffect(() => {
-    if (!readerOpen) return;
-    const studio = document.querySelector<HTMLElement>(".studio-shell");
-    if (!studio) return;
-    const previousAriaHidden = studio.getAttribute("aria-hidden");
-    const previouslyInert = studio.hasAttribute("inert");
-    studio.setAttribute("aria-hidden", "true");
-    studio.setAttribute("inert", "");
-    return () => {
-      if (previousAriaHidden === null) studio.removeAttribute("aria-hidden");
-      else studio.setAttribute("aria-hidden", previousAriaHidden);
-      if (!previouslyInert) studio.removeAttribute("inert");
-    };
-  }, [readerOpen]);
-
   const closeReader = useCallback(() => {
     window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
-    setRoute(null);
     window.dispatchEvent(new HashChangeEvent("hashchange"));
   }, []);
-
-  useEffect(() => {
-    if (!route) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        closeReader();
-        return;
-      }
-      if (event.key !== "Tab" || !dialogRef.current) return;
-      const controls = Array.from(
-        dialogRef.current.querySelectorAll<HTMLElement>(
-          'a[href], button:not([disabled]), summary, [tabindex]:not([tabindex="-1"])',
-        ),
-      ).filter((element) => !element.hasAttribute("hidden"));
-      if (controls.length === 0) return;
-      const first = controls[0];
-      const last = controls.at(-1);
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last?.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [closeReader, route]);
 
   const hubHtml = useMemo(
     () => embedInformationLessonAssets(INFORMATION_LESSON_HUB_HTML),

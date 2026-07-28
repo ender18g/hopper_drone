@@ -271,10 +271,13 @@ await writeFile(
 );
 
 const embeddedImages = {};
+const hostedImages = {};
 for (const filename of lessonAssets) {
   const imagePath = path.join(PUBLIC_IMAGE_DIR, filename);
   const bytes = await readFile(imagePath);
-  embeddedImages[`assets/images/${filename}`] = `data:${imageMimeType(filename)};base64,${bytes.toString("base64")}`;
+  const relativePath = `assets/images/${filename}`;
+  embeddedImages[relativePath] = `data:${imageMimeType(filename)};base64,${bytes.toString("base64")}`;
+  hostedImages[relativePath] = `/information/${relativePath}`;
 }
 
 const generatedLessons = lessons.map((lessonItem, index) => ({
@@ -328,7 +331,10 @@ export const INFORMATION_LESSONS = ${JSON.stringify(generatedLessons, null, 2)} 
 
 export const INFORMATION_LESSON_HUB_HTML = ${JSON.stringify(hubMarkup("reader"))};
 
-const INFORMATION_LESSON_ASSETS: Readonly<Record<string, string>> = ${JSON.stringify(embeddedImages)};
+const INFORMATION_LESSON_ASSETS: Readonly<Record<string, string>> =
+  import.meta.env.VITE_HOPPER_EMBED_LESSON_ASSETS === "true"
+    ? ${JSON.stringify(embeddedImages)}
+    : ${JSON.stringify(hostedImages)};
 
 export const embedInformationLessonAssets = (html: string) => {
   let embedded = html;

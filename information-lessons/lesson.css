@@ -1255,6 +1255,13 @@
   color: var(--lesson-navy);
 }
 
+.lesson-loading__close {
+  position: fixed;
+  z-index: 1;
+  top: max(14px, env(safe-area-inset-top));
+  right: max(18px, env(safe-area-inset-right));
+}
+
 .lesson-loading span {
   width: 54px;
   height: 54px;
