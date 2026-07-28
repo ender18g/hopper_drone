@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Generate the Hopper Studio student-facing Python reference PDF."""
+"""Generate the archived Hopper Studio student-facing Python reference PDF."""
 
 from __future__ import annotations
 
 import re
-import shutil
 from pathlib import Path
 
 try:
@@ -18,7 +17,6 @@ except ModuleNotFoundError:
 ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE_ROOT = ROOT.parent
 OUTPUT = WORKSPACE_ROOT / "output" / "pdf" / "09-python-coding-reference.pdf"
-PUBLIC = ROOT / "public" / "information" / "09-python-coding-reference.pdf"
 
 PAGE_W = 960
 PAGE_H = 540
@@ -816,7 +814,6 @@ def page_reference(c: canvas.Canvas, page: int, total: int) -> None:
 
 def build() -> None:
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    PUBLIC.parent.mkdir(parents=True, exist_ok=True)
     total = 12
     c = canvas.Canvas(str(OUTPUT), pagesize=(PAGE_W, PAGE_H), pageCompression=1)
     c.setTitle("Hopper Studio Python Coding Reference")
@@ -836,9 +833,7 @@ def build() -> None:
     page_functions(c, 11, total)
     page_reference(c, 12, total)
     c.save()
-    shutil.copy2(OUTPUT, PUBLIC)
     print(OUTPUT)
-    print(PUBLIC)
 
 
 if __name__ == "__main__":

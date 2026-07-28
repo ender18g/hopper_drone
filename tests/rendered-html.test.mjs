@@ -7,16 +7,16 @@ const root = new URL("../", import.meta.url);
 const branding = JSON.parse(
   await readFile(new URL("../config/branding.json", import.meta.url), "utf8"),
 );
-const informationSlidePaths = [
-  "information/01-hopper-sensor-suite.pdf",
-  "information/02-quadrotor-aerodynamics.pdf",
-  "information/03-coding-blocks-reference.pdf",
-  "information/04-javascript-api-reference.pdf",
-  "information/09-python-coding-reference.pdf",
-  "information/05-thresholding-with-hopper.pdf",
-  "information/06-object-detection-and-coco.pdf",
-  "information/07-teachable-machine-models.pdf",
-  "information/08-apriltags-with-hopper.pdf",
+const informationLessonPaths = [
+  "information/01-hopper-sensor-suite.html",
+  "information/02-quadrotor-aerodynamics.html",
+  "information/03-coding-blocks-reference.html",
+  "information/04-javascript-api-reference.html",
+  "information/05-thresholding-with-hopper.html",
+  "information/06-object-detection-and-coco.html",
+  "information/07-teachable-machine-models.html",
+  "information/08-apriltags-with-hopper.html",
+  "information/09-python-coding-reference.html",
 ];
 
 async function render() {
@@ -36,7 +36,7 @@ async function render() {
 test("server-renders shared branding metadata and product shell", async () => {
   assert.ok(["python", "javascript", "blocks"].includes(branding.codingOptions.defaultEditor));
   assert.ok(branding.codingOptions.enabledEditors.includes(branding.codingOptions.defaultEditor));
-  assert.equal(branding.codingOptions.defaultEditor, "blocks");
+  assert.equal(branding.codingOptions.defaultEditor, "python");
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
@@ -46,14 +46,17 @@ test("server-renders shared branding metadata and product shell", async () => {
     `${branding.studioName} · ${branding.labName}`.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
     "i",
   ));
-  assert.match(html, /private, local block-coding and computer-vision studio/i);
+  assert.match(html, /offline-ready coding, computer-vision, and quadrotor learning studio/i);
   assert.match(html, /og\.png/i);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape|react-loading-skeleton/i);
 });
 
 test("ships the local flight, simulation, vision, offline cache, and student-build surfaces", async () => {
-  const [component, simulatorComponent, drone, simulation, runtime, vision, aprilTags, blockly, serviceWorker, offlineManifestScript, builtOfflineManifest, styles, readme, packageJson, brandingModule, desktopBuilder, javascriptHighlighting, pythonSurface] = await Promise.all([
+  const [component, lessonLauncher, lessonReader, generatedLessons, simulatorComponent, drone, simulation, runtime, vision, aprilTags, blockly, serviceWorker, offlineManifestScript, builtOfflineManifest, styles, readme, packageJson, brandingModule, desktopBuilder, desktopMain, javascriptHighlighting, pythonSurface] = await Promise.all([
     readFile(new URL("../components/HopperStudio.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../components/InformationLessonLauncher.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../components/InformationLessonReader.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../lib/information-lessons.generated.ts", import.meta.url), "utf8"),
     readFile(new URL("../components/SimulatedDroneArea.tsx", import.meta.url), "utf8"),
     readFile(new URL("../lib/drone.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/simulation.ts", import.meta.url), "utf8"),
@@ -69,6 +72,7 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
     readFile(new URL("../package.json", import.meta.url), "utf8"),
     readFile(new URL("../lib/branding.ts", import.meta.url), "utf8"),
     readFile(new URL("../desktop/electron-builder.config.cjs", import.meta.url), "utf8"),
+    readFile(new URL("../desktop/main.mjs", import.meta.url), "utf8"),
     readFile(new URL("../lib/javascript-highlighting.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/python.ts", import.meta.url), "utf8"),
   ]);
@@ -94,7 +98,7 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(component, /GENERATE PDF/);
   assert.match(component, /openAprilTagPdf/);
   assert.match(component, /tag36h11/);
-  assert.match(component, /ONE TEST AT A TIME/);
+  assert.doesNotMatch(component, /ONE TEST AT A TIME/);
   assert.match(component, /cameraProxyAvailable/);
   assert.match(component, /allow local-network access/i);
   assert.match(component, /Bluetooth permission is blocked/);
@@ -113,8 +117,24 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(component, /className="javascript-highlight"/);
   assert.match(component, /syncJavaScriptScroll/);
   assert.match(component, /className="information-menu"/);
-  assert.match(component, /window\.open\("about:blank", "_blank"\)/);
-  assert.match(component, /new URL\(path, document\.baseURI\)\.href/);
+  assert.match(component, /INFORMATION_LESSONS\.map/);
+  assert.match(component, /#\/information/);
+  assert.match(component, /InformationLessonLauncher/);
+  assert.match(lessonLauncher, /lazy\(\(\) => import\("\.\/InformationLessonReader"\)\)/);
+  assert.match(lessonLauncher, /window\.location\.hash\.startsWith\("#\/information"\)/);
+  assert.doesNotMatch(component, /PDF slide decks/);
+  assert.match(lessonReader, /role="dialog"/);
+  assert.match(lessonReader, /aria-modal="true"/);
+  assert.match(lessonReader, /event\.key === "Escape"/);
+  assert.match(lessonReader, /hashchange/);
+  assert.match(lessonReader, /previousFocusRef/);
+  assert.match(lessonReader, /embedInformationLessonAssets/);
+  assert.match(lessonReader, /setAttribute\("inert", ""\)/);
+  assert.match(lessonReader, /history\.replaceState/);
+  assert.match(lessonReader, /decodeURIComponent[\s\S]*?catch/);
+  assert.match(lessonReader, /document\.execCommand\("copy"\)/);
+  assert.match(generatedLessons, /01-hopper-sensor-suite/);
+  assert.match(generatedLessons, /09-python-coding-reference/);
   assert.match(component, /javascriptAutosaveTimerRef/);
   assert.match(component, /objectConfidencePercent \/ 100/);
   assert.match(component, /visibleDetections/);
@@ -276,10 +296,11 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.ok(offlineManifest.assets.some((asset) => /^assets\/HopperStudio-.+\.js$/.test(asset)));
   assert.ok(offlineManifest.assets.includes("models/coco-ssd/model.json"));
   assert.ok(offlineManifest.assets.includes("sw.js"));
-  for (const slidePath of informationSlidePaths) {
-    assert.ok(component.includes(slidePath), `${slidePath} is listed in the Information menu`);
-    assert.ok(serviceWorker.includes(slidePath), `${slidePath} is cached by the offline worker`);
-    assert.ok(offlineManifest.assets.includes(slidePath), `${slidePath} is in the offline manifest`);
+  for (const lessonPath of informationLessonPaths) {
+    const slug = lessonPath.split("/").at(-1).replace(/\.html$/, "");
+    assert.ok(generatedLessons.includes(slug), `${slug} is bundled into the Information reader`);
+    assert.ok(serviceWorker.includes(lessonPath), `${lessonPath} is cached by the offline worker`);
+    assert.ok(offlineManifest.assets.includes(lessonPath), `${lessonPath} is in the offline manifest`);
   }
   assert.match(styles, /activeBlockGlow/);
   assert.match(styles, /sim-pitch-reference/);
@@ -320,6 +341,8 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(pythonSurface, /PYTHON_STARTER_PROGRAM/);
   assert.match(desktopBuilder, /config\/branding\.json/);
   assert.match(desktopBuilder, /productName: studioName/);
+  assert.match(desktopMain, /new URL\(value\)\.protocol === "https:"/);
+  assert.match(desktopMain, /shell\.openExternal\(value\)/);
   assert.doesNotMatch(packageJson, /WRANGLER_LOG_PATH=.*vinext/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
 
@@ -335,12 +358,110 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
     access(new URL("../public/sim-assets/marine-digicam.png", import.meta.url)),
     access(new URL("../public/sw.js", import.meta.url)),
     access(new URL("../scripts/write-offline-manifest.mjs", import.meta.url)),
-    ...informationSlidePaths.flatMap((slidePath) => [
-      access(new URL(`../public/${slidePath}`, import.meta.url)),
-      access(new URL(`../student-build/${slidePath}`, import.meta.url)),
+    ...informationLessonPaths.flatMap((lessonPath) => [
+      access(new URL(`../public/${lessonPath}`, import.meta.url)),
+      access(new URL(`../student-build/${lessonPath}`, import.meta.url)),
     ]),
   ]);
   await assert.rejects(access(new URL("app/_sites-preview", root)));
+});
+
+test("generates nine semantic, self-contained HTML information lessons", async () => {
+  const pages = await Promise.all(
+    informationLessonPaths.map(async (lessonPath) => ({
+      lessonPath,
+      html: await readFile(new URL(`../public/${lessonPath}`, import.meta.url), "utf8"),
+    })),
+  );
+  const lessonCss = await readFile(
+    new URL("../public/information/assets/lesson.css", import.meta.url),
+    "utf8",
+  );
+  const combined = pages.map(({ html }) => html).join("\n");
+
+  for (const { lessonPath, html } of pages) {
+    assert.match(html, /<!doctype html>/i, `${lessonPath} is a complete HTML document`);
+    assert.match(html, /<html lang="en">/i, `${lessonPath} declares its language`);
+    assert.match(html, /<meta name="viewport"/i, `${lessonPath} is responsive`);
+    assert.equal((html.match(/<h1\b/gi) ?? []).length, 1, `${lessonPath} has one h1`);
+    assert.match(html, /<main class="lesson-main">/i, `${lessonPath} has a semantic main region`);
+    assert.match(html, /<nav class="lesson-toc"/i, `${lessonPath} has lesson navigation`);
+    assert.match(html, /class="lesson-mobile-toc"/i, `${lessonPath} has compact mobile navigation`);
+    assert.match(html, /Sources and verification/i, `${lessonPath} identifies its sources`);
+    assert.doesNotMatch(html, /<(?:script|link)[^>]+(?:unpkg|jsdelivr|cdnjs|fonts\.googleapis)/i);
+    assert.doesNotMatch(html, /(?:src|href)="[^"]*sensor_map\.jpeg/i);
+    assert.doesNotMatch(html, /href="[^"]*information\/[^"]+\.pdf/i);
+
+    for (const match of html.matchAll(/src="assets\/images\/([^"]+)"/g)) {
+      await access(
+        new URL(`../public/information/assets/images/${match[1]}`, import.meta.url),
+      );
+    }
+  }
+
+  assert.match(combined, /<math\b/i, "LaTeX equations are pre-rendered as accessible MathML");
+  assert.match(combined, /class="language-javascript"/i);
+  assert.match(combined, /class="language-python"/i);
+  assert.match(combined, /class="token keyword"/i);
+  assert.match(combined, /hopper-underbody-generated\.jpg/i);
+  assert.match(combined, /x-quadrotor-top-generated\.jpg/i);
+  assert.match(combined, /class="nn-pipeline"/i);
+  assert.match(combined, /Stored inference coefficients[\s\S]*?4,500,927/i);
+  assert.match(lessonCss, /\.token\.keyword/);
+  assert.match(lessonCss, /@media \(max-width: 760px\)/);
+  assert.match(lessonCss, /@media print/);
+
+  const singleFile = await readFile(
+    new URL("../student-build/hopper-studio.html", import.meta.url),
+    "utf8",
+  );
+  for (const lessonPath of informationLessonPaths) {
+    const slug = lessonPath.split("/").at(-1).replace(/\.html$/, "");
+    assert.ok(singleFile.includes(slug), `${slug} is bundled into the single-file app`);
+  }
+  assert.match(singleFile, /data:image\/png;base64,/);
+});
+
+test("every highlighted Python and JavaScript lesson example parses in Hopper Studio", async () => {
+  const pythonSource = await readFile(new URL("../lib/python.ts", import.meta.url), "utf8");
+  const compiledPython = ts.transpileModule(pythonSource, {
+    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const python = await import(
+    `data:text/javascript;base64,${Buffer.from(compiledPython).toString("base64")}#lesson-examples`
+  );
+  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+  const decodeCode = (html) =>
+    html
+      .replace(/<[^>]+>/g, "")
+      .replaceAll("&lt;", "<")
+      .replaceAll("&gt;", ">")
+      .replaceAll("&quot;", '"')
+      .replaceAll("&#039;", "'")
+      .replaceAll("&amp;", "&");
+
+  let examples = 0;
+  for (const lessonPath of informationLessonPaths) {
+    const html = await readFile(new URL(`../public/${lessonPath}`, import.meta.url), "utf8");
+    for (const match of html.matchAll(
+      /<code class="language-(python|javascript)">([\s\S]*?)<\/code>/g,
+    )) {
+      const source = decodeCode(match[2]);
+      if (match[1] === "python") {
+        assert.doesNotThrow(
+          () => python.transpilePython(source),
+          `${lessonPath} contains a Python example the classroom transpiler rejects`,
+        );
+      } else {
+        assert.doesNotThrow(
+          () => new AsyncFunction("drone", "vision", "runtime", "console", source),
+          `${lessonPath} contains invalid JavaScript`,
+        );
+      }
+      examples += 1;
+    }
+  }
+  assert.ok(examples >= 15, "all documented code examples were discovered");
 });
 
 test("tokenizes JavaScript for safe source-preserving syntax highlighting", async () => {
@@ -395,6 +516,14 @@ test("highlights and translates the classroom Python surface to the async runtim
   }
   assert.match(python.PYTHON_STARTER_PROGRAM, /15% power/);
   assert.match(python.PYTHON_STARTER_PROGRAM, /180 degrees/);
+  assert.match(
+    python.transpilePython('fly("forward")'),
+    /await drone\.fly\("forward", 1, 15\);/,
+  );
+  assert.match(
+    python.transpilePython('fly("forward", 2)'),
+    /await drone\.fly\("forward", 2, 15\);/,
+  );
 
   const program = [
     "# safe search",
@@ -660,22 +789,22 @@ test("refreshes local CSS as a stylesheet and promotes offline caches atomically
   assert.match(await cachedCss.text(), /display: grid/);
   assert.equal(await cacheStorage.has("hopper-studio-offline-v1"), false);
 
-  const cachedPdfUrl = "https://hopper.test/information/01-hopper-sensor-suite.pdf";
-  const cachedPdf = await activeCache.match(new Request(cachedPdfUrl));
-  assert.equal(await cachedPdf.text(), "asset");
-  unavailablePath = "/information/01-hopper-sensor-suite.pdf";
-  const offlinePdfRequest = new Request(cachedPdfUrl);
-  Object.defineProperty(offlinePdfRequest, "mode", { value: "navigate" });
-  let offlinePdfResponse;
+  const cachedLessonUrl = "https://hopper.test/information/01-hopper-sensor-suite.html";
+  const cachedLesson = await activeCache.match(new Request(cachedLessonUrl));
+  assert.equal(await cachedLesson.text(), "asset");
+  unavailablePath = "/information/01-hopper-sensor-suite.html";
+  const offlineLessonRequest = new Request(cachedLessonUrl);
+  Object.defineProperty(offlineLessonRequest, "mode", { value: "navigate" });
+  let offlineLessonResponse;
   serviceWorkerListeners.get("fetch")({
-    request: offlinePdfRequest,
+    request: offlineLessonRequest,
     respondWith(response) {
-      offlinePdfResponse = Promise.resolve(response);
+      offlineLessonResponse = Promise.resolve(response);
     },
     waitUntil() {},
   });
-  assert.ok(offlinePdfResponse);
-  assert.equal(await (await offlinePdfResponse).text(), "asset");
+  assert.ok(offlineLessonResponse);
+  assert.equal(await (await offlineLessonResponse).text(), "asset");
 
   unavailablePath = "/sim-assets/car.png";
   const failedRefresh = await worker.performAppCacheRefresh({ strict: true });

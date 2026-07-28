@@ -1,0 +1,87 @@
+{
+  "generatedFrom": "information-lessons/lesson-content.mjs",
+  "verified": "28 July 2026",
+  "lessons": [
+    {
+      "number": "01",
+      "slug": "01-hopper-sensor-suite",
+      "title": "The Hopper sensor suite",
+      "summary": "Learn what can actually be seen on the classroom aircraft, what the flight controller must estimate, and how to describe sensors without turning inference into fact.",
+      "duration": "18 min",
+      "level": "Foundations",
+      "path": "01-hopper-sensor-suite.html"
+    },
+    {
+      "number": "02",
+      "slug": "02-quadrotor-aerodynamics",
+      "title": "How an X-quadrotor flies",
+      "summary": "Build an accurate mental model of thrust, torque, coordinate frames, and the X-configuration using the supplied paper’s NED/FRD convention.",
+      "duration": "28 min",
+      "level": "Math + physics",
+      "path": "02-quadrotor-aerodynamics.html"
+    },
+    {
+      "number": "03",
+      "slug": "03-coding-blocks-reference",
+      "title": "Coding blocks field guide",
+      "summary": "A complete, student-facing map of every Hopper block category, including defaults, units, fresh-scan behavior, and safety consequences.",
+      "duration": "22 min",
+      "level": "Blocks",
+      "path": "03-coding-blocks-reference.html"
+    },
+    {
+      "number": "04",
+      "slug": "04-javascript-api-reference",
+      "title": "JavaScript API reference",
+      "summary": "Every supported student-facing JavaScript command, with argument units, defaults, return values, scan freshness, and flight-safety behavior.",
+      "duration": "35 min",
+      "level": "JavaScript",
+      "path": "04-javascript-api-reference.html"
+    },
+    {
+      "number": "05",
+      "slug": "05-thresholding-with-hopper",
+      "title": "Binary vision and thresholding",
+      "summary": "Understand the exact brightness equation, calibrate a threshold from evidence, and build decisions that survive shadows, glare, and noise.",
+      "duration": "24 min",
+      "level": "Vision foundations",
+      "path": "05-thresholding-with-hopper.html"
+    },
+    {
+      "number": "06",
+      "slug": "06-object-detection-and-coco",
+      "title": "Object detection and Hopper’s default neural network",
+      "summary": "Name the exact detector, trace its real tensor shapes, understand what its 4.5 million coefficients do, and use confidence without pretending it is certainty.",
+      "duration": "32 min",
+      "level": "Neural networks",
+      "path": "06-object-detection-and-coco.html"
+    },
+    {
+      "number": "07",
+      "slug": "07-teachable-machine-models",
+      "title": "Teachable Machine image models",
+      "summary": "Design classes, collect balanced evidence, export the correct three files, and understand why a whole-frame classifier is not an object detector.",
+      "duration": "26 min",
+      "level": "Custom machine learning",
+      "path": "07-teachable-machine-models.html"
+    },
+    {
+      "number": "08",
+      "slug": "08-apriltags-with-hopper",
+      "title": "AprilTags with Hopper",
+      "summary": "Understand the tag36h11 family, the local detection pipeline, normalized pose fields, and the exact limits of Hopper’s centering controller.",
+      "duration": "26 min",
+      "level": "Robotics vision",
+      "path": "08-apriltags-with-hopper.html"
+    },
+    {
+      "number": "09",
+      "slug": "09-python-coding-reference",
+      "title": "Python coding reference",
+      "summary": "Every supported Python command and helper, with explicit defaults, named arguments, return shapes, language differences, and safe mission patterns.",
+      "duration": "38 min",
+      "level": "Python",
+      "path": "09-python-coding-reference.html"
+    }
+  ]
+}

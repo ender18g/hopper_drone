@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="A complete, student-facing map of every Hopper block category, including defaults, units, fresh-scan behavior, and safety consequences.">
+  <meta name="theme-color" content="#062b4d">
+  <title>Coding blocks field guide · Hopper Field Guide</title>
+  <link rel="icon" href="../favicon.png">
+  <link rel="stylesheet" href="assets/lesson.css">
+  <script src="assets/lesson.js" defer></script>
+</head>
+<body class="lesson-document">
+  <div class="lesson-surface">
+    <a class="lesson-skip" href="#lesson-content">Skip to lesson content</a>
+    <div class="lesson-progress" aria-hidden="true"></div>
+    
+  <header class="lesson-topbar">
+    <a class="lesson-topbar__brand" href="index.html" data-lesson-hub>
+      <span class="lesson-topbar__brand-mark" aria-hidden="true">HF</span>
+      <span><b>Hopper field guide</b><small>Interactive learning library</small></span>
+    </a>
+    <span class="lesson-topbar__count">LESSON 03 / 09</span>
+    <div class="lesson-topbar__actions">
+      <button class="lesson-topbar__button" type="button" data-print-lesson aria-label="Print this lesson"><span>Print</span> ↗</button>
+      
+    </div>
+  </header>
+    
+  <div class="lesson-layout" id="lesson-content">
+    
+  <nav class="lesson-toc" aria-label="On this page">
+    <span class="lesson-toc__label">On this page</span>
+    <ol>
+      
+            <li>
+              <a href="#grammar">
+                <span>01</span>
+                Shape is grammar
+              </a>
+            </li>
+            <li>
+              <a href="#start-events">
+                <span>02</span>
+                Start, events, and general blocks
+              </a>
+            </li>
+            <li>
+              <a href="#flight-blocks">
+                <span>03</span>
+                Mini Drone blocks
+              </a>
+            </li>
+            <li>
+              <a href="#vision-blocks">
+                <span>04</span>
+                Camera Vision blocks
+              </a>
+            </li>
+            <li>
+              <a href="#logic-loops">
+                <span>05</span>
+                Logic, loops, math, variables, and functions
+              </a>
+            </li>
+      <li><a href="#sources"><span>06</span>Sources</a></li>
+    </ol>
+  </nav>
+    <main class="lesson-main">
+      
+  <details class="lesson-mobile-toc">
+    <summary>On this page</summary>
+    <nav aria-label="Mobile lesson navigation">
+      <ol>
+        <li><a href="#lesson-title">Overview</a></li>
+        <li><a href="#grammar">Shape is grammar</a></li><li><a href="#start-events">Start, events, and general blocks</a></li><li><a href="#flight-blocks">Mini Drone blocks</a></li><li><a href="#vision-blocks">Camera Vision blocks</a></li><li><a href="#logic-loops">Logic, loops, math, variables, and functions</a></li>
+        <li><a href="#sources">Sources</a></li>
+      </ol>
+    </nav>
+  </details>
+      
+  <header class="lesson-hero">
+    <p class="lesson-kicker">Build a program you can explain</p>
+    <h1 id="lesson-title">Coding blocks field guide</h1>
+    <p class="lesson-hero__summary">A complete, student-facing map of every Hopper block category, including defaults, units, fresh-scan behavior, and safety consequences.</p>
+    <div class="lesson-meta" aria-label="Lesson details">
+      <span class="lesson-chip">Lesson 03 of 9</span>
+      <span class="lesson-chip">22 min</span>
+      <span class="lesson-chip">Blocks</span>
+    </div>
+  </header>
+  <section class="lesson-objectives" aria-labelledby="objectives-title">
+    <h2 id="objectives-title">Learning objectives</h2>
+    <ol><li>Build a program from events, commands, values, and control-flow blocks.</li><li>Choose a fresh vision scan when a decision depends on the current frame.</li><li>Recognize persistent motion commands and reset them deliberately.</li><li>End every flight path with a safe landing strategy.</li></ol>
+  </section>
+        <section class="lesson-section" id="grammar" aria-labelledby="grammar-title">
+          <span class="lesson-section__number">01 / 05</span>
+          <h2 id="grammar-title">Shape is grammar</h2>
+          
+          <p class="lesson-lede">Blockly prevents many syntax errors by making only compatible shapes connect. That does not guarantee a sensible or safe program.</p>
+          
+  <div class="lesson-cards">
+    
+      <article class="lesson-card">
+        <span class="lesson-card__tag">Hat block</span>
+        <h3>Event or program start</h3>
+        <p>Starts a stack when Run is pressed, a key changes, or a drone event occurs.</p>
+      </article>
+      <article class="lesson-card">
+        <span class="lesson-card__tag">Statement block</span>
+        <h3>Do something</h3>
+        <p>Commands such as take off, wait, scan, fly, print, and land connect vertically.</p>
+      </article>
+      <article class="lesson-card">
+        <span class="lesson-card__tag">Value block</span>
+        <h3>Produce data</h3>
+        <p>Rounded blocks produce numbers, text, or booleans that fit into inputs.</p>
+      </article>
+      <article class="lesson-card">
+        <span class="lesson-card__tag">Container</span>
+        <h3>Control flow</h3>
+        <p>If, loop, and function blocks contain statements and decide when they run.</p>
+      </article>
+  </div>
+          
+  <aside class="lesson-callout lesson-callout--caution">
+    <span aria-hidden="true"></span>
+    <div><b>Execution model</b><p>A normal non-event program automatically requests landing when it reaches the end. Event-driven programs remain alive until stopped. The Stop button force-lands; the “stop program” block only stops/reset motion and does not itself land.</p></div>
+  </aside>
+        
+        </section>
+        <section class="lesson-section" id="start-events" aria-labelledby="start-events-title">
+          <span class="lesson-section__number">02 / 05</span>
+          <h2 id="start-events-title">Start, events, and general blocks</h2>
+          
+          
+  <div class="lesson-table-wrap" role="region" aria-label="Block, Inputs / choices, Behavior" tabindex="0">
+    <table class="lesson-table">
+      <thead><tr><th scope="col">Block</th><th scope="col">Inputs / choices</th><th scope="col">Behavior</th></tr></thead>
+      <tbody><tr><td>when program starts</td><td>Statement stack</td><td>Runs once when the green Run button starts the program.</td></tr><tr><td>stop program</td><td>None</td><td>Stops execution and resets motion. It does not send a landing command.</td></tr><tr><td>when key is pressed / released</td><td>Arrow keys, Space, or a–z</td><td>Registers an event handler. Repeated key events can overlap.</td></tr><tr><td>key is pressed</td><td>Same key list</td><td>Boolean value for polling inside a loop or decision.</td></tr><tr><td>wait</td><td>Seconds; default shadow 1</td><td>Pauses sequentially and can be cancelled by Stop.</td></tr><tr><td>print</td><td>Any value</td><td>Adds a line to the Hopper Studio console.</td></tr><tr><td>continue if</td><td>Boolean</td><td>Stops the current program or event handler unless the condition is true.</td></tr></tbody>
+    </table>
+  </div>
+        
+        </section>
+        <section class="lesson-section" id="flight-blocks" aria-labelledby="flight-blocks-title">
+          <span class="lesson-section__number">03 / 05</span>
+          <h2 id="flight-blocks-title">Mini Drone blocks</h2>
+          
+          <h3>Flight</h3>
+          
+  <div class="lesson-table-wrap" role="region" aria-label="Block, Inputs / choices, Important behavior" tabindex="0">
+    <table class="lesson-table">
+      <thead><tr><th scope="col">Block</th><th scope="col">Inputs / choices</th><th scope="col">Important behavior</th></tr></thead>
+      <tbody><tr><td>take off</td><td>None</td><td>Checks the real drone’s reported battery and waits for takeoff stabilization.</td></tr><tr><td>land</td><td>None</td><td>Zeros motion, sends land, and waits for the landing interval.</td></tr><tr><td>hover</td><td>None</td><td>Zeros all axes and waits 1 second.</td></tr><tr><td>fly</td><td>Direction; 1 s; 15% power</td><td>Directions: forward, backward, left, right, up, down. Block power is a positive percentage.</td></tr><tr><td>center on AprilTag</td><td>ID; 10% power; optional tolerances</td><td>Pulses roll/pitch, rescans, then corrects image-plane yaw. It does not control height or distance.</td></tr><tr><td>rotate</td><td>Degrees; clockwise/counterclockwise; default 90°</td><td>Uses a nominal 180°/s yaw command, then settles.</td></tr><tr><td>flip</td><td>Forward/backward/left/right</td><td>Runs the accessory maneuver and waits 2.5 seconds. Use only with clearance.</td></tr><tr><td>set pitch/roll/yaw/altitude</td><td>Signed −100…100%</td><td>Persists until reset or another command. “Altitude” maps to the gaz/throttle-like axis.</td></tr><tr><td>reset movement</td><td>None</td><td>Zeros axes; does not land.</td></tr><tr><td>cut off motors</td><td>None</td><td>Emergency only. Immediately stops motors; no controlled descent.</td></tr></tbody>
+    </table>
+  </div>
+          <h3>Sensors, events, and accessories</h3>
+          
+  <div class="lesson-table-wrap" role="region" aria-label="Block, Output / choices, Important behavior" tabindex="0">
+    <table class="lesson-table">
+      <thead><tr><th scope="col">Block</th><th scope="col">Output / choices</th><th scope="col">Important behavior</th></tr></thead>
+      <tbody><tr><td>battery level</td><td>Number</td><td>Reported percent when telemetry exists; otherwise no value/null in code.</td></tr><tr><td>drone is flying / landed</td><td>Boolean</td><td>Reads the controller’s current state.</td></tr><tr><td>wait until battery changes</td><td>Statement</td><td>Can wait indefinitely if no new telemetry arrives.</td></tr><tr><td>when drone …</td><td>Flying, landed, crashed, battery changed</td><td>Registers an event handler.</td></tr><tr><td>take and store photo</td><td>Statement</td><td>Captures the current Studio camera/simulator frame into the session gallery.</td></tr><tr><td>open / close grabber</td><td>Statement</td><td>Requires the physical claw accessory.</td></tr><tr><td>fire cannon</td><td>Statement</td><td>Requires the physical cannon accessory.</td></tr></tbody>
+    </table>
+  </div>
+        
+        </section>
+        <section class="lesson-section" id="vision-blocks" aria-labelledby="vision-blocks-title">
+          <span class="lesson-section__number">04 / 05</span>
+          <h2 id="vision-blocks-title">Camera Vision blocks</h2>
+          
+          
+  <div class="lesson-table-wrap" role="region" aria-label="Block, Inputs / defaults, Fresh scan?" tabindex="0">
+    <table class="lesson-table">
+      <thead><tr><th scope="col">Block</th><th scope="col">Inputs / defaults</th><th scope="col">Fresh scan?</th></tr></thead>
+      <tbody><tr><td>camera sees binary</td><td>White/black; threshold 60%; invert; coverage 10%</td><td>Yes. Returns a boolean after measuring full-frame coverage.</td></tr><tr><td>binary center pixel</td><td>White/black; threshold 60%; invert</td><td>Yes. Checks only the center reticle pixel.</td></tr><tr><td>scan for objects</td><td>Model confidence comes from the Vision panel</td><td>Yes. Saves up to 10 real detections.</td></tr><tr><td>camera sees object</td><td>Exact COCO label; confidence 55%</td><td>Yes. Confidence is entered as a percentage in blocks.</td></tr><tr><td>x/y coordinate of object</td><td>Label; confidence 55%</td><td>No. Reads the last stored matching coordinate; right/up are positive.</td></tr><tr><td>custom model sees</td><td>Exact label; confidence 75%</td><td>Yes. Requires the three Teachable Machine files to be loaded.</td></tr><tr><td>scan for AprilTags</td><td>None</td><td>Yes. Saves tag36h11 detections.</td></tr><tr><td>camera sees AprilTag</td><td>any or ID 0–586</td><td>Yes. Uses a new camera frame.</td></tr></tbody>
+    </table>
+  </div>
+          
+  <aside class="lesson-callout lesson-callout--gold">
+    <span aria-hidden="true"></span>
+    <div><b>Percent versus fraction</b><p>Blocks and sliders display confidence as 55%. JavaScript and Python use 0.55. Mixing these scales is a common reason a detector appears to find nothing.</p></div>
+  </aside>
+        
+        </section>
+        <section class="lesson-section" id="logic-loops" aria-labelledby="logic-loops-title">
+          <span class="lesson-section__number">05 / 05</span>
+          <h2 id="logic-loops-title">Logic, loops, math, variables, and functions</h2>
+          
+          
+  <div class="lesson-cards">
+    
+      <article class="lesson-card">
+        <span class="lesson-card__tag">Logic</span>
+        <h3>Decide</h3>
+        <p>If/else, comparison, and/or, not, booleans, and ternary choice blocks combine facts into decisions.</p>
+      </article>
+      <article class="lesson-card">
+        <span class="lesson-card__tag">Loops</span>
+        <h3>Repeat with an exit</h3>
+        <p>Forever, for-seconds, repeat-count, while/until, counted-for, break, and continue blocks control repetition.</p>
+      </article>
+      <article class="lesson-card">
+        <span class="lesson-card__tag">Math</span>
+        <h3>Transform numbers</h3>
+        <p>Arithmetic, roots/functions, trigonometry, rounding, modulo, and random-number blocks support calculations.</p>
+      </article>
+      <article class="lesson-card">
+        <span class="lesson-card__tag">Variables</span>
+        <h3>Remember</h3>
+        <p>Store thresholds, counters, scan results, and state. Name variables by meaning and unit.</p>
+      </article>
+      <article class="lesson-card">
+        <span class="lesson-card__tag">Functions</span>
+        <h3>Reuse</h3>
+        <p>Group a sequence into a named procedure. Keep flight functions short and make their preconditions clear.</p>
+      </article>
+  </div>
+          <p>A forever loop that contains no wait or awaited command can monopolize the browser. Include a timed command, wait, or a clear stop condition.</p>
+          
+    <figure class="lesson-code">
+      <figcaption class="lesson-code__bar">
+        <span>What a safe block mission should generate · javascript</span>
+        <button class="lesson-copy" type="button" data-copy-code>Copy</button>
+      </figcaption>
+      <pre><code class="language-javascript"><span class="token keyword">await</span> drone<span class="token punctuation">.</span><span class="token function">takeOff</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">try</span> <span class="token punctuation">{</span>
+  <span class="token keyword">const</span> found <span class="token operator">=</span> <span class="token keyword">await</span> vision<span class="token punctuation">.</span><span class="token function">seesObject</span><span class="token punctuation">(</span><span class="token string">"bottle"</span><span class="token punctuation">,</span> <span class="token number">0.55</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token keyword">if</span> <span class="token punctuation">(</span>found<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+    <span class="token keyword">await</span> drone<span class="token punctuation">.</span><span class="token function">fly</span><span class="token punctuation">(</span><span class="token string">"forward"</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">,</span> <span class="token number">15</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token punctuation">}</span> <span class="token keyword">else</span> <span class="token punctuation">{</span>
+    console<span class="token punctuation">.</span><span class="token function">log</span><span class="token punctuation">(</span><span class="token string">"Bottle not found; holding position."</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token keyword">await</span> drone<span class="token punctuation">.</span><span class="token function">hover</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">}</span> <span class="token keyword">finally</span> <span class="token punctuation">{</span>
+  <span class="token keyword">await</span> drone<span class="token punctuation">.</span><span class="token function">land</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span></code></pre>
+    </figure>
+          
+  <details class="lesson-check">
+    <summary>Check your understanding · Which block should follow a persistent “set roll to 10%” command?</summary>
+    <div class="lesson-check__answer"><p>Use <strong>reset movement</strong> after the intended interval, or use a timed <strong>fly</strong> block instead. A persistent axis command continues until another command changes it.</p></div>
+  </details>
+        
+        </section>
+  <footer class="lesson-sources" id="sources">
+    <h2>Sources and verification</h2>
+    <ol><li>Hopper Studio Blockly definitions — Verified against lib/blockly.ts and lib/runtime.ts in the course build</li><li><a href="https://developers.google.com/blockly/guides/overview" target="_blank" rel="noopener noreferrer">Blockly documentation</a> — Google’s official overview of blocks, workspaces, and code generation</li></ol>
+    <p class="lesson-sources__verified">Content and command behavior verified 28 July 2026</p>
+  </footer>
+      
+    <nav class="lesson-pagination" aria-label="Lesson navigation">
+      <a href="02-quadrotor-aerodynamics.html" data-lesson-slug="02-quadrotor-aerodynamics">
+              <small>← Previous lesson</small><b>How an X-quadrotor flies</b>
+            </a>
+      <a href="04-javascript-api-reference.html" data-lesson-slug="04-javascript-api-reference">
+              <small>Next lesson →</small><b>JavaScript API reference</b>
+            </a>
+    </nav>
+    </main>
+  </div>
+  </div>
+</body>
+</html>

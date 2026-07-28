@@ -1,3 +1,5 @@
+@import "../information-lessons/lesson.css";
+
 :root {
   --ink: #0c284a;
   --ink-soft: #4c6173;
@@ -584,7 +586,7 @@ textarea:focus-visible {
 }
 
 .information-menu-panel {
-  width: min(390px, calc(100vw - 24px));
+  width: min(440px, calc(100vw - 24px));
   max-height: min(560px, calc(100vh - 156px));
   position: absolute;
   z-index: 2000;
@@ -608,13 +610,25 @@ textarea:focus-visible {
 
 .information-menu-heading b {
   color: #003d61;
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.12em;
 }
 
-.information-menu-heading small {
-  color: #6a7e88;
-  font-size: 9px;
+.information-menu-heading a {
+  color: #006a73;
+  font-size: 10px;
+  font-weight: 850;
+  text-decoration: none;
+}
+
+.information-menu-heading a:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.information-menu-heading a:focus-visible {
+  outline: 2px solid #008c95;
+  outline-offset: 3px;
 }
 
 .information-menu-panel ol {
@@ -623,51 +637,51 @@ textarea:focus-visible {
   list-style: none;
 }
 
-.information-menu-panel a {
-  min-height: 51px;
+.information-menu-panel ol a {
+  min-height: 62px;
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr);
   align-items: start;
   gap: 9px;
-  padding: 8px 7px;
+  padding: 9px 8px;
   border-radius: 4px;
   color: var(--ink);
   text-decoration: none;
 }
 
-.information-menu-panel a:hover {
+.information-menu-panel ol a:hover {
   background: #e8f4f4;
 }
 
-.information-menu-panel a:focus-visible {
+.information-menu-panel ol a:focus-visible {
   outline: 2px solid #008c95;
   outline-offset: -2px;
   background: #e8f4f4;
 }
 
-.information-menu-panel a > span:first-child {
+.information-menu-panel ol a > span:first-child {
   padding-top: 2px;
   color: #008c95;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 900;
 }
 
-.information-menu-panel a b,
-.information-menu-panel a small {
+.information-menu-panel ol a b,
+.information-menu-panel ol a small {
   display: block;
 }
 
-.information-menu-panel a b {
-  font-size: 10px;
+.information-menu-panel ol a b {
+  font-size: 12px;
   line-height: 1.3;
 }
 
-.information-menu-panel a small {
-  margin-top: 2px;
+.information-menu-panel ol a small {
+  margin-top: 3px;
   color: #607681;
-  font-size: 8px;
-  line-height: 1.35;
+  font-size: 10px;
+  line-height: 1.4;
 }
 
 .editor-tabs {

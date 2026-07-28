@@ -6,9 +6,10 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "dev": "vinext dev",
-    "build": "vinext build && node scripts/write-offline-manifest.mjs",
-    "build:student": "vite build --config vite.standalone.config.ts",
+    "lessons": "node scripts/generate-information-lessons.mjs",
+    "dev": "npm run lessons && vinext dev",
+    "build": "npm run lessons && vinext build && node scripts/write-offline-manifest.mjs",
+    "build:student": "npm run lessons && vite build --config vite.standalone.config.ts",
     "build:pages": "npm run build:student && node scripts/prepare-pages.mjs",
     "build:desktop": "npm run build:student && node scripts/prepare-desktop.mjs && npm run test:desktop",
     "build:all": "npm run build && npm run build:student",
@@ -28,7 +29,9 @@
     "apriltag": "^2.0.3",
     "blockly": "^13.1.1",
     "drizzle-orm": "0.45.2",
+    "katex": "^0.18.1",
     "next": "^16.2.11",
+    "prismjs": "^1.30.0",
     "react": "19.2.6",
     "react-dom": "19.2.6",
     "vite-plugin-singlefile": "^2.3.3"

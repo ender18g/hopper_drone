@@ -3,7 +3,7 @@
   "labName": "Flight + Vision Lab",
   "organizationPrefix": "USNA",
   "codingOptions": {
-    "defaultEditor": "blocks",
+    "defaultEditor": "python",
     "enabledEditors": [
       "python",
       "blocks",

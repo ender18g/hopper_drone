@@ -518,7 +518,11 @@ const orderArguments = (
         line,
       );
     }
-    return positional;
+    if (parameters.length === 0) return positional;
+    return parameters.map(
+      (parameter, index) =>
+        positional[index] ?? spec.defaults?.[parameter] ?? "undefined",
+    );
   }
 
   let lastIndex = positional.length - 1;

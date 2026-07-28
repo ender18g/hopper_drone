@@ -1,7 +1,7 @@
-# Hopper information lesson source decks
+# Archived Hopper slide-deck sources
 
-These editable PowerPoint decks are the source versions of the corresponding
-16:9 PDFs in `public/information/`:
+These editable PowerPoint decks are retained as historical instructor
+materials:
 
 - `01-hopper-sensor-suite.pptx`
 - `02-quadrotor-aerodynamics.pptx`
@@ -10,10 +10,18 @@ These editable PowerPoint decks are the source versions of the corresponding
 - `07-teachable-machine-models.pptx`
 - `08-apriltags-with-hopper.pptx`
 
-The PowerPoint speaker notes contain `[Sources]` blocks for researched claims
-and externally sourced assets. The website should continue linking to the PDFs;
-the PPTX files are retained so instructors can revise or present the lessons.
+The website no longer publishes or links informational PDFs. The canonical
+student lessons are now the responsive, offline-capable HTML documents defined
+in `information-lessons/lesson-content.mjs`. Run:
 
-The legacy `scripts/generate-information-pdfs.py` predates these editable
-source decks. Do not use it to overwrite the six PDFs above without also
-porting the updated content.
+```sh
+npm run lessons
+```
+
+That command generates the standalone files in `public/information/` and the
+shared module used by Hopper Studio's in-app learning-library reader. Equations
+are pre-rendered to MathML with KaTeX, and JavaScript/Python examples are
+highlighted at build time with Prism.
+
+The legacy PDF generators write only to the workspace `output/pdf/` archive.
+They must not be treated as the source of truth for the website lessons.

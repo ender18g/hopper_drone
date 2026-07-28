@@ -10,8 +10,8 @@ async function withDesktopServer(callback) {
   await writeFile(join(staticRoot, "hopper-studio.html"), "<!doctype html><title>Hopper</title>");
   await mkdir(join(staticRoot, "information"));
   await writeFile(
-    join(staticRoot, "information", "01-hopper-sensor-suite.pdf"),
-    "%PDF-1.4\n% Hopper information test\n",
+    join(staticRoot, "information", "01-hopper-sensor-suite.html"),
+    '<!doctype html><html lang="en"><title>Sensor suite</title><main><h1>The Hopper sensor suite</h1></main></html>',
   );
   const cameraRequests = [];
   const server = await startDesktopServer({
@@ -42,10 +42,10 @@ test("desktop server binds a loopback origin and serves the app securely", async
     assert.match(response.headers.get("content-security-policy"), /frame-ancestors 'none'/);
     assert.match(response.headers.get("set-cookie"), /HttpOnly; SameSite=Strict/);
 
-    const pdfResponse = await fetch(`${origin}/information/01-hopper-sensor-suite.pdf`);
-    assert.equal(pdfResponse.status, 200);
-    assert.equal(pdfResponse.headers.get("content-type"), "application/pdf");
-    assert.match(await pdfResponse.text(), /^%PDF-1\.4/);
+    const lessonResponse = await fetch(`${origin}/information/01-hopper-sensor-suite.html`);
+    assert.equal(lessonResponse.status, 200);
+    assert.match(lessonResponse.headers.get("content-type"), /^text\/html\b/i);
+    assert.match(await lessonResponse.text(), /<h1>The Hopper sensor suite<\/h1>/);
   });
 });
 

@@ -49,6 +49,8 @@ import {
   transpilePython,
 } from "../lib/python";
 import { JAVASCRIPT_STARTER_PROGRAM } from "../lib/coding-starters";
+import { INFORMATION_LESSONS } from "../lib/information-lessons.metadata.generated";
+import InformationLessonLauncher from "./InformationLessonLauncher";
 import SimulatedDroneArea from "./SimulatedDroneArea";
 import wrcLogo from "../logos/wrc_logo.png?inline";
 
@@ -67,53 +69,6 @@ const VISION_WIDTH_KEY = "hopper-studio-vision-width-v1";
 const VISION_MIN_WIDTH = 330;
 const EDITOR_MIN_WIDTH = 340;
 const VISION_SPLITTER_WIDTH = 9;
-const INFORMATION_SLIDE_DECKS = [
-  {
-    title: "The Hopper sensor suite",
-    description: "Indoor sensors, camera, and why Hopper does not use GPS",
-    path: "information/01-hopper-sensor-suite.pdf",
-  },
-  {
-    title: "How a quadrotor flies",
-    description: "Aerodynamics, linear and angular motion, and a simple model",
-    path: "information/02-quadrotor-aerodynamics.pdf",
-  },
-  {
-    title: "Coding blocks reference",
-    description: "The available Blockly categories and what each block does",
-    path: "information/03-coding-blocks-reference.pdf",
-  },
-  {
-    title: "Python coding reference",
-    description: "Every Python command plus variables, decisions, loops, and functions",
-    path: "information/09-python-coding-reference.pdf",
-  },
-  {
-    title: "JavaScript API reference",
-    description: "Student-facing functions, variables, and examples",
-    path: "information/04-javascript-api-reference.pdf",
-  },
-  {
-    title: "Thresholding with Hopper",
-    description: "Binary vision and finding white paper in an indoor room",
-    path: "information/05-thresholding-with-hopper.pdf",
-  },
-  {
-    title: "Object detection and COCO",
-    description: "Object detection, the COCO dataset, and Hopper's built-in network",
-    path: "information/06-object-detection-and-coco.pdf",
-  },
-  {
-    title: "Teachable Machine models",
-    description: "Train, export, and load a custom image model",
-    path: "information/07-teachable-machine-models.pdf",
-  },
-  {
-    title: "AprilTags with Hopper",
-    description: "How AprilTags work and classroom drone activities",
-    path: "information/08-apriltags-with-hopper.pdf",
-  },
-] as const;
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (
   ...args: string[]
 ) => (...values: unknown[]) => Promise<void>;
@@ -236,7 +191,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   const manualNudgeSequenceRef = useRef(0);
   const photoSequenceRef = useRef(0);
   const photoUrlsRef = useRef(new Set<string>());
-  const projectNameRef = useRef("Binary Landing Lab");
+  const projectNameRef = useRef("Object Detection Lab");
   const javascriptCodeRef = useRef(JAVASCRIPT_STARTER_PROGRAM);
   const pythonCodeRef = useRef(PYTHON_STARTER_PROGRAM);
 
@@ -244,7 +199,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   const [generatedCode, setGeneratedCode] = useState("");
   const [javascriptCode, setJavascriptCode] = useState(JAVASCRIPT_STARTER_PROGRAM);
   const [pythonCode, setPythonCode] = useState(PYTHON_STARTER_PROGRAM);
-  const [projectName, setProjectName] = useState("Binary Landing Lab");
+  const [projectName, setProjectName] = useState("Object Detection Lab");
   const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected");
   const [connectionMode, setConnectionMode] = useState<"real" | "simulated" | null>(null);
   const [simulationController, setSimulationController] = useState<SimulatedDroneController | null>(null);
@@ -376,20 +331,6 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
       });
     },
     [],
-  );
-
-  const openInformationSlideDeck = useCallback(
-    (path: string, title: string) => {
-      const pdfWindow = window.open("about:blank", "_blank");
-      if (!pdfWindow) {
-        notify(`Allow pop-ups to open “${title}”.`);
-        return;
-      }
-      pdfWindow.opener = null;
-      pdfWindow.location.href = new URL(path, document.baseURI).href;
-      if (informationMenuRef.current) informationMenuRef.current.open = false;
-    },
-    [notify],
   );
 
   const clearMissionPhotos = useCallback(() => {
@@ -1543,6 +1484,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   } as CSSProperties;
   const scanActive = scanEvent?.phase === "start";
   return (
+    <>
     <main className="studio-shell">
       <header className="topbar">
         <div className="brand-lockup">
@@ -1642,32 +1584,36 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
             onChange={(event) => void importProject(event.target.files?.[0])}
           />
           <details className="information-menu" ref={informationMenuRef}>
-            <summary aria-label="Open information slide decks" title="Information slide decks">
+            <summary aria-label="Open information lessons" title="Information lessons">
               <span aria-hidden="true">ⓘ</span>
               <span className="information-menu-label">Information</span>
               <i aria-hidden="true">▾</i>
             </summary>
-            <nav className="information-menu-panel" aria-label="Information slide decks">
+            <nav className="information-menu-panel" aria-label="Information lessons">
               <div className="information-menu-heading">
-                <b>INFORMATION</b>
-                <small>PDF slide decks</small>
+                <b>LEARNING LIBRARY</b>
+                <a
+                  href="#/information"
+                  onClick={() => {
+                    if (informationMenuRef.current) informationMenuRef.current.open = false;
+                  }}
+                >
+                  Browse all →
+                </a>
               </div>
               <ol>
-                {INFORMATION_SLIDE_DECKS.map((deck, index) => (
-                  <li key={deck.path}>
+                {INFORMATION_LESSONS.map((lesson) => (
+                  <li key={lesson.slug}>
                     <a
-                      href={deck.path}
-                      target="_blank"
-                      rel="noopener"
-                      onClick={(event) => {
-                        event.preventDefault();
-                        openInformationSlideDeck(deck.path, deck.title);
+                      href={`#/information/${lesson.slug}`}
+                      onClick={() => {
+                        if (informationMenuRef.current) informationMenuRef.current.open = false;
                       }}
                     >
-                      <span>{String(index + 1).padStart(2, "0")}</span>
+                      <span>{lesson.number}</span>
                       <span>
-                        <b>{deck.title}</b>
-                        <small>{deck.description}</small>
+                        <b>{lesson.title}</b>
+                        <small>{lesson.summary}</small>
                       </span>
                     </a>
                   </li>
@@ -1868,7 +1814,6 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
         <aside className="vision-panel">
           <div className="vision-heading">
             <div>
-              <span className="eyebrow">ONE TEST AT A TIME</span>
               <h1>VISION TESTING</h1>
             </div>
             <span className={`live-badge ${telemetryLive ? "on" : ""}`}>
@@ -2256,5 +2201,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
       )}
       {toast && <div className="toast" role="status">{toast}</div>}
     </main>
+    <InformationLessonLauncher />
+    </>
   );
 }

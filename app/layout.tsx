@@ -9,14 +9,14 @@ export async function generateMetadata(): Promise<Metadata> {
   const protocol = incomingHeaders.get("x-forwarded-proto") || "http";
   const title = METADATA_TITLE;
   const description =
-    "A private, local block-coding and computer-vision studio for FTW Hopper drones.";
+    "An offline-ready coding, computer-vision, and quadrotor learning studio for FTW Hopper drones.";
 
   return {
     metadataBase: new URL(`${protocol}://${host}`),
     title,
     description,
     icons: { icon: "/favicon.png", shortcut: "/favicon.png" },
-    openGraph: { title, description, images: [{ url: "/og.png", width: 1200, height: 630 }] },
+    openGraph: { title, description, images: [{ url: "/og.png", width: 1731, height: 909 }] },
     twitter: { card: "summary_large_image", title, description, images: ["/og.png"] },
   };
 }

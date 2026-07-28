@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, dialog, Menu } from "electron";
+import { app, BrowserWindow, dialog, Menu, shell } from "electron";
 import { startDesktopServer } from "./server.mjs";
 
 const moduleDirectory = dirname(fileURLToPath(import.meta.url));
@@ -40,14 +40,36 @@ function isAllowedPopupUrl(value) {
   }
 }
 
+function isAllowedExternalUrl(value) {
+  try {
+    return new URL(value).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function openExternalReference(value) {
+  if (!isAllowedExternalUrl(value)) return;
+  void shell.openExternal(value).catch(() => undefined);
+}
+
 function secureWebContents(contents) {
   contents.on("will-attach-webview", (event) => event.preventDefault());
   contents.on("will-navigate", (event, navigationUrl) => {
+    if (isAllowedExternalUrl(navigationUrl)) {
+      event.preventDefault();
+      openExternalReference(navigationUrl);
+      return;
+    }
     if (!isAppUrl(navigationUrl) && !isAllowedPopupUrl(navigationUrl)) {
       event.preventDefault();
     }
   });
   contents.setWindowOpenHandler(({ url }) => {
+    if (isAllowedExternalUrl(url)) {
+      openExternalReference(url);
+      return { action: "deny" };
+    }
     if (!isAllowedPopupUrl(url)) return { action: "deny" };
     return {
       action: "allow",
