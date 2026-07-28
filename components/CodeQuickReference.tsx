@@ -1012,7 +1012,7 @@ export default function CodeQuickReference({ language }: { language: ReferenceLa
           aria-label={collapsed ? "Open quick documentation" : "Collapse quick documentation"}
           title={collapsed ? "Open API guide" : "Collapse API guide"}
         >
-          {collapsed ? "API ›" : "‹"}
+          {collapsed ? "API" : "−"}
         </button>
       </header>
       {!collapsed && (

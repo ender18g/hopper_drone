@@ -1080,6 +1080,11 @@ body.resizing-vision * {
   box-shadow: 0 4px 12px rgba(0, 10, 24, 0.2);
 }
 
+.code-reference-header > div {
+  min-width: 0;
+  padding-right: 34px;
+}
+
 .code-reference-header span,
 .code-reference-header b {
   display: block;
@@ -1101,6 +1106,10 @@ body.resizing-vision * {
 }
 
 .code-reference-header button {
+  position: absolute;
+  top: 50%;
+  right: 11px;
+  transform: translateY(-50%);
   width: 29px;
   height: 29px;
   flex: 0 0 auto;
@@ -1132,6 +1141,8 @@ body.resizing-vision * {
 }
 
 .code-quick-reference.collapsed .code-reference-header button {
+  position: static;
+  transform: none;
   width: 31px;
   height: auto;
   min-height: 92px;
