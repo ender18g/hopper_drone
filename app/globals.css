@@ -1078,11 +1078,22 @@ body.resizing-vision * {
   border-bottom: 1px solid #29445c;
   background: #0b2945;
   box-shadow: 0 4px 12px rgba(0, 10, 24, 0.2);
+  list-style: none;
+  overflow: hidden;
 }
 
 .code-reference-header > div {
   min-width: 0;
+  position: relative;
+  z-index: 1;
   padding-right: 34px;
+  background: #0b2945;
+}
+
+.code-reference-header::marker,
+.code-reference-header *::marker {
+  content: "";
+  display: none;
 }
 
 .code-reference-header span,
@@ -1106,7 +1117,10 @@ body.resizing-vision * {
 }
 
 .code-reference-header button {
+  appearance: none;
+  -webkit-appearance: none;
   position: absolute;
+  z-index: 2;
   top: 50%;
   right: 11px;
   transform: translateY(-50%);
