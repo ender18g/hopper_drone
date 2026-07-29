@@ -29,6 +29,10 @@ export type ObjectCoordinate = {
   y: number;
 };
 
+export type BinaryCentroid = ObjectCoordinate & {
+  coverage: number;
+};
+
 type StoredObjectCoordinate = ObjectCoordinate & {
   confidence: number;
 };
@@ -109,6 +113,34 @@ export const detectionCenterCoordinate = (
   return {
     x: Math.round(clampCoordinate((centerX / frameWidth - 0.5) * 200) * 10) / 10,
     y: Math.round(clampCoordinate((0.5 - centerY / frameHeight) * 200) * 10) / 10,
+  };
+};
+
+export const binaryCentroid = (
+  result: ThresholdResult,
+  color: BinaryColor,
+): BinaryCentroid | null => {
+  let pixelCount = 0;
+  let xTotal = 0;
+  let yTotal = 0;
+  const wantsWhite = color === "white";
+  for (let y = 0; y < result.frameHeight; y += 1) {
+    for (let x = 0; x < result.frameWidth; x += 1) {
+      const pixelIsWhite = result.binaryData[(y * result.frameWidth + x) * 4] === 255;
+      if (pixelIsWhite !== wantsWhite) continue;
+      pixelCount += 1;
+      xTotal += x;
+      yTotal += y;
+    }
+  }
+  const total = result.frameWidth * result.frameHeight;
+  if (pixelCount === 0 || total === 0) return null;
+  const horizontalSpan = Math.max(1, result.frameWidth - 1);
+  const verticalSpan = Math.max(1, result.frameHeight - 1);
+  return {
+    x: Math.round(clampCoordinate((xTotal / pixelCount / horizontalSpan - 0.5) * 200) * 10) / 10,
+    y: Math.round(clampCoordinate((0.5 - yTotal / pixelCount / verticalSpan) * 200) * 10) / 10,
+    coverage: (pixelCount / total) * 100,
   };
 };
 
@@ -195,6 +227,78 @@ export class VisionRuntime {
   /** Compatibility alias for projects saved before coordinate sampling was added. */
   async binaryCenter(color: BinaryColor, threshold = 60, invert = false) {
     return this.binaryAt(color, 0, 0, threshold, invert);
+  }
+
+  async centerOnBinary(
+    drone: DroneController,
+    color: BinaryColor,
+    threshold = 60,
+    minimumCoverage = 10,
+    translationPower = 10,
+    centerSlack = 5,
+    lostSearches = 3,
+    rescanDelay = 0.5,
+  ) {
+    const wanted: BinaryColor = color === "black" ? "black" : "white";
+    const safeThreshold = clampPercent(threshold);
+    const safeMinimumCoverage = clampPercent(minimumCoverage);
+    const safeTranslationPower = clampPercent(translationPower);
+    const safeCenterSlack = Math.max(1, Math.min(35, Number(centerSlack) || 5));
+    const safeLostSearches = Math.max(1, Math.min(20, Math.round(Number(lostSearches) || 3)));
+    const safeRescanDelay = Math.max(0, Math.min(5, Number(rescanDelay) || 0));
+    const deadline = performance.now() + 30_000;
+    let misses = 0;
+
+    this.onLog(`Binary centering: looking for ${wanted} at threshold ${safeThreshold}%.`);
+    while (!drone.cancelRunFlag && performance.now() < deadline) {
+      const result = await this.scanThreshold(safeThreshold, false, true);
+      const target = binaryCentroid(result, wanted);
+      if (!target || target.coverage < safeMinimumCoverage) {
+        misses += 1;
+        this.onLog(
+          `Binary centering: ${wanted} covers ${target?.coverage.toFixed(1) ?? "0.0"}% of frame; need ${safeMinimumCoverage}% — search ${misses} of ${safeLostSearches}.`,
+        );
+        if (misses >= safeLostSearches) {
+          drone.reset();
+          this.onLog(`Binary centering: gave up after ${safeLostSearches} lost-target scans.`);
+          return false;
+        }
+        await drone.wait(0.45);
+        continue;
+      }
+
+      misses = 0;
+      const horizontalError = target.x;
+      const verticalError = target.y;
+      this.onLog(
+        `Binary centering: ${wanted} centroid is at X ${horizontalError}%, Y ${verticalError}% (${target.coverage.toFixed(1)}% coverage).`,
+      );
+      if (
+        Math.abs(horizontalError) <= safeCenterSlack &&
+        Math.abs(verticalError) <= safeCenterSlack
+      ) {
+        drone.reset();
+        this.onLog(`Binary centering: ${wanted} target is centered; yaw was not changed.`);
+        return true;
+      }
+
+      if (Math.abs(horizontalError) >= Math.abs(verticalError)) {
+        drone.setAxis("roll", horizontalError > 0 ? safeTranslationPower : -safeTranslationPower);
+      } else {
+        drone.setAxis("pitch", verticalError > 0 ? safeTranslationPower : -safeTranslationPower);
+      }
+      await drone.wait(0.3);
+      drone.reset();
+      await drone.wait(safeRescanDelay);
+    }
+
+    drone.reset();
+    this.onLog(
+      drone.cancelRunFlag
+        ? "Binary centering: stopped."
+        : "Binary centering: timed out after 30 seconds.",
+    );
+    return false;
   }
 
   async loadObjectModel() {

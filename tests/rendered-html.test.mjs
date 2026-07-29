@@ -578,6 +578,10 @@ test("highlights and translates the classroom Python surface to the async runtim
     /await vision\.binaryAt\("white", 100, 100\);/,
   );
   assert.match(
+    python.transpilePython('center_on_binary("white", coverage=15)'),
+    /await vision\.centerOnBinary\(drone, "white", 60, 15\);/,
+  );
+  assert.match(
     python.transpilePython('center_on_object("person", rescan_delay=0.8)'),
     /await vision\.centerOnObject\(drone, "person", 10, 0\.55, 5, 3, 0\.8\);/,
   );
@@ -921,6 +925,11 @@ test("calculates binary threshold coverage and centered object coordinates", asy
     x: 100,
     y: 0,
   });
+  assert.deepEqual(visionMath.binaryCentroid(binary, "white"), {
+    x: 0,
+    y: 0,
+    coverage: 50,
+  });
 
   const noOp = () => undefined;
   const centeringLogs = [];
@@ -939,6 +948,19 @@ test("calculates binary threshold coverage and centered object coordinates", asy
   runtime.scanThreshold = async () => binary;
   assert.equal(await runtime.binaryAt("white", 100, 100, 60, false), true);
   assert.equal(await runtime.binaryAt("black", -100, 100, 60, false), true);
+  const binaryScanSequence = [
+    { ...binary, frameWidth: 10, frameHeight: 10, binaryData: new Uint8ClampedArray(400).fill(255) },
+    binary,
+  ];
+  runtime.scanThreshold = async () => binaryScanSequence.shift() ?? binary;
+  const binaryCommands = [];
+  const binaryDrone = {
+    cancelRunFlag: false,
+    setAxis(axis, power) { binaryCommands.push(["axis", axis, power]); },
+    reset() { binaryCommands.push(["reset"]); },
+    async wait(seconds) { binaryCommands.push(["wait", seconds]); },
+  };
+  assert.equal(await runtime.centerOnBinary(binaryDrone, "white", 60, 10, 8, 5, 3, 0.5), true);
 
   let objectScans = 0;
   runtime.detectObjects = async () => {

@@ -262,6 +262,28 @@ const PYTHON_CALLS: Record<string, CallSpec> = {
     build: (argumentsList) =>
       `vision.binaryAt(${argumentsList[0]}, 0, 0, ${argumentsList[1] ?? "60"}, ${argumentsList[2] ?? "false"})`,
   },
+  center_on_binary: {
+    asynchronous: true,
+    parameters: [
+      "color",
+      "threshold",
+      "coverage",
+      "power",
+      "center_slack",
+      "lost_searches",
+      "rescan_delay",
+    ],
+    defaults: {
+      threshold: "60",
+      coverage: "10",
+      power: "10",
+      center_slack: "5",
+      lost_searches: "3",
+      rescan_delay: "0.5",
+    },
+    build: (argumentsList) =>
+      `vision.centerOnBinary(drone, ${argumentsList.join(", ")})`,
+  },
   load_object_model: call("vision.loadObjectModel", [], {}, true),
   scan_objects: call(
     "vision.detectObjects",

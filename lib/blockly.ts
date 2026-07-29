@@ -348,7 +348,7 @@ export function registerHopperBlocks() {
     },
     {
       type: "vision_binary_center",
-      message0: "camera sees binary %1 at x %2 y %3 with threshold at %4 %% invert %5",
+      message0: "camera sees binary %1 at x %2 y %3 with threshold at %4 %%",
       args0: [
         {
           type: "field_dropdown",
@@ -361,7 +361,6 @@ export function registerHopperBlocks() {
         { type: "input_value", name: "X", check: "Number" },
         { type: "input_value", name: "Y", check: "Number" },
         { type: "input_value", name: "THRESHOLD", check: "Number" },
-        { type: "field_checkbox", name: "INVERT", checked: false },
       ],
       output: "Boolean",
       inputsInline: true,
@@ -525,6 +524,56 @@ export function registerHopperBlocks() {
     },
   };
 
+  Blockly.Blocks.vision_center_binary = {
+    init() {
+      this.appendDummyInput()
+        .appendField("center on binary")
+        .appendField(new Blockly.FieldDropdown([
+          ["white", "white"],
+          ["black", "black"],
+        ]), "COLOR");
+      this.appendValueInput("THRESHOLD")
+        .setCheck("Number")
+        .appendField("with threshold at");
+      this.appendValueInput("COVERAGE")
+        .setCheck("Number")
+        .appendField("% in");
+      this.appendValueInput("POWER")
+        .setCheck("Number")
+        .appendField("% of frame, roll/pitch power");
+      this.appendDummyInput("SETTINGS_HEADING")
+        .appendField("CENTERING SETTINGS")
+        .setVisible(false);
+      this.appendDummyInput("CENTER_SETTING")
+        .appendField("— center tolerance")
+        .appendField(new Blockly.FieldNumber(5, 1, 35, 1), "CENTER_SLACK")
+        .appendField("%")
+        .setVisible(false);
+      this.appendDummyInput("RESCAN_SETTING")
+        .appendField("— rescan after roll/pitch")
+        .appendField(new Blockly.FieldNumber(0.5, 0, 5, 0.1), "RESCAN_DELAY")
+        .appendField("seconds")
+        .setVisible(false);
+      this.appendDummyInput("LOST_SETTING")
+        .appendField("— give up after")
+        .appendField(new Blockly.FieldNumber(3, 1, 20, 1), "LOST_SEARCHES")
+        .appendField("lost target scans")
+        .setVisible(false);
+      appendSettingsButton(
+        this,
+        ["SETTINGS_HEADING", "CENTER_SETTING", "RESCAN_SETTING", "LOST_SETTING"],
+        "Binary centering settings",
+      );
+      this.setPreviousStatement(true);
+      this.setNextStatement(true);
+      this.setInputsInline(false);
+      this.setColour(DRONE);
+      this.setTooltip(
+        "Centers the geometric centroid of all selected binary-color pixels using roll and pitch. The target must cover the requested percentage of the frame. It never changes yaw.",
+      );
+    },
+  };
+
   Blockly.Blocks.vision_center_apriltag = {
     init() {
       this.appendDummyInput()
@@ -677,7 +726,7 @@ export function registerHopperBlocks() {
   );
   javascriptGenerator.forBlock.vision_binary_center = (block) => activeExpression(
     block,
-    `await vision.binaryAt("${block.getFieldValue("COLOR")}", ${value(block, "X", "0")}, ${value(block, "Y", "0")}, ${value(block, "THRESHOLD", "60")}, ${block.getFieldValue("INVERT") === "TRUE"})`,
+    `await vision.binaryAt("${block.getFieldValue("COLOR")}", ${value(block, "X", "0")}, ${value(block, "Y", "0")}, ${value(block, "THRESHOLD", "60")})`,
   );
   javascriptGenerator.forBlock.vision_detect_objects = (block) =>
     activeStatement(block, "await vision.detectObjects();\n");
@@ -702,6 +751,10 @@ export function registerHopperBlocks() {
   javascriptGenerator.forBlock.vision_center_object = (block) => activeStatement(
     block,
     `await vision.centerOnObject(drone, ${value(block, "LABEL", '"person"')}, ${value(block, "POWER", "10")}, ${fieldNumber(block, "CONFIDENCE", 55) / 100}, ${fieldNumber(block, "CENTER_SLACK", 5)}, ${fieldNumber(block, "LOST_SEARCHES", 3)}, ${Math.max(0, fieldNumber(block, "RESCAN_DELAY", 0.5))});\n`,
+  );
+  javascriptGenerator.forBlock.vision_center_binary = (block) => activeStatement(
+    block,
+    `await vision.centerOnBinary(drone, "${block.getFieldValue("COLOR")}", ${value(block, "THRESHOLD", "60")}, ${value(block, "COVERAGE", "10")}, ${value(block, "POWER", "10")}, ${fieldNumber(block, "CENTER_SLACK", 5)}, ${fieldNumber(block, "LOST_SEARCHES", 3)}, ${Math.max(0, fieldNumber(block, "RESCAN_DELAY", 0.5))});\n`,
   );
   javascriptGenerator.forBlock.vision_center_apriltag = (block) => activeStatement(
     block,
@@ -788,6 +841,15 @@ export const hopperToolbox: Blockly.utils.toolbox.ToolboxDefinition = {
               kind: "block",
               type: "minidrone_fly",
               inputs: { SECONDS: numberShadow(1), POWER: numberShadow(15) },
+            },
+            {
+              kind: "block",
+              type: "vision_center_binary",
+              inputs: {
+                THRESHOLD: numberShadow(60),
+                COVERAGE: numberShadow(10),
+                POWER: numberShadow(10),
+              },
             },
             {
               kind: "block",
