@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Understand the exact brightness equation, calibrate a threshold from evidence, and build decisions that survive shadows, glare, and noise.">
+  <meta name="theme-color" content="#062b4d">
+  <title>Binary vision and thresholding · Hopper Field Guide</title>
+  <link rel="icon" href="../favicon.png">
+  <link rel="stylesheet" href="assets/lesson.css">
+  <script src="assets/lesson.js" defer></script>
+</head>
+<body class="lesson-document">
+  <div class="lesson-surface">
+    <a class="lesson-skip" href="#lesson-content">Skip to lesson content</a>
+    <div class="lesson-progress" aria-hidden="true"></div>
+    
+  <header class="lesson-topbar">
+    <a class="lesson-topbar__brand" href="index.html" data-lesson-hub>
+      <span class="lesson-topbar__brand-mark" aria-hidden="true">HF</span>
+      <span><b>Hopper field guide</b><small>Interactive learning library</small></span>
+    </a>
+    <span class="lesson-topbar__count">LESSON 05 / 09</span>
+    <div class="lesson-topbar__actions">
+      <button class="lesson-topbar__button" type="button" data-print-lesson aria-label="Print this lesson"><span>Print</span> ↗</button>
+      
+    </div>
+  </header>
+    
+  <div class="lesson-layout" id="lesson-content">
+    
+  <nav class="lesson-toc" aria-label="On this page">
+    <span class="lesson-toc__label">On this page</span>
+    <ol>
+      
+            <li>
+              <a href="#one-pixel">
+                <span>01</span>
+                Every pixel becomes one bit
+              </a>
+            </li>
+            <li>
+              <a href="#coverage-center">
+                <span>02</span>
+                Coverage asks a different question than center
+              </a>
+            </li>
+            <li>
+              <a href="#calibration">
+                <span>03</span>
+                Calibrate from two distributions
+              </a>
+            </li>
+            <li>
+              <a href="#code">
+                <span>04</span>
+                Document every threshold argument
+              </a>
+            </li>
+            <li>
+              <a href="#limits">
+                <span>05</span>
+                Know when binary vision is enough
+              </a>
+            </li>
+      <li><a href="#sources"><span>06</span>Sources</a></li>
+    </ol>
+  </nav>
+    <main class="lesson-main">
+      
+  <details class="lesson-mobile-toc">
+    <summary>On this page</summary>
+    <nav aria-label="Mobile lesson navigation">
+      <ol>
+        <li><a href="#lesson-title">Overview</a></li>
+        <li><a href="#one-pixel">Every pixel becomes one bit</a></li><li><a href="#coverage-center">Coverage asks a different question than center</a></li><li><a href="#calibration">Calibrate from two distributions</a></li><li><a href="#code">Document every threshold argument</a></li><li><a href="#limits">Know when binary vision is enough</a></li>
+        <li><a href="#sources">Sources</a></li>
+      </ol>
+    </nav>
+  </details>
+      
+  <header class="lesson-hero">
+    <p class="lesson-kicker">Turn light into a measurable decision</p>
+    <h1 id="lesson-title">Binary vision and thresholding</h1>
+    <p class="lesson-hero__summary">Understand the exact brightness equation, calibrate a threshold from evidence, and build decisions that survive shadows, glare, and noise.</p>
+    <div class="lesson-meta" aria-label="Lesson details">
+      <span class="lesson-chip">Lesson 05 of 9</span>
+      <span class="lesson-chip">24 min</span>
+      <span class="lesson-chip">Vision foundations</span>
+    </div>
+  </header>
+  <section class="lesson-objectives" aria-labelledby="objectives-title">
+    <h2 id="objectives-title">Learning objectives</h2>
+    <ol><li>Compute luminance from RGB pixels and map a percentage threshold to 0…255.</li><li>Distinguish whole-frame coverage from a normalized X/Y pixel test.</li><li>Calibrate with representative light and background conditions.</li><li>Use repeated evidence or hysteresis instead of one brittle frame.</li></ol>
+  </section>
+        <section class="lesson-section" id="one-pixel" aria-labelledby="one-pixel-title">
+          <span class="lesson-section__number">01 / 05</span>
+          <h2 id="one-pixel-title">Every pixel becomes one bit</h2>
+          
+          <p class="lesson-lede">Thresholding compresses a color image into a binary image. The result is easy to reason about because every pixel is either white or black.</p>
+          
+  <div class="lesson-equation">
+    <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>Y</mi><mo>=</mo><mn>0.2126</mn><mi>R</mi><mo>+</mo><mn>0.7152</mn><mi>G</mi><mo>+</mo><mn>0.0722</mn><mi>B</mi></mrow><annotation encoding="application/x-tex">Y = 0.2126R + 0.7152G + 0.0722B</annotation></semantics></math></span>
+    <p class="lesson-equation__caption">Hopper Studio’s luminance calculation. Green contributes most because human visual sensitivity is strongest there.</p>
+  </div>
+          
+  <div class="lesson-equation">
+    <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>B</mi><mo stretchy="false">(</mo><mi>x</mi><mo separator="true">,</mo><mi>y</mi><mo stretchy="false">)</mo><mo>=</mo><mrow><mo fence="true">{</mo><mtable rowspacing="0.36em" columnalign="left left" columnspacing="1em"><mtr><mtd><mstyle scriptlevel="0" displaystyle="false"><mrow><mn>1</mn><mo separator="true">,</mo></mrow></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="false"><mrow><mi>Y</mi><mo stretchy="false">(</mo><mi>x</mi><mo separator="true">,</mo><mi>y</mi><mo stretchy="false">)</mo><mo>≥</mo><mn>2.55</mn><mtext> </mtext><mi>τ</mi></mrow></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="false"><mrow><mn>0</mn><mo separator="true">,</mo></mrow></mstyle></mtd><mtd><mstyle scriptlevel="0" displaystyle="false"><mrow><mi>Y</mi><mo stretchy="false">(</mo><mi>x</mi><mo separator="true">,</mo><mi>y</mi><mo stretchy="false">)</mo><mo>&lt;</mo><mn>2.55</mn><mtext> </mtext><mi>τ</mi></mrow></mstyle></mtd></mtr></mtable></mrow></mrow><annotation encoding="application/x-tex">B(x,y) =
+              \begin{cases}
+              1,&amp;Y(x,y)\ge 2.55\,\tau\\
+              0,&amp;Y(x,y)&lt;2.55\,\tau
+              \end{cases}</annotation></semantics></math></span>
+    <p class="lesson-equation__caption">τ is the displayed threshold percentage from 0 to 100. Multiplying by 2.55 converts it to an 8-bit cutoff from 0 to 255.</p>
+  </div>
+          <p>When <code>invert</code> is true, Hopper Studio swaps the white/black assignment after the comparison. It does not change the underlying brightness.</p>
+          
+  <aside class="lesson-callout lesson-callout--gold">
+    <div><b>Threshold is not confidence</b><p>A threshold of 60% is a pixel-brightness cutoff. It is unrelated to the 55% confidence used by object detection.</p></div>
+  </aside>
+        
+        </section>
+        <section class="lesson-section" id="coverage-center" aria-labelledby="coverage-center-title">
+          <span class="lesson-section__number">02 / 05</span>
+          <h2 id="coverage-center-title">Coverage asks a different question than center</h2>
+          
+          
+  <div class="lesson-equation">
+    <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mtext>white coverage</mtext><mo>=</mo><mn>100</mn><mtext> </mtext><mfrac><mrow><mi mathvariant="normal">#</mi><mo stretchy="false">{</mo><mo stretchy="false">(</mo><mi>x</mi><mo separator="true">,</mo><mi>y</mi><mo stretchy="false">)</mo><mo>:</mo><mi>B</mi><mo stretchy="false">(</mo><mi>x</mi><mo separator="true">,</mo><mi>y</mi><mo stretchy="false">)</mo><mo>=</mo><mn>1</mn><mo stretchy="false">}</mo></mrow><mrow><mi>W</mi><mtext> </mtext><mi>H</mi></mrow></mfrac></mrow><annotation encoding="application/x-tex">\text{white coverage} =
+              100\,\frac{\#\{(x,y):B(x,y)=1\}}{W\,H}</annotation></semantics></math></span>
+    <p class="lesson-equation__caption">Full-frame coverage is the percentage of pixels classified as white.</p>
+  </div>
+          
+  <div class="lesson-cards">
+    
+      <article class="lesson-card">
+        <span class="lesson-card__tag">Whole frame</span>
+        <h3>seesBinary</h3>
+        <p>Useful for large regions: a white landing sheet, dark doorway, or broad lighting change. It compares coverage with a minimum percentage.</p>
+      </article>
+      <article class="lesson-card">
+        <span class="lesson-card__tag">Single coordinate</span>
+        <h3>binaryAt</h3>
+        <p>Checks one normalized X/Y pixel. The default 0,0 is the reticle; 100,100 is the top right. A one-pixel test is sensitive to noise and tiny shifts.</p>
+      </article>
+  </div>
+          <p>A center test can be true while total coverage is nearly zero. Conversely, a bright wall can dominate coverage even while the center points at a dark target.</p>
+          
+  <details class="lesson-check">
+    <summary>Check your understanding · A white card covers 8% of the frame and the center reticle is on it. What can each test report?</summary>
+    <div class="lesson-check__answer"><p><code>binaryAt("white", 0, 0, 60)</code> can be true. <code>seesBinary("white", 60, false, 10)</code> is false because 8% is below the 10% coverage requirement.</p></div>
+  </details>
+        
+        </section>
+        <section class="lesson-section" id="calibration" aria-labelledby="calibration-title">
+          <span class="lesson-section__number">03 / 05</span>
+          <h2 id="calibration-title">Calibrate from two distributions</h2>
+          
+          <ol>
+            <li>Connect the real camera in the room and lighting you will actually use.</li>
+            <li>Collect brightness observations for the target and the background—not just one ideal frame.</li>
+            <li>Choose a cutoff in the gap between the two distributions. If they overlap heavily, thresholding alone is the wrong tool.</li>
+            <li>Test shadows, glare, oblique views, motion blur, and different distances.</li>
+            <li>Choose a coverage threshold based on expected target size, then write it down with its unit.</li>
+          </ol>
+          
+  <div class="lesson-table-wrap" role="region" aria-label="Symptom, Likely cause, Better response" tabindex="0">
+    <table class="lesson-table">
+      <thead><tr><th scope="col">Symptom</th><th scope="col">Likely cause</th><th scope="col">Better response</th></tr></thead>
+      <tbody><tr><td>Everything is white</td><td>Cutoff too low or strong glare</td><td>Raise brightness threshold; diffuse the light.</td></tr><tr><td>Everything is black</td><td>Cutoff too high or room too dark</td><td>Lower threshold; improve illumination.</td></tr><tr><td>Flickers between states</td><td>Noise near the cutoff</td><td>Require repeated hits or add hysteresis.</td></tr><tr><td>Works only at one distance</td><td>Coverage changes with apparent area</td><td>Calibrate size range or use center/alignment plus area.</td></tr><tr><td>White and gray overlap</td><td>Brightness is not distinctive enough</td><td>Use color features, AprilTags, or a learned model.</td></tr></tbody>
+    </table>
+  </div>
+        
+        </section>
+        <section class="lesson-section" id="code" aria-labelledby="code-title">
+          <span class="lesson-section__number">04 / 05</span>
+          <h2 id="code-title">Document every threshold argument</h2>
+          
+          
+    <figure class="lesson-code">
+      <figcaption class="lesson-code__bar">
+        <span>JavaScript · require two confirming frames · javascript</span>
+        <button class="lesson-copy" type="button" data-copy-code>Copy</button>
+      </figcaption>
+      <pre><code class="language-javascript"><span class="token keyword">const</span> threshold <span class="token operator">=</span> <span class="token number">60</span><span class="token punctuation">;</span>       <span class="token comment">// percent brightness cutoff</span>
+<span class="token keyword">const</span> minimumCoverage <span class="token operator">=</span> <span class="token number">10</span><span class="token punctuation">;</span> <span class="token comment">// percent of the frame</span>
+<span class="token keyword">let</span> confirmingFrames <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span>
+
+<span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">let</span> sample <span class="token operator">=</span> <span class="token number">0</span><span class="token punctuation">;</span> sample <span class="token operator">&lt;</span> <span class="token number">3</span><span class="token punctuation">;</span> sample <span class="token operator">+=</span> <span class="token number">1</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+  <span class="token keyword">const</span> seesSheet <span class="token operator">=</span> <span class="token keyword">await</span> vision<span class="token punctuation">.</span><span class="token function">seesBinary</span><span class="token punctuation">(</span>
+    <span class="token string">"white"</span><span class="token punctuation">,</span>
+    threshold<span class="token punctuation">,</span>
+    <span class="token boolean">false</span><span class="token punctuation">,</span>
+    minimumCoverage<span class="token punctuation">,</span>
+  <span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token keyword">if</span> <span class="token punctuation">(</span>seesSheet<span class="token punctuation">)</span> confirmingFrames <span class="token operator">+=</span> <span class="token number">1</span><span class="token punctuation">;</span>
+  <span class="token keyword">await</span> drone<span class="token punctuation">.</span><span class="token function">wait</span><span class="token punctuation">(</span><span class="token number">0.15</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+console<span class="token punctuation">.</span><span class="token function">log</span><span class="token punctuation">(</span><span class="token template-string"><span class="token template-punctuation string">`</span><span class="token string">Confirming frames: </span><span class="token interpolation"><span class="token interpolation-punctuation punctuation">${</span>confirmingFrames<span class="token interpolation-punctuation punctuation">}</span></span><span class="token string">/3</span><span class="token template-punctuation string">`</span></span><span class="token punctuation">)</span><span class="token punctuation">;</span></code></pre>
+    </figure>
+          
+    <figure class="lesson-code">
+      <figcaption class="lesson-code__bar">
+        <span>Python · one X/Y pixel and coverage are separate tests · python</span>
+        <button class="lesson-copy" type="button" data-copy-code>Copy</button>
+      </figcaption>
+      <pre><code class="language-python">threshold <span class="token operator">=</span> <span class="token number">60</span>
+coverage <span class="token operator">=</span> <span class="token number">10</span>
+
+enough_white <span class="token operator">=</span> sees_binary<span class="token punctuation">(</span><span class="token string">"white"</span><span class="token punctuation">,</span> threshold<span class="token operator">=</span>threshold<span class="token punctuation">,</span> invert<span class="token operator">=</span><span class="token boolean">False</span><span class="token punctuation">,</span> coverage<span class="token operator">=</span>coverage<span class="token punctuation">)</span>
+center_is_white <span class="token operator">=</span> binary_at<span class="token punctuation">(</span><span class="token string">"white"</span><span class="token punctuation">,</span> x<span class="token operator">=</span><span class="token number">0</span><span class="token punctuation">,</span> y<span class="token operator">=</span><span class="token number">0</span><span class="token punctuation">,</span> threshold<span class="token operator">=</span>threshold<span class="token punctuation">,</span> invert<span class="token operator">=</span><span class="token boolean">False</span><span class="token punctuation">)</span>
+
+<span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"area:"</span><span class="token punctuation">,</span> enough_white<span class="token punctuation">,</span> <span class="token string">"center:"</span><span class="token punctuation">,</span> center_is_white<span class="token punctuation">)</span></code></pre>
+    </figure>
+          
+  <div class="lesson-api">
+    
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">scanThreshold(threshold = 60, invert = false)</div>
+        <div class="lesson-api__detail"><b>Measure</b><p>Returns both coverages, centerWhite, frame size, and binary pixel data.</p></div>
+      </article>
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">seesBinary(color, threshold = 60, invert = false, minimumCoverage = 10)</div>
+        <div class="lesson-api__detail"><b>Decide</b><p>Fresh scan and a whole-frame percentage comparison.</p></div>
+      </article>
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">binaryAt(color, x = 0, y = 0, threshold = 60, invert = false)</div>
+        <div class="lesson-api__detail"><b>Align</b><p>Fresh scan and one normalized X/Y pixel comparison.</p></div>
+      </article>
+  </div>
+        
+        </section>
+        <section class="lesson-section" id="limits" aria-labelledby="limits-title">
+          <span class="lesson-section__number">05 / 05</span>
+          <h2 id="limits-title">Know when binary vision is enough</h2>
+          
+          
+  <div class="lesson-cards">
+    
+      <article class="lesson-card">
+        <span class="lesson-card__tag">Good fit</span>
+        <h3>Controlled contrast</h3>
+        <p>A white card on a dark floor under stable indoor light is fast, explainable, and computationally cheap.</p>
+      </article>
+      <article class="lesson-card">
+        <span class="lesson-card__tag">Weak fit</span>
+        <h3>Semantic identity</h3>
+        <p>Thresholding cannot tell a white mug from white paper. It measures brightness, not object category.</p>
+      </article>
+      <article class="lesson-card">
+        <span class="lesson-card__tag">Weak fit</span>
+        <h3>Changing illumination</h3>
+        <p>Sunlight, automatic exposure, and shadows move the brightness distributions.</p>
+      </article>
+      <article class="lesson-card">
+        <span class="lesson-card__tag">Alternative</span>
+        <h3>Fiducial or learned vision</h3>
+        <p>Use AprilTags for an engineered marker, COCO-SSD for known categories, or Teachable Machine for a custom whole-frame class.</p>
+      </article>
+  </div>
+          
+  <aside class="lesson-callout lesson-callout--caution">
+    <div><b>Flight decision rule</b><p>Never make a high-consequence maneuver from one sampled pixel. Combine area, repeated frames, timeouts, and a safe fallback such as hover or land.</p></div>
+  </aside>
+        
+        </section>
+  <footer class="lesson-sources" id="sources">
+    <h2>Sources and verification</h2>
+    <ol><li>Hopper Studio threshold implementation — Verified against lib/vision.ts</li><li><a href="https://docs.opencv.org/4.x/d7/d4d/tutorial_py_thresholding.html" target="_blank" rel="noopener noreferrer">OpenCV thresholding tutorial</a> — Official OpenCV documentation on global and adaptive thresholding</li><li><a href="https://www.w3.org/WAI/GL/wiki/Relative_luminance" target="_blank" rel="noopener noreferrer">IEC sRGB luminance coefficients</a> — W3C explanation of the 0.2126, 0.7152, and 0.0722 coefficients</li></ol>
+    <p class="lesson-sources__verified">Content and command behavior verified 28 July 2026</p>
+  </footer>
+      
+    <nav class="lesson-pagination" aria-label="Lesson navigation">
+      <a href="04-javascript-api-reference.html" data-lesson-slug="04-javascript-api-reference">
+              <small>← Previous lesson</small><b>JavaScript API reference</b>
+            </a>
+      <a href="06-object-detection-and-coco.html" data-lesson-slug="06-object-detection-and-coco">
+              <small>Next lesson →</small><b>Object detection and Hopper’s default neural network</b>
+            </a>
+    </nav>
+    </main>
+  </div>
+  </div>
+</body>
+</html>

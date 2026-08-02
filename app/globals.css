@@ -3986,6 +3986,14 @@ body.sim-popup-body {
   font-size: 9px;
 }
 
+.object-pdf-menu {
+  margin-bottom: 9px;
+}
+
+.object-pdf-menu select {
+  width: 132px;
+}
+
 .apriltag-pdf-menu button {
   justify-self: start;
   height: 27px;

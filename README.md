@@ -1,5 +1,8 @@
 # Hopper Studio
 
+> Building for iPad? Follow the complete device-testing, TestFlight, and App
+> Store guide in [README-IPAD.md](README-IPAD.md).
+
 Hopper Studio is a fully local Python, block-coding, JavaScript, Bluetooth flight-control, and camera-vision app for the FTW Hopper drone. It preserves the FTW Code / Parrot Mambo command protocol and adds binary thresholding, tag36h11 AprilTag detection and 2D pose alignment, local COCO-SSD object detection, and support for custom Teachable Machine image classifiers.
 
 To rename the app and its subtitle everywhere in the web and desktop builds,
@@ -126,6 +129,8 @@ The local camera proxy accepts only `192.168.2.1`; it cannot be used as a genera
 Select **Connect simulated drone** beside the Bluetooth button. On a desktop with a mouse, the flight room opens in a separate browser window that you can move beside the coding workspace. Simulator physics, waits, and events use that visible window's timing loop so flight continues when the coding window is behind it. If the browser blocks the window, allow pop-ups for Hopper Studio and select the button again. On iPad and other touch devices the room stays inline: iPadOS may suspend a background coding tab when a popup becomes a full tab, so inline mode is the reliable way to keep code and simulation synchronized. The blue connected state means **Run Program** is sending the current Blockly, Python, or JavaScript program to the simulator. Switching between the simulator and a real Hopper never clears the workspace.
 
 The room starts with airplane, car, banana, and apple targets plus one plain white sheet at the center of the dark floor. Drag them anywhere on the floor, select one to resize or rotate, duplicate or delete it, or upload a local image. Choose a tag36h11 ID from the AprilTag dropdown and add as many printable floor tags as the lab needs. A translucent red X-axis arrow rotates with each simulated tag to make visual alignment easy; that helper is intentionally omitted from the simulated drone camera. Drag the Hopper marker itself whenever you want to reposition its starting point; the simulator stops its horizontal motion and continues from the new location. The simulated downward camera feeds the same threshold, object, AprilTag, coordinate, and custom-model blocks used by the physical camera.
+
+The Object Detector panel can generate a full-page US Letter PDF for every built-in simulator target, including person, knife, stop sign, laptop, truck, flags, car, airplane, banana, apple, and white paper. The PDF uses the same PNG, emoji, or drawn target art as the simulator so it can be printed at 100% scale for hardware-camera testing.
 
 The simulator camera remains in **VISION IDLE** during ordinary flight unless a Vision Testing toggle is enabled. A scan block animates a green line down the image and shows that scan's result: binary white/black percentages, object labels and boxes, or AprilTag IDs, boxes, and pose axes. Panel testing also refreshes those annotations continuously, even while the simulated drone is landed and no program is running. The 5°, 10°, and 15° manual attitude checks are useful for demonstrating acceleration and damping before students encode a lawnmower search in blocks.
 

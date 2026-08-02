@@ -1,5 +1,6 @@
 import type { DetectedObject, ObjectDetection } from "@tensorflow-models/coco-ssd";
 import type { CustomMobileNet } from "@teachablemachine/image";
+import type { IOHandler, ModelJSON } from "@tensorflow/tfjs-core/dist/io/types";
 import type { DroneController } from "./drone";
 import { detectAprilTags, type AprilTagDetection } from "./apriltags";
 
@@ -13,7 +14,7 @@ export type ThresholdResult = {
   centerWhite: boolean;
   frameWidth: number;
   frameHeight: number;
-  binaryData: Uint8ClampedArray;
+  binaryData: Uint8ClampedArray<ArrayBuffer>;
 };
 
 export type VisionScanKind = "threshold" | "object" | "apriltag" | "custom";
@@ -57,6 +58,174 @@ export type CapturedPhoto = {
 
 const clampCoordinate = (value: number) => Math.max(-100, Math.min(100, value));
 const clampPercent = (value: number) => Math.max(0, Math.min(100, Number(value) || 0));
+const littleEndian = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1;
+const opaqueBlack = littleEndian ? 0xff000000 : 0x000000ff;
+const localModelHandlers = new Map<string, IOHandler>();
+let localModelRouterRegistered = false;
+const bundledModelShardSizes = new Map([
+  ["group1-shard1of5", 4_194_304],
+  ["group1-shard2of5", 4_194_304],
+  ["group1-shard3of5", 4_194_304],
+  ["group1-shard4of5", 4_194_304],
+  ["group1-shard5of5", 1_257_312],
+]);
+
+class BundledModelAssetError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "BundledModelAssetError";
+  }
+}
+
+const loadBundledAsset = (
+  url: string,
+  responseType: "text" | "arraybuffer",
+): Promise<string | ArrayBuffer> => new Promise((resolve, reject) => {
+  const request = new XMLHttpRequest();
+  request.open("GET", url, true);
+  request.overrideMimeType(
+    responseType === "arraybuffer" ? "application/octet-stream" : "application/json",
+  );
+  request.responseType = responseType;
+  request.timeout = 120_000;
+  request.onload = () => {
+    if (request.status !== 0 && (request.status < 200 || request.status >= 300)) {
+      reject(new BundledModelAssetError(
+        `Bundled model asset ${new URL(url).pathname} returned ${request.status}.`,
+      ));
+      return;
+    }
+    if (responseType === "text") {
+      resolve(request.responseText);
+      return;
+    }
+    if (request.response instanceof ArrayBuffer) {
+      const assetName = new URL(url).pathname.split("/").pop() ?? "";
+      const expectedSize = bundledModelShardSizes.get(assetName.replace(/\.bin$/, ""));
+      if (expectedSize !== undefined && request.response.byteLength !== expectedSize) {
+        reject(new BundledModelAssetError(
+          `Bundled model asset ${assetName} was ${request.response.byteLength} bytes; expected ${expectedSize}.`,
+        ));
+        return;
+      }
+      resolve(request.response);
+      return;
+    }
+    reject(new BundledModelAssetError(
+      `Bundled model asset ${new URL(url).pathname} returned no binary data.`,
+    ));
+  };
+  request.onerror = () => reject(new BundledModelAssetError(
+    `Could not read bundled model asset ${new URL(url).pathname}.`,
+  ));
+  request.ontimeout = () => reject(new BundledModelAssetError(
+    `Timed out reading bundled model asset ${new URL(url).pathname}.`,
+  ));
+  request.send();
+});
+
+type TensorFlowGraphNode = {
+  name?: string;
+  op?: string;
+  input?: string[];
+  attr?: Record<string, unknown>;
+};
+
+const ipadDynamicBatchSlice = /^(?:Preprocessor\/map\/TensorArrayUnstack|BoxPredictor_[0-5]|Postprocessor)\/strided_slice$/;
+const bundledModelShardName = /^group1-shard[1-5]of5$/;
+
+const stabilizeSingleFrameModelForIPad = (modelJson: ModelJSON) => {
+  const topology = modelJson.modelTopology as { node?: TensorFlowGraphNode[] } | undefined;
+  let replacements = 0;
+  topology?.node?.forEach((node) => {
+    if (node.op !== "StridedSlice" || !ipadDynamicBatchSlice.test(node.name ?? "")) return;
+    const originalInputs = node.input ?? [];
+    // Every Hopper inference has a single image. The original graph dynamically
+    // slices Shape(...)[0] at these eight nodes; iOS 26 can decode that index as
+    // an invalid 64-bit value. Reuse the graph's existing scalar int32 `1`
+    // through Identity so the converter keeps its normal frozen-weight path.
+    // Retain the replaced data inputs as control dependencies. Without them,
+    // their now-dangling Shape/Const nodes become additional inferred model
+    // outputs and COCO-SSD reads those constants instead of scores and boxes.
+    node.op = "Identity";
+    node.input = [
+      "Postprocessor/Tile/multiples/1",
+      ...originalInputs.map(
+        (input) => `^${input.replace(/^\^/, "").replace(/:\d+$/, "")}`,
+      ),
+    ];
+    node.attr = { T: { type: 3 } };
+    replacements += 1;
+  });
+  if (replacements !== 8) {
+    throw new BundledModelAssetError(
+      `Bundled object model expected 8 iPad batch slices but found ${replacements}.`,
+    );
+  }
+};
+
+const routeBundledShardsForIPad = (modelJson: ModelJSON) => {
+  let replacements = 0;
+  modelJson.weightsManifest.forEach((group) => {
+    group.paths = group.paths.map((path) => {
+      if (!bundledModelShardName.test(path)) return path;
+      replacements += 1;
+      // Capacitor treats extensionless URLs as client-side routes and returns
+      // index.html even when the extensionless asset exists in the app bundle.
+      // The iPad package contains byte-identical .bin aliases for these files.
+      return `${path}.bin`;
+    });
+  });
+  if (replacements !== 5) {
+    throw new BundledModelAssetError(
+      `Bundled object model expected 5 weight shards but found ${replacements}.`,
+    );
+  }
+};
+
+const createBundledModelHandler = (
+  tf: typeof import("@tensorflow/tfjs"),
+  modelUrl: string,
+): IOHandler => ({
+  load: async () => {
+    const modelSource = await loadBundledAsset(modelUrl, "text");
+    let modelJson: ModelJSON;
+    try {
+      modelJson = JSON.parse(String(modelSource)) as ModelJSON;
+    } catch {
+      throw new BundledModelAssetError("The bundled object model JSON is invalid.");
+    }
+    stabilizeSingleFrameModelForIPad(modelJson);
+    routeBundledShardsForIPad(modelJson);
+    return tf.io.getModelArtifactsForJSON(modelJson, async (manifest) => {
+      const shardUrls = manifest.flatMap((group) => group.paths)
+        .map((path) => new URL(path, modelUrl).href);
+      const shardBuffers = await Promise.all(
+        shardUrls.map((url) => loadBundledAsset(url, "arraybuffer")),
+      );
+      return [
+        tf.io.getWeightSpecs(manifest),
+        shardBuffers as ArrayBuffer[],
+      ];
+    });
+  },
+});
+
+const ensureBundledModelHandler = (
+  tf: typeof import("@tensorflow/tfjs"),
+  modelUrl: string,
+) => {
+  if (!localModelHandlers.has(modelUrl)) {
+    localModelHandlers.set(modelUrl, createBundledModelHandler(tf, modelUrl));
+  }
+  if (!localModelRouterRegistered) {
+    tf.io.registerLoadRouter((url) => {
+      if (typeof url !== "string") return null as never;
+      return localModelHandlers.get(url) ?? null as never;
+    });
+    localModelRouterRegistered = true;
+  }
+};
 
 export const normalizedCoordinateToPixel = (
   coordinate: ObjectCoordinate,
@@ -75,18 +244,18 @@ export const analyzeThreshold = (
   invert = false,
 ): ThresholdResult => {
   const safeThreshold = clampPercent(thresholdPercent);
-  const cutoff = safeThreshold * 2.55;
+  // Integer luminance keeps this hot loop mathematically equivalent to the
+  // documented Rec. 709 calculation without doing four typed-array writes per
+  // pixel. All supported browsers expose aligned RGBA ImageData buffers.
+  const cutoff = safeThreshold * 25_500;
   const binaryData = new Uint8ClampedArray(data.length);
+  const packedBinary = new Uint32Array(binaryData.buffer);
   let whitePixels = 0;
-  for (let index = 0; index < data.length; index += 4) {
-    const brightness = data[index] * 0.2126 + data[index + 1] * 0.7152 + data[index + 2] * 0.0722;
-    const white = (brightness >= cutoff) !== Boolean(invert);
-    const value = white ? 255 : 0;
+  for (let pixel = 0, index = 0; index < data.length; pixel += 1, index += 4) {
+    const luminance = data[index] * 2126 + data[index + 1] * 7152 + data[index + 2] * 722;
+    const white = (luminance >= cutoff) !== Boolean(invert);
     if (white) whitePixels += 1;
-    binaryData[index] = value;
-    binaryData[index + 1] = value;
-    binaryData[index + 2] = value;
-    binaryData[index + 3] = 255;
+    packedBinary[pixel] = white ? 0xffffffff : opaqueBlack;
   }
   const total = width * height;
   const centerIndex = ((Math.floor(height / 2) * width) + Math.floor(width / 2)) * 4;
@@ -166,6 +335,7 @@ export class VisionRuntime {
     private readonly onAprilTags: (detections: AprilTagDetection[]) => void,
     private readonly onScan: (event: VisionScanEvent) => void,
     private readonly onLog: (message: string) => void = () => undefined,
+    private readonly onModelError: (message: string | null) => void = () => undefined,
   ) {}
 
   setSyntheticDetectionProvider(
@@ -186,11 +356,16 @@ export class VisionRuntime {
     this.onAprilTags([]);
   }
 
-  async scanThreshold(threshold = 60, invert = false, announceScan = true) {
+  async scanThreshold(
+    threshold = 60,
+    invert = false,
+    announceScan = true,
+    publishResult = true,
+  ) {
     return this.scanned("threshold", announceScan, async () => {
       const frame = this.captureFrame(320);
       const result = analyzeThreshold(frame.data, frame.width, frame.height, threshold, invert);
-      this.onThreshold(result);
+      if (publishResult) this.onThreshold(result);
       return result;
     });
   }
@@ -310,55 +485,113 @@ export class VisionRuntime {
     }
 
     this.onModelStatus("loading");
+    this.onModelError(null);
     this.modelPromise = (async () => {
-      await import("@tensorflow/tfjs");
+      const tf = await import("@tensorflow/tfjs");
       const cocoSsd = await import("@tensorflow-models/coco-ssd");
       const modelUrl = new URL("models/coco-ssd/model.json", document.baseURI).href;
-      this.model = await cocoSsd.load({ base: "lite_mobilenet_v2", modelUrl });
+      const usesBundledIPadModel = !/^https?:\/\//i.test(modelUrl);
+
+      // WKWebView serves Capacitor assets through a custom URL scheme. WebKit
+      // can display those assets but does not reliably send fetch() through a
+      // WKURLSchemeHandler, so load the packaged JSON and shards with XHR. The
+      // iPad also selects CPU before the graph is loaded: if WebGL rejects a
+      // shape, retrying the same graph after switching backends can leave the
+      // shared TensorFlow engine with corrupted shape metadata.
+      if (usesBundledIPadModel) {
+        ensureBundledModelHandler(tf, modelUrl);
+        if (!await tf.setBackend("cpu")) {
+          throw new Error("The TensorFlow CPU backend could not be initialized on this iPad.");
+        }
+      }
+
+      await tf.ready();
+      const firstBackend = tf.getBackend();
+      this.onLog(`Object model: loading bundled COCO-SSD on ${firstBackend}.`);
+      try {
+        this.model = await cocoSsd.load({ base: "lite_mobilenet_v2", modelUrl });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (
+          !usesBundledIPadModel
+          &&
+          firstBackend !== "cpu"
+          && !/bundled model asset/i.test(message)
+          && await tf.setBackend("cpu")
+        ) {
+          await tf.ready();
+          this.onLog(`Object model: ${firstBackend} failed; retrying on CPU.`);
+          this.model = await cocoSsd.load({ base: "lite_mobilenet_v2", modelUrl });
+        } else {
+          throw new Error(`COCO-SSD ${firstBackend} initialization failed: ${message}`);
+        }
+      }
       this.onModelStatus("ready");
+      this.onModelError(null);
+      this.onLog(`Object model ready on ${tf.getBackend()}.`);
       return this.model;
     })().catch((error) => {
       this.modelPromise = null;
       this.onModelStatus("error");
+      const message = error instanceof Error ? error.message : String(error);
+      this.onModelError(message);
+      this.onLog(`Object model unavailable: ${message}`);
       throw error;
     });
     return this.modelPromise;
   }
 
   async detectObjects(minimumConfidence = 0.55, announceScan = true) {
-    return this.scanned("object", announceScan, async () => {
-      let normalized: VisionDetection[];
-      if (this.syntheticDetectionProvider) {
-        const frame = this.getReadyImage();
-        const size = this.getSourceSize(frame);
-        normalized = this.syntheticDetectionProvider(size.width, size.height)
-          .filter((detection) => detection.score >= Number(minimumConfidence));
-      } else {
-        const model = await this.loadObjectModel();
-        const frame = this.captureCanvas(420, true);
-        const detections = await model.detect(frame, 10, minimumConfidence);
-        normalized = detections.map((detection) => {
-          const coordinate = detectionCenterCoordinate(detection.bbox, frame.width, frame.height);
-          return {
-            ...detection,
-            frameWidth: frame.width,
-            frameHeight: frame.height,
-            centerX: coordinate.x,
-            centerY: coordinate.y,
-          };
+    try {
+      const detections = await this.scanned("object", announceScan, async () => {
+        let normalized: VisionDetection[];
+        if (this.syntheticDetectionProvider) {
+          const frame = this.getReadyImage();
+          const size = this.getSourceSize(frame);
+          normalized = this.syntheticDetectionProvider(size.width, size.height)
+            .filter((detection) => detection.score >= Number(minimumConfidence));
+        } else {
+          const model = await this.loadObjectModel();
+          const tf = await import("@tensorflow/tfjs");
+          const frame = this.createObjectDetectionTensor(tf);
+          try {
+            const detectedObjects = await model.detect(frame.tensor, 10, minimumConfidence);
+            normalized = detectedObjects.map((detection) => {
+              const coordinate = detectionCenterCoordinate(
+                detection.bbox,
+                frame.width,
+                frame.height,
+              );
+              return {
+                ...detection,
+                frameWidth: frame.width,
+                frameHeight: frame.height,
+                centerX: coordinate.x,
+                centerY: coordinate.y,
+              };
+            });
+          } finally {
+            frame.tensor.dispose();
+          }
+        }
+        normalized.forEach((detection) => {
+          this.lastObjectCoordinates.set(detection.class.trim().toLowerCase(), {
+            x: detection.centerX,
+            y: detection.centerY,
+            confidence: detection.score,
+          });
         });
-      }
-      normalized.forEach((detection) => {
-        this.lastObjectCoordinates.set(detection.class.trim().toLowerCase(), {
-          x: detection.centerX,
-          y: detection.centerY,
-          confidence: detection.score,
-        });
+        this.lastObjectDetections = normalized;
+        this.onDetections(normalized);
+        return normalized;
       });
-      this.lastObjectDetections = normalized;
-      this.onDetections(normalized);
-      return normalized;
-    });
+      this.onModelError(null);
+      return detections;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.onModelError(`Object scan failed: ${message}`);
+      throw error;
+    }
   }
 
   async seesObject(label: string, minimumConfidence = 0.55) {
@@ -771,5 +1004,28 @@ export class VisionRuntime {
     if (!context) throw new Error("Camera analysis canvas is unavailable.");
     context.drawImage(image, 0, 0, width, height);
     return canvas;
+  }
+
+  private createObjectDetectionTensor(tf: typeof import("@tensorflow/tfjs")) {
+    const image = this.getReadyImage();
+    const inputSize = 300;
+    const canvas = document.createElement("canvas");
+    canvas.width = inputSize;
+    canvas.height = inputSize;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) throw new Error("Camera analysis canvas is unavailable.");
+    context.drawImage(image, 0, 0, inputSize, inputSize);
+    const rgba = context.getImageData(0, 0, inputSize, inputSize).data;
+    const rgb = new Int32Array(inputSize * inputSize * 3);
+    for (let source = 0, target = 0; source < rgba.length; source += 4, target += 3) {
+      rgb[target] = rgba[source];
+      rgb[target + 1] = rgba[source + 1];
+      rgb[target + 2] = rgba[source + 2];
+    }
+    return {
+      tensor: tf.tensor3d(rgb, [inputSize, inputSize, 3], "int32"),
+      width: inputSize,
+      height: inputSize,
+    };
   }
 }

@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Learn what can actually be seen on the classroom aircraft, what the flight controller must estimate, and how to describe sensors without turning inference into fact.">
+  <meta name="theme-color" content="#062b4d">
+  <title>The Hopper sensor suite · Hopper Field Guide</title>
+  <link rel="icon" href="../favicon.png">
+  <link rel="stylesheet" href="assets/lesson.css">
+  <script src="assets/lesson.js" defer></script>
+</head>
+<body class="lesson-document">
+  <div class="lesson-surface">
+    <a class="lesson-skip" href="#lesson-content">Skip to lesson content</a>
+    <div class="lesson-progress" aria-hidden="true"></div>
+    
+  <header class="lesson-topbar">
+    <a class="lesson-topbar__brand" href="index.html" data-lesson-hub>
+      <span class="lesson-topbar__brand-mark" aria-hidden="true">HF</span>
+      <span><b>Hopper field guide</b><small>Interactive learning library</small></span>
+    </a>
+    <span class="lesson-topbar__count">LESSON 01 / 09</span>
+    <div class="lesson-topbar__actions">
+      <button class="lesson-topbar__button" type="button" data-print-lesson aria-label="Print this lesson"><span>Print</span> ↗</button>
+      
+    </div>
+  </header>
+    
+  <div class="lesson-layout" id="lesson-content">
+    
+  <nav class="lesson-toc" aria-label="On this page">
+    <span class="lesson-toc__label">On this page</span>
+    <ol>
+      
+            <li>
+              <a href="#two-systems">
+                <span>01</span>
+                Two sensing systems share one aircraft
+              </a>
+            </li>
+            <li>
+              <a href="#anatomy">
+                <span>02</span>
+                Read the underside like a scientist
+              </a>
+            </li>
+            <li>
+              <a href="#state-estimation">
+                <span>03</span>
+                Sensors do not hand you the state
+              </a>
+            </li>
+            <li>
+              <a href="#measurement-quality">
+                <span>04</span>
+                A useful measurement needs context
+              </a>
+            </li>
+            <li>
+              <a href="#field-check">
+                <span>05</span>
+                Run a safe bench check
+              </a>
+            </li>
+      <li><a href="#sources"><span>06</span>Sources</a></li>
+    </ol>
+  </nav>
+    <main class="lesson-main">
+      
+  <details class="lesson-mobile-toc">
+    <summary>On this page</summary>
+    <nav aria-label="Mobile lesson navigation">
+      <ol>
+        <li><a href="#lesson-title">Overview</a></li>
+        <li><a href="#two-systems">Two sensing systems share one aircraft</a></li><li><a href="#anatomy">Read the underside like a scientist</a></li><li><a href="#state-estimation">Sensors do not hand you the state</a></li><li><a href="#measurement-quality">A useful measurement needs context</a></li><li><a href="#field-check">Run a safe bench check</a></li>
+        <li><a href="#sources">Sources</a></li>
+      </ol>
+    </nav>
+  </details>
+      
+  <header class="lesson-hero">
+    <p class="lesson-kicker">Observe before you automate</p>
+    <h1 id="lesson-title">The Hopper sensor suite</h1>
+    <p class="lesson-hero__summary">Learn what can actually be seen on the classroom aircraft, what the flight controller must estimate, and how to describe sensors without turning inference into fact.</p>
+    <div class="lesson-meta" aria-label="Lesson details">
+      <span class="lesson-chip">Lesson 01 of 9</span>
+      <span class="lesson-chip">18 min</span>
+      <span class="lesson-chip">Foundations</span>
+    </div>
+  </header>
+  <section class="lesson-objectives" aria-labelledby="objectives-title">
+    <h2 id="objectives-title">Learning objectives</h2>
+    <ol><li>Separate the camera used for classroom vision from the sensors used to stabilize flight.</li><li>Identify the externally visible camera and downward-facing modules without overclaiming their modality.</li><li>Explain why position and attitude are estimates produced by sensor fusion.</li><li>Design a measurement check that is safe, repeatable, and honest about uncertainty.</li></ol>
+  </section>
+        <section class="lesson-section" id="two-systems" aria-labelledby="two-systems-title">
+          <span class="lesson-section__number">01 / 05</span>
+          <h2 id="two-systems-title">Two sensing systems share one aircraft</h2>
+          
+          <p class="lesson-lede">A quadrotor has to answer two different questions at once: “How am I moving?” and “What is in the image?” Hopper Studio keeps those jobs separate.</p>
+          
+  <div class="lesson-cards">
+    
+      <article class="lesson-card">
+        <span class="lesson-card__tag">Flight loop</span>
+        <h3>Stabilization sensing</h3>
+        <p>The flight controller continuously estimates attitude and motion, then adjusts the four motors. This loop must keep working even when your lesson code is idle.</p>
+      </article>
+      <article class="lesson-card">
+        <span class="lesson-card__tag">Lesson loop</span>
+        <h3>Camera vision</h3>
+        <p>Hopper Studio captures pixels, then runs thresholding, COCO-SSD, a Teachable Machine classifier, or AprilTag detection on the host computer.</p>
+      </article>
+  </div>
+          <p>The important distinction is computational: the classroom vision algorithms run in the browser or desktop app. They are not proof that a neural network is running on the aircraft. Likewise, a camera frame is not a direct reading of altitude, velocity, or heading.</p>
+          
+  <aside class="lesson-callout lesson-callout--caution">
+    <div><b>Evidence rule</b><p>The supplied photographs are strong evidence for visible hardware. They are not sufficient evidence for an internal IMU, barometer, compass, GPS receiver, or a particular range-sensing technology. Those claims require hardware documentation.</p></div>
+  </aside>
+        
+        </section>
+        <section class="lesson-section" id="anatomy" aria-labelledby="anatomy-title">
+          <span class="lesson-section__number">02 / 05</span>
+          <h2 id="anatomy-title">Read the underside like a scientist</h2>
+          
+          <p class="lesson-lede">The generated illustration below is based on the supplied 4032 × 3024 underside photograph. Numbered labels are HTML overlays so the wording stays exact and accessible.</p>
+          <figure class="lesson-figure">
+            <div class="lesson-figure__frame">
+              <img src="assets/images/hopper-underbody-generated.jpg" width="1536" height="1024" alt="Generated technical underside view of the black X-frame Hopper quadrotor with red propeller guards">
+              <span class="sensor-callout sensor-callout--1" aria-hidden="true">1</span>
+              <span class="sensor-callout sensor-callout--2" aria-hidden="true">2</span>
+              <span class="sensor-callout sensor-callout--3" aria-hidden="true">3</span>
+              <span class="sensor-callout sensor-callout--4" aria-hidden="true">4</span>
+            </div>
+            <figcaption><strong>Generated technical illustration.</strong> It is a diagrammatic rendering of the supplied high-resolution photo, not a manufacturer cutaway.</figcaption>
+          </figure>
+          
+  <div class="lesson-cards">
+    
+      <article class="lesson-card">
+        <span class="lesson-card__tag">1 · visible</span>
+        <h3>Downward-facing camera assembly</h3>
+        <p>A lens and exposed circuit assembly are clearly visible. The photo establishes location and orientation, but not resolution, frame rate, field of view, or whether this is the exact feed used by Hopper Studio.</p>
+      </article>
+      <article class="lesson-card">
+        <span class="lesson-card__tag">2 · visible</span>
+        <h3>Secondary optical-looking package</h3>
+        <p>A smaller package is visible next to the main lens. Its appearance alone does not prove optical-flow, infrared, or another specific function.</p>
+      </article>
+      <article class="lesson-card">
+        <span class="lesson-card__tag">3 · visible</span>
+        <h3>Square downward-facing window</h3>
+        <p>A square downward-facing window is visible on the centerline. Its shape does not establish what is behind it; a manual or instrumented test is needed before calling it a range sensor or naming a sensing technology.</p>
+      </article>
+      <article class="lesson-card">
+        <span class="lesson-card__tag">4 · visible</span>
+        <h3>Motor, propeller, and guard</h3>
+        <p>Each arm carries one motor and two-blade propeller. The red guards are safety hardware, not sensors, but they change mass, drag, and collision behavior.</p>
+      </article>
+  </div>
+          <div class="lesson-photo-grid">
+            <figure class="lesson-figure">
+              <div class="lesson-figure__frame"><img src="assets/images/hopper-underbody-photo.jpg" width="1600" height="2134" alt="High-resolution supplied photograph of the Hopper underside"></div>
+              <figcaption>Supplied high-resolution underside photograph, resized and re-encoded for the web.</figcaption>
+            </figure>
+            <figure class="lesson-figure">
+              <div class="lesson-figure__frame"><img src="assets/images/hopper-top-photo.jpg" width="1600" height="2134" alt="High-resolution supplied photograph of the top of the Hopper quadrotor"></div>
+              <figcaption>Supplied top photograph. It confirms the X-frame layout and battery shell, but reveals no additional identifiable sensor.</figcaption>
+            </figure>
+          </div>
+        
+        </section>
+        <section class="lesson-section" id="state-estimation" aria-labelledby="state-estimation-title">
+          <span class="lesson-section__number">03 / 05</span>
+          <h2 id="state-estimation-title">Sensors do not hand you the state</h2>
+          
+          <p class="lesson-lede">A flight controller combines incomplete, noisy measurements to estimate quantities it cannot measure directly. This is called <strong>sensor fusion</strong>.</p>
+          
+  <div class="lesson-equation">
+    <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mover accent="true"><mi mathvariant="bold">x</mi><mo>^</mo></mover><mi>k</mi></msub><mo>=</mo><mi>f</mi><mtext> ⁣</mtext><mrow><mo fence="true">(</mo><msub><mover accent="true"><mi mathvariant="bold">x</mi><mo>^</mo></mover><mrow><mi>k</mi><mo>−</mo><mn>1</mn></mrow></msub><mo separator="true">,</mo><mtext> </mtext><msub><mi mathvariant="bold">u</mi><mrow><mi>k</mi><mo>−</mo><mn>1</mn></mrow></msub><mo fence="true">)</mo></mrow><mo>+</mo><mtext>measurement correction</mtext></mrow><annotation encoding="application/x-tex">\hat{\mathbf{x}}_k = f\!\left(\hat{\mathbf{x}}_{k-1},\,\mathbf{u}_{k-1}\right) + \text{measurement correction}</annotation></semantics></math></span>
+    <p class="lesson-equation__caption">The hat in <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mover accent="true"><mi mathvariant="bold">x</mi><mo>^</mo></mover></mrow><annotation encoding="application/x-tex">\hat{\mathbf{x}}</annotation></semantics></math></span> means “estimated.” The function predicts forward from the previous estimate and motor command; new measurements correct the drift.</p>
+  </div>
+          
+  <div class="lesson-cards">
+    
+      <article class="lesson-card">
+        <span class="lesson-card__tag">Typical, not photo-verified</span>
+        <h3>Inertial measurement unit</h3>
+        <p>Most quadrotor flight controllers use gyroscopes and accelerometers to estimate angular motion and attitude. Treat this as a typical architecture unless Hopper hardware documentation confirms the exact device.</p>
+      </article>
+      <article class="lesson-card">
+        <span class="lesson-card__tag">Possible, not photo-verified</span>
+        <h3>Pressure or magnetic sensing</h3>
+        <p>Barometers and magnetometers are common on some aircraft, but neither can be identified from these photographs. Do not list them as verified Hopper components.</p>
+      </article>
+      <article class="lesson-card">
+        <span class="lesson-card__tag">Estimated quantity</span>
+        <h3>Altitude and velocity</h3>
+        <p>Altitude and velocity are usually fused estimates. A downward range measurement, visual motion, acceleration, and pressure can each contribute, depending on the hardware and firmware.</p>
+      </article>
+      <article class="lesson-card">
+        <span class="lesson-card__tag">Not established</span>
+        <h3>Absolute GPS position</h3>
+        <p>No external GPS antenna is visible, and this lab is designed around indoor relative sensing. That is not the same as proving there is no internal receiver.</p>
+      </article>
+  </div>
+          
+  <aside class="lesson-callout lesson-callout--gold">
+    <div><b>Language that stays accurate</b><p>Say “the flight controller estimates attitude” rather than “the gyroscope measures attitude.” A gyroscope measures angular rate; attitude is inferred by integrating and correcting that rate.</p></div>
+  </aside>
+        
+        </section>
+        <section class="lesson-section" id="measurement-quality" aria-labelledby="measurement-quality-title">
+          <span class="lesson-section__number">04 / 05</span>
+          <h2 id="measurement-quality-title">A useful measurement needs context</h2>
+          
+          <p class="lesson-lede">A number without a frame, unit, update rate, and uncertainty is not yet useful scientific information.</p>
+          
+  <div class="lesson-table-wrap" role="region" aria-label="Question, Why it matters, Classroom example" tabindex="0">
+    <table class="lesson-table">
+      <thead><tr><th scope="col">Question</th><th scope="col">Why it matters</th><th scope="col">Classroom example</th></tr></thead>
+      <tbody><tr><td>What is the quantity?</td><td>Avoids confusing a direct measurement with an estimate.</td><td>Pixel brightness is measured; object class is inferred.</td></tr><tr><td>Which coordinate frame?</td><td>A positive sign has no meaning without an axis convention.</td><td>Image x is positive right; image y is positive up in Hopper Studio coordinates.</td></tr><tr><td>What are the units?</td><td>Percent, pixels, degrees, and seconds are not interchangeable.</td><td>Object confidence is a fraction in code but a percentage in the blocks UI.</td></tr><tr><td>How fresh is it?</td><td>Some values come from a new scan; others reuse stored state.</td><td><code>seesObject()</code> scans now; <code>objectCoordinate()</code> reads the last stored match.</td></tr><tr><td>What can make it fail?</td><td>Every sensor and algorithm has conditions where it becomes unreliable.</td><td>Low texture, glare, motion blur, small targets, occlusion, or a blocked downward view.</td></tr></tbody>
+    </table>
+  </div>
+          
+  <details class="lesson-check">
+    <summary>Check your understanding · Why is “the sensor says the drone is at x = 20” incomplete?</summary>
+    <div class="lesson-check__answer"><p>Because we still need the sensor or estimator, coordinate frame, unit, sign convention, timestamp, and uncertainty. In Hopper vision, x = +20 usually means a stored image coordinate 20% of half-frame to the right—not a world position in centimeters.</p></div>
+  </details>
+        
+        </section>
+        <section class="lesson-section" id="field-check" aria-labelledby="field-check-title">
+          <span class="lesson-section__number">05 / 05</span>
+          <h2 id="field-check-title">Run a safe bench check</h2>
+          
+          <ol>
+            <li><strong>Remove the flight battery or keep the motors disarmed.</strong> Never reach into a powered propeller arc.</li>
+            <li>Place the aircraft on a stable surface and photograph the underside at high resolution.</li>
+            <li>Record only what is externally observable: lens, circuit package, window, motor, wiring, and guard.</li>
+            <li>Connect the lesson camera feed and move a high-contrast card through the frame. Note orientation, latency, crop, and whether the image mirrors horizontally.</li>
+            <li>Write two columns: <em>observed</em> and <em>inferred</em>. Move a claim to “verified” only when a hardware manual or source confirms it.</li>
+          </ol>
+          
+  <aside class="lesson-callout lesson-callout--caution">
+    <div><b>Do not cover a downward sensor in flight</b><p>Blocking a stabilization or ranging sensor can cause drift or an unexpected landing response. Bench observations should be made with the aircraft safely disarmed.</p></div>
+  </aside>
+        
+        </section>
+  <footer class="lesson-sources" id="sources">
+    <h2>Sources and verification</h2>
+    <ol><li>Supplied Hopper underside photograph — IMG_4476.jpeg, 4032 × 3024</li><li>Supplied Hopper top photograph — IMG_4479.jpeg, 5712 × 4284</li><li>Adaptive Altitude and Attitude Quadrotor Controller: Theory and Experimental Evaluation — Elsberry, Dawkins, and Whitcomb; supplied course paper, Section III-A</li><li><a href="https://www.parrot.com/assets/s3fs-public/media-public/EN_Pressrelease2015/parrotbebop2theall-in-onedrone.pdf" target="_blank" rel="noopener noreferrer">Parrot Bebop 2 product paper</a> — Example of manufacturer language that distinguishes a vertical camera, ultrasound sensor, and pressure sensor</li></ol>
+    <p class="lesson-sources__verified">Content and command behavior verified 28 July 2026</p>
+  </footer>
+      
+    <nav class="lesson-pagination" aria-label="Lesson navigation">
+      <a href="index.html" data-lesson-hub>
+              <small>← Learning library</small><b>Browse all lessons</b>
+            </a>
+      <a href="02-quadrotor-aerodynamics.html" data-lesson-slug="02-quadrotor-aerodynamics">
+              <small>Next lesson →</small><b>How an X-quadrotor flies</b>
+            </a>
+    </nav>
+    </main>
+  </div>
+  </div>
+</body>
+</html>

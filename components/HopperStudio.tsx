@@ -36,6 +36,10 @@ import {
   type AprilTagDetection,
 } from "../lib/apriltags";
 import {
+  buildSimulatorObjectPdf,
+  SIMULATOR_OBJECT_LIBRARY,
+} from "../lib/simulator-targets";
+import {
   DEFAULT_EDITOR_MODE,
   ENABLED_EDITOR_MODES,
   LAB_NAME,
@@ -49,6 +53,11 @@ import {
   transpilePython,
 } from "../lib/python";
 import { JAVASCRIPT_STARTER_PROGRAM } from "../lib/coding-starters";
+import {
+  checkNativeCamera,
+  isNativeIPadApp,
+  startNativeCamera,
+} from "../lib/ipad-native";
 import { INFORMATION_LESSONS } from "../lib/information-lessons.metadata.generated";
 import CodeQuickReference from "./CodeQuickReference";
 import InformationLessonLauncher from "./InformationLessonLauncher";
@@ -159,7 +168,22 @@ type SessionPhoto = {
   height: number;
 };
 
+const drawThresholdResult = (
+  canvas: HTMLCanvasElement | null,
+  result: ThresholdResult | null,
+) => {
+  if (!canvas || !result) return;
+  if (canvas.width !== result.frameWidth) canvas.width = result.frameWidth;
+  if (canvas.height !== result.frameHeight) canvas.height = result.frameHeight;
+  canvas.getContext("2d")?.putImageData(
+    new ImageData(result.binaryData, result.frameWidth, result.frameHeight),
+    0,
+    0,
+  );
+};
+
 export default function HopperStudio({ cameraProxyAvailable = false }: HopperStudioProps) {
+  const nativeIPadApp = isNativeIPadApp();
   const workspaceHostRef = useRef<HTMLDivElement>(null);
   const workspaceRef = useRef<WorkspaceSvg | null>(null);
   const blocklyRef = useRef<BlocklyToolkit | null>(null);
@@ -192,6 +216,12 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   const manualNudgeSequenceRef = useRef(0);
   const photoSequenceRef = useRef(0);
   const photoUrlsRef = useRef(new Set<string>());
+  const nativeCameraStopRef = useRef<null | (() => Promise<void>)>(null);
+  const nativeCameraFrameInFlightRef = useRef(false);
+  const nativeCameraPendingFrameRef = useRef<string | null>(null);
+  const nativeCameraLiveLoggedRef = useRef(false);
+  const thresholdPreviewBusyRef = useRef(false);
+  const lastThresholdUiUpdateRef = useRef(0);
   const projectNameRef = useRef("Object Detection Lab");
   const javascriptCodeRef = useRef(JAVASCRIPT_STARTER_PROGRAM);
   const pythonCodeRef = useRef(PYTHON_STARTER_PROGRAM);
@@ -234,9 +264,12 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   const [simulatorVisionMode, setSimulatorVisionMode] = useState<VisionScanKind | null>(null);
   const [scanEvent, setScanEvent] = useState<VisionScanEvent | null>(null);
   const [modelState, setModelState] = useState<ModelState>("off");
+  const [objectModelError, setObjectModelError] = useState<string | null>(null);
+  const [objectScanSummary, setObjectScanSummary] = useState<string | null>(null);
   const [detections, setDetections] = useState<VisionDetection[]>([]);
   const [aprilTagDetections, setAprilTagDetections] = useState<AprilTagDetection[]>([]);
   const [pdfTagId, setPdfTagId] = useState(0);
+  const [pdfObjectLabel, setPdfObjectLabel] = useState("person");
   const [simulatorDetections, setSimulatorDetections] = useState<VisionDetection[]>([]);
   const [simulatorThresholdResult, setSimulatorThresholdResult] = useState<ThresholdResult | null>(null);
   const [simulatorAprilTags, setSimulatorAprilTags] = useState<AprilTagDetection[]>([]);
@@ -551,6 +584,8 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   useEffect(() => () => {
     photoUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
     photoUrlsRef.current.clear();
+    void nativeCameraStopRef.current?.();
+    nativeCameraStopRef.current = null;
   }, []);
 
   useEffect(() => {
@@ -685,6 +720,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
         }
       },
       (message) => appendLog(message),
+      setObjectModelError,
     );
     visionRef.current = vision;
     return () => {
@@ -705,21 +741,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   }, [objectConfidencePercent]);
 
   useEffect(() => {
-    const canvas = thresholdOverlayRef.current;
-    if (!canvas || !thresholdResult) return;
-    canvas.width = thresholdResult.frameWidth;
-    canvas.height = thresholdResult.frameHeight;
-    const context = canvas.getContext("2d");
-    if (!context) return;
-    context.putImageData(
-      new ImageData(
-        new Uint8ClampedArray(thresholdResult.binaryData),
-        thresholdResult.frameWidth,
-        thresholdResult.frameHeight,
-      ),
-      0,
-      0,
-    );
+    drawThresholdResult(thresholdOverlayRef.current, thresholdResult);
   }, [thresholdResult]);
 
   useEffect(() => {
@@ -758,7 +780,11 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   const checkWifi = useCallback(async (showChecking = true) => {
     if (showChecking) setWifiState("checking");
     try {
-      if (!cameraProxyAvailable) {
+      if (nativeIPadApp) {
+        if (!await checkNativeCamera(cameraAddress)) {
+          throw new Error("No Hopper Wi-Fi response");
+        }
+      } else if (!cameraProxyAvailable) {
         const response = await fetch("http://192.168.2.1/", {
           cache: "no-store",
           mode: "no-cors",
@@ -779,7 +805,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
       setWifiState("disconnected");
       return false;
     }
-  }, [cameraProxyAvailable]);
+  }, [cameraAddress, cameraProxyAvailable, nativeIPadApp]);
 
   const disconnectSimulation = useCallback(async () => {
     runtimeRef.current?.stop();
@@ -816,6 +842,8 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
       await disconnectSimulation();
       return;
     }
+    await nativeCameraStopRef.current?.();
+    nativeCameraStopRef.current = null;
     const simulatorSurface = openSimulatorWindow();
     if (!simulatorSurface) return;
     if (controllerRef.current) {
@@ -1124,15 +1152,47 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     appendLog("⚠ Emergency motor cutoff sent");
   };
 
-  const connectCamera = () => {
+  const connectCamera = async () => {
     try {
       const cameraUrl = new URL(cameraAddress);
       if (cameraUrl.protocol !== "http:") throw new Error("Camera address must use http://");
+      await nativeCameraStopRef.current?.();
+      nativeCameraStopRef.current = null;
       setCameraState("connecting");
       setWifiState("checking");
       setDetections([]);
       setAprilTagDetections([]);
       setThresholdResult(null);
+      if (nativeIPadApp) {
+        nativeCameraFrameInFlightRef.current = false;
+        nativeCameraPendingFrameRef.current = null;
+        nativeCameraLiveLoggedRef.current = false;
+        nativeCameraStopRef.current = await startNativeCamera(
+          cameraUrl.href,
+          (dataUrl) => {
+            const image = imageRef.current;
+            if (!image) {
+              nativeCameraFrameInFlightRef.current = true;
+              setCameraSource(dataUrl);
+            } else if (nativeCameraFrameInFlightRef.current) {
+              // Keep only the newest undecoded frame so a busy iPad never
+              // builds a seconds-long image decode queue.
+              nativeCameraPendingFrameRef.current = dataUrl;
+            } else {
+              nativeCameraFrameInFlightRef.current = true;
+              image.src = dataUrl;
+            }
+          },
+          (message) => {
+            setCameraState("error");
+            setWifiState("disconnected");
+            setThresholdResult(null);
+            appendLog("Camera:", message);
+          },
+        );
+        appendLog("Connecting to camera at", cameraUrl.href);
+        return;
+      }
       const source = cameraProxyAvailable
         ? `/api/camera?url=${encodeURIComponent(cameraUrl.href)}&t=${Date.now()}`
         : cameraUrl.href;
@@ -1145,49 +1205,78 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     }
   };
 
-  const previewThreshold = useCallback(async () => {
+  const previewThreshold = useCallback(async (forceUiUpdate = false) => {
+    if (thresholdPreviewBusyRef.current) return undefined;
+    thresholdPreviewBusyRef.current = true;
     try {
-      const result = await visionRef.current?.scanThreshold(thresholdPercent, thresholdInvert, false);
+      const result = await visionRef.current?.scanThreshold(
+        thresholdPercent,
+        thresholdInvert,
+        false,
+        false,
+      );
       if (!result) return undefined;
+      latestThresholdRef.current = result;
+      drawThresholdResult(thresholdOverlayRef.current, result);
       setDisplayVisionMode("threshold");
-      if (simulationControllerRef.current) {
-        setSimulatorVisionMode("threshold");
-        setSimulatorThresholdResult(result);
+      const now = performance.now();
+      if (forceUiUpdate || now - lastThresholdUiUpdateRef.current >= 200) {
+        lastThresholdUiUpdateRef.current = now;
+        setThresholdResult(result);
+        if (simulationControllerRef.current) {
+          setSimulatorVisionMode("threshold");
+          setSimulatorThresholdResult(result);
+        }
       }
       return result;
     } catch (error) {
       setVisionTestingMode(null);
       appendLog("Threshold scan:", error);
       return undefined;
+    } finally {
+      thresholdPreviewBusyRef.current = false;
     }
   }, [appendLog, thresholdInvert, thresholdPercent]);
 
   useEffect(() => {
     if (visionTestingMode !== "threshold") return;
-    const initial = window.setTimeout(() => void previewThreshold(), 0);
-    const interval = window.setInterval(() => void previewThreshold(), 650);
+    let stopped = false;
+    let timer = 0;
+    const refresh = async () => {
+      await previewThreshold();
+      if (!stopped) timer = window.setTimeout(() => void refresh(), 100);
+    };
+    timer = window.setTimeout(() => void refresh(), 0);
     return () => {
-      window.clearTimeout(initial);
-      window.clearInterval(interval);
+      stopped = true;
+      window.clearTimeout(timer);
     };
   }, [previewThreshold, visionTestingMode]);
 
   const previewObjects = useCallback(async () => {
     if (objectScanBusyRef.current) return;
     objectScanBusyRef.current = true;
+    const startedAt = performance.now();
     try {
       const nextDetections = await visionRef.current?.detectObjects(
         objectConfidencePercent / 100,
         false,
       );
       if (!nextDetections) return;
+      const elapsed = performance.now() - startedAt;
+      const duration = elapsed >= 1000
+        ? `${(elapsed / 1000).toFixed(1)} s`
+        : `${Math.round(elapsed)} ms`;
+      setObjectScanSummary(
+        `${nextDetections.length} object${nextDetections.length === 1 ? "" : "s"} · ${duration}`,
+      );
       setDisplayVisionMode("object");
       if (simulationControllerRef.current) {
         setSimulatorVisionMode("object");
         setSimulatorDetections(nextDetections);
       }
     } catch (error) {
-      setVisionTestingMode(null);
+      setObjectScanSummary(null);
       appendLog("Object detection:", error);
     } finally {
       objectScanBusyRef.current = false;
@@ -1222,6 +1311,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     }
     try {
       if (mode === "object" && !simulationControllerRef.current) {
+        setObjectScanSummary(null);
         await visionRef.current?.loadObjectModel();
       }
       setDisplayVisionMode(mode);
@@ -1229,6 +1319,9 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
       setVisionTestingMode(mode);
     } catch (error) {
       appendLog(`${mode} testing:`, error);
+      if (mode === "object") {
+        notify(`Object detector: ${formatLogValue(error)}`);
+      }
     }
   };
 
@@ -1304,6 +1397,25 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     pdfWindow.opener = null;
     pdfWindow.location.href = pdfUrl;
     window.setTimeout(() => URL.revokeObjectURL(pdfUrl), 60_000);
+  };
+
+  const openSimulatorObjectPdf = async () => {
+    const pdfWindow = window.open("about:blank", "_blank");
+    if (!pdfWindow) {
+      notify("Allow pop-ups to open the printable object PDF");
+      return;
+    }
+    try {
+      const pdfBytes = await buildSimulatorObjectPdf(pdfObjectLabel);
+      const pdfUrl = URL.createObjectURL(new Blob([pdfBytes], { type: "application/pdf" }));
+      pdfWindow.opener = null;
+      pdfWindow.location.href = pdfUrl;
+      window.setTimeout(() => URL.revokeObjectURL(pdfUrl), 60_000);
+    } catch (error) {
+      pdfWindow.close();
+      appendLog("Printable object:", error);
+      notify("The printable object PDF could not be generated");
+    }
   };
 
   const clampVisionWidth = useCallback((width: number) => {
@@ -1845,8 +1957,35 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
                 ref={imageRef}
                 src={cameraSource}
                 alt="Hopper drone bottom camera feed"
-                onLoad={() => { setCameraState("live"); setWifiState("connected"); appendLog("Camera feed is live."); }}
-                onError={() => { setCameraState("error"); setWifiState("disconnected"); setThresholdResult(null); }}
+                onLoad={() => {
+                  setCameraState("live");
+                  setWifiState("connected");
+                  if (nativeIPadApp) {
+                    if (!nativeCameraLiveLoggedRef.current) {
+                      nativeCameraLiveLoggedRef.current = true;
+                      appendLog("Native Hopper camera feed is live and ready for vision blocks.");
+                    }
+                    nativeCameraFrameInFlightRef.current = false;
+                    const nextFrame = nativeCameraPendingFrameRef.current;
+                    nativeCameraPendingFrameRef.current = null;
+                    if (nextFrame) {
+                      window.requestAnimationFrame(() => {
+                        const image = imageRef.current;
+                        if (!image) return;
+                        nativeCameraFrameInFlightRef.current = true;
+                        image.src = nextFrame;
+                      });
+                    }
+                  } else {
+                    appendLog("Camera feed is live.");
+                  }
+                }}
+                onError={() => {
+                  nativeCameraFrameInFlightRef.current = false;
+                  setCameraState("error");
+                  setWifiState("disconnected");
+                  setThresholdResult(null);
+                }}
               />
             ) : (
               <div className="camera-placeholder">
@@ -1927,10 +2066,12 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
           )}
           {!simulationConnected && cameraState === "error" && (
             <p className="inline-warning">
-              No camera signal. Join the Hopper Wi-Fi and allow local-network access if Edge or Chrome asks.
+              {nativeIPadApp
+                ? "No camera signal. Join the Hopper Wi-Fi and allow Local Network access in iPad Settings."
+                : "No camera signal. Join the Hopper Wi-Fi and allow local-network access if Edge or Chrome asks."}
             </p>
           )}
-          {!simulationConnected && !cameraProxyAvailable && cameraLive && (
+          {!simulationConnected && !cameraProxyAvailable && !nativeIPadApp && cameraLive && (
             <p className="inline-warning">
               Direct video is available. Start the local app to use thresholding, object detection, or AprilTag detection.
             </p>
@@ -2034,7 +2175,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
             </div>
             <div className="threshold-actions">
               <span>Use the purple binary blocks to scan during flight.</span>
-              <button onClick={() => void previewThreshold()} disabled={!cameraLive}>TEST ONCE</button>
+              <button onClick={() => void previewThreshold(true)} disabled={!cameraLive}>TEST ONCE</button>
             </div>
           </section>
 
@@ -2051,7 +2192,14 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
             </div>
             <div className="model-status-row">
               <span className={`model-orb ${modelState}`}><i /></span>
-              <div><b>{modelLabel}</b><small>Runs entirely on this computer</small></div>
+              <div>
+                <b>{modelLabel}</b>
+                <small>
+                  {objectModelError
+                    ? objectModelError
+                    : objectScanSummary ?? "Runs entirely on this computer"}
+                </small>
+              </div>
               {modelState === "ready" && <button onClick={() => void previewObjects()}>TEST ONCE</button>}
             </div>
             <div className="threshold-control confidence-control">
@@ -2074,6 +2222,17 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
                 <span>MORE RESULTS · 1%</span>
                 <span>STRICTER · 100%</span>
               </div>
+            </div>
+            <div className="apriltag-pdf-menu object-pdf-menu">
+              <div><b>PRINT A SIMULATOR TARGET</b><small>Full-page US Letter PDF for hardware testing</small></div>
+              <label>OBJECT
+                <select value={pdfObjectLabel} onChange={(event) => setPdfObjectLabel(event.target.value)}>
+                  {SIMULATOR_OBJECT_LIBRARY.map((target) => (
+                    <option value={target.label} key={target.label}>{target.menuLabel}</option>
+                  ))}
+                </select>
+              </label>
+              <button type="button" onClick={() => void openSimulatorObjectPdf()}>GENERATE PDF ↗</button>
             </div>
             {detectionSummary.length > 0 ? (
               <div className="detection-chips object-detections">

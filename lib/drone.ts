@@ -747,7 +747,9 @@ export class MamboController {
 }
 
 export function getBluetoothApi() {
-  return (navigator as Navigator & { bluetooth?: BluetoothApi }).bluetooth || null;
+  return (window as Window & { __hopperNativeBluetooth?: BluetoothApi }).__hopperNativeBluetooth
+    || (navigator as Navigator & { bluetooth?: BluetoothApi }).bluetooth
+    || null;
 }
 
 export const hopperDeviceRequest = {

@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
+const path = require("node:path");
 const branding = require("../config/branding.json");
 
 const studioName = branding.studioName || "Drone Studio";
@@ -6,6 +7,7 @@ const artifactName = studioName
   .trim()
   .replace(/[^a-z0-9]+/gi, "-")
   .replace(/^-+|-+$/g, "") || "Drone-Studio";
+const entitlementsPath = path.join(__dirname, "build", "entitlements.mac.plist");
 
 module.exports = {
   appId: "org.wrc.hopperstudio",
@@ -36,8 +38,8 @@ module.exports = {
     category: "public.app-category.education",
     hardenedRuntime: false,
     icon: "build/icon.png",
-    entitlements: "build/entitlements.mac.plist",
-    entitlementsInherit: "build/entitlements.mac.plist",
+    entitlements: entitlementsPath,
+    entitlementsInherit: entitlementsPath,
     extendInfo: {
       NSAudioCaptureUsageDescription: null,
       NSBluetoothAlwaysUsageDescription:

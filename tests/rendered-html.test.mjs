@@ -36,7 +36,7 @@ async function render() {
 test("server-renders shared branding metadata and product shell", async () => {
   assert.ok(["python", "javascript", "blocks"].includes(branding.codingOptions.defaultEditor));
   assert.ok(branding.codingOptions.enabledEditors.includes(branding.codingOptions.defaultEditor));
-  assert.equal(branding.codingOptions.defaultEditor, "python");
+  assert.equal(branding.codingOptions.defaultEditor, "blocks");
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
@@ -52,13 +52,14 @@ test("server-renders shared branding metadata and product shell", async () => {
 });
 
 test("ships the local flight, simulation, vision, offline cache, and student-build surfaces", async () => {
-  const [component, codeQuickReference, lessonLauncher, lessonReader, generatedLessons, simulatorComponent, drone, simulation, runtime, vision, aprilTags, blockly, serviceWorker, offlineManifestScript, builtOfflineManifest, styles, readme, packageJson, brandingModule, desktopBuilder, desktopMain, javascriptHighlighting, pythonSurface] = await Promise.all([
+  const [component, codeQuickReference, lessonLauncher, lessonReader, generatedLessons, simulatorComponent, simulatorTargets, drone, simulation, runtime, vision, aprilTags, blockly, serviceWorker, offlineManifestScript, builtOfflineManifest, styles, readme, packageJson, brandingModule, desktopBuilder, desktopMain, javascriptHighlighting, pythonSurface] = await Promise.all([
     readFile(new URL("../components/HopperStudio.tsx", import.meta.url), "utf8"),
     readFile(new URL("../components/CodeQuickReference.tsx", import.meta.url), "utf8"),
     readFile(new URL("../components/InformationLessonLauncher.tsx", import.meta.url), "utf8"),
     readFile(new URL("../components/InformationLessonReader.tsx", import.meta.url), "utf8"),
     readFile(new URL("../lib/information-lessons.generated.ts", import.meta.url), "utf8"),
     readFile(new URL("../components/SimulatedDroneArea.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../lib/simulator-targets.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/drone.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/simulation.ts", import.meta.url), "utf8"),
     readFile(new URL("../lib/runtime.ts", import.meta.url), "utf8"),
@@ -98,6 +99,8 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(component, /APRILTAG DETECTION/);
   assert.match(component, /GENERATE PDF/);
   assert.match(component, /openAprilTagPdf/);
+  assert.match(component, /openSimulatorObjectPdf/);
+  assert.match(component, /PRINT A SIMULATOR TARGET/);
   assert.match(component, /tag36h11/);
   assert.doesNotMatch(component, /ONE TEST AT A TIME/);
   assert.match(component, /cameraProxyAvailable/);
@@ -202,15 +205,18 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(simulatorComponent, /createPortal/);
   assert.match(simulatorComponent, /Drag Hopper drone to reposition it/);
   assert.match(simulatorComponent, /sim-vision-box/);
-  assert.match(simulatorComponent, /Person \(Marine\)/);
-  assert.match(simulatorComponent, /sim-assets\/marine-digicam\.png/);
+  assert.match(simulatorTargets, /Person \(Marine\)/);
+  assert.match(simulatorTargets, /sim-assets\/marine-digicam\.png/);
   assert.doesNotMatch(simulatorComponent, /💂/);
-  assert.match(simulatorComponent, /menuLabel: "Knife"/);
-  assert.match(simulatorComponent, /menuLabel: "Stop sign"/);
-  assert.match(simulatorComponent, /Computer \(laptop\)/);
-  assert.match(simulatorComponent, /menuLabel: "Truck"/);
-  assert.match(simulatorComponent, /menuLabel: "Flag \(red\)"/);
-  assert.match(simulatorComponent, /menuLabel: "Flag \(blue\)"/);
+  assert.match(simulatorTargets, /menuLabel: "Knife"/);
+  assert.match(simulatorTargets, /menuLabel: "Stop sign"/);
+  assert.match(simulatorTargets, /Computer \(laptop\)/);
+  assert.match(simulatorTargets, /menuLabel: "Truck"/);
+  assert.match(simulatorTargets, /menuLabel: "Flag \(red\)"/);
+  assert.match(simulatorTargets, /menuLabel: "Flag \(blue\)"/);
+  assert.match(simulatorTargets, /buildSimulatorObjectPdf/);
+  assert.match(simulatorTargets, /\/MediaBox \[0 0 612 792\]/);
+  assert.match(simulatorTargets, /Print at Actual Size \/ 100%/);
   assert.match(simulatorComponent, /sim-capture-flag/);
   assert.match(simulatorComponent, /object\.flagColor === "red"/);
   assert.match(simulatorComponent, /person-soldier-default/);

@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Understand the tag36h11 family, the local detection pipeline, normalized pose fields, and the exact limits of Hopper’s centering controller.">
+  <meta name="theme-color" content="#062b4d">
+  <title>AprilTags with Hopper · Hopper Field Guide</title>
+  <link rel="icon" href="../favicon.png">
+  <link rel="stylesheet" href="assets/lesson.css">
+  <script src="assets/lesson.js" defer></script>
+</head>
+<body class="lesson-document">
+  <div class="lesson-surface">
+    <a class="lesson-skip" href="#lesson-content">Skip to lesson content</a>
+    <div class="lesson-progress" aria-hidden="true"></div>
+    
+  <header class="lesson-topbar">
+    <a class="lesson-topbar__brand" href="index.html" data-lesson-hub>
+      <span class="lesson-topbar__brand-mark" aria-hidden="true">HF</span>
+      <span><b>Hopper field guide</b><small>Interactive learning library</small></span>
+    </a>
+    <span class="lesson-topbar__count">LESSON 08 / 09</span>
+    <div class="lesson-topbar__actions">
+      <button class="lesson-topbar__button" type="button" data-print-lesson aria-label="Print this lesson"><span>Print</span> ↗</button>
+      
+    </div>
+  </header>
+    
+  <div class="lesson-layout" id="lesson-content">
+    
+  <nav class="lesson-toc" aria-label="On this page">
+    <span class="lesson-toc__label">On this page</span>
+    <ol>
+      
+            <li>
+              <a href="#fiducial">
+                <span>01</span>
+                A fiducial is designed to be found
+              </a>
+            </li>
+            <li>
+              <a href="#pipeline">
+                <span>02</span>
+                From grayscale to an ID
+              </a>
+            </li>
+            <li>
+              <a href="#pose">
+                <span>03</span>
+                2D alignment is not 3D pose
+              </a>
+            </li>
+            <li>
+              <a href="#centering">
+                <span>04</span>
+                The centering command is a bounded feedback loop
+              </a>
+            </li>
+            <li>
+              <a href="#experiment">
+                <span>05</span>
+                Design a tag experiment with geometry
+              </a>
+            </li>
+      <li><a href="#sources"><span>06</span>Sources</a></li>
+    </ol>
+  </nav>
+    <main class="lesson-main">
+      
+  <details class="lesson-mobile-toc">
+    <summary>On this page</summary>
+    <nav aria-label="Mobile lesson navigation">
+      <ol>
+        <li><a href="#lesson-title">Overview</a></li>
+        <li><a href="#fiducial">A fiducial is designed to be found</a></li><li><a href="#pipeline">From grayscale to an ID</a></li><li><a href="#pose">2D alignment is not 3D pose</a></li><li><a href="#centering">The centering command is a bounded feedback loop</a></li><li><a href="#experiment">Design a tag experiment with geometry</a></li>
+        <li><a href="#sources">Sources</a></li>
+      </ol>
+    </nav>
+  </details>
+      
+  <header class="lesson-hero">
+    <p class="lesson-kicker">Engineered landmarks for repeatable vision</p>
+    <h1 id="lesson-title">AprilTags with Hopper</h1>
+    <p class="lesson-hero__summary">Understand the tag36h11 family, the local detection pipeline, normalized pose fields, and the exact limits of Hopper’s centering controller.</p>
+    <div class="lesson-meta" aria-label="Lesson details">
+      <span class="lesson-chip">Lesson 08 of 9</span>
+      <span class="lesson-chip">26 min</span>
+      <span class="lesson-chip">Robotics vision</span>
+    </div>
+  </header>
+  <section class="lesson-objectives" aria-labelledby="objectives-title">
+    <h2 id="objectives-title">Learning objectives</h2>
+    <ol><li>Explain why a fiducial marker can be more reliable than natural imagery.</li><li>Describe the tag36h11 ID range and local detection pipeline.</li><li>Interpret centerX, centerY, yaw, and hamming without inventing 3D pose.</li><li>Use centerOnAprilTag with tolerances, timeout, and a safe fallback.</li></ol>
+  </section>
+        <section class="lesson-section" id="fiducial" aria-labelledby="fiducial-title">
+          <span class="lesson-section__number">01 / 05</span>
+          <h2 id="fiducial-title">A fiducial is designed to be found</h2>
+          
+          <p class="lesson-lede">An AprilTag is a high-contrast square marker whose border helps locate a quadrilateral and whose interior bits encode an ID with error separation.</p>
+          
+  <div class="lesson-cards">
+    
+      <article class="lesson-card">
+        <span class="lesson-card__tag">Family</span>
+        <h3>tag36h11</h3>
+        <p>Hopper Studio’s detector and printable tags use this family. “36” refers to data bits; “11” is the minimum Hamming separation between valid codes.</p>
+      </article>
+      <article class="lesson-card">
+        <span class="lesson-card__tag">IDs</span>
+        <h3>0 through 586</h3>
+        <p>The local family contains 587 valid tags. Choose an ID intentionally and record its role in the experiment.</p>
+      </article>
+      <article class="lesson-card">
+        <span class="lesson-card__tag">Algorithm</span>
+        <h3>Not a neural network</h3>
+        <p>The local CPU pipeline thresholds, finds quadrilateral candidates, samples a bit grid, and decodes the nearest valid code.</p>
+      </article>
+      <article class="lesson-card">
+        <span class="lesson-card__tag">Strength</span>
+        <h3>Known visual structure</h3>
+        <p>The detector does not need to learn every classroom background because the marker’s geometry and code are engineered.</p>
+      </article>
+  </div>
+          
+  <aside class="lesson-callout lesson-callout--gold">
+    <div><b>Family compatibility</b><p>An AprilTag image from another family is not interchangeable. The general AprilTag 3 project now recommends tagStandard41h12 for many new systems, but this course runtime specifically expects tag36h11.</p></div>
+  </aside>
+        
+        </section>
+        <section class="lesson-section" id="pipeline" aria-labelledby="pipeline-title">
+          <span class="lesson-section__number">02 / 05</span>
+          <h2 id="pipeline-title">From grayscale to an ID</h2>
+          
+          <ol>
+            <li>Capture a frame up to 520 px wide and convert it to grayscale.</li>
+            <li>Choose a binary split with Otsu-style thresholding.</li>
+            <li>Find connected dark/light regions and quadrilateral candidates.</li>
+            <li>Sample an 8 × 8 grid through the candidate’s corner geometry.</li>
+            <li>Check the border and decode the 36 data bits against tag36h11 codes.</li>
+            <li>Accept only bounded errors; keep at most one detection per ID.</li>
+          </ol>
+          
+  <div class="lesson-equation">
+    <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><msub><mi>d</mi><mi>H</mi></msub><mo stretchy="false">(</mo><mi mathvariant="bold">a</mi><mo separator="true">,</mo><mi mathvariant="bold">b</mi><mo stretchy="false">)</mo><mo>=</mo><munderover><mo>∑</mo><mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow><mn>36</mn></munderover><mn mathvariant="bold">1</mn><mo stretchy="false">[</mo><msub><mi>a</mi><mi>i</mi></msub><mo mathvariant="normal">≠</mo><msub><mi>b</mi><mi>i</mi></msub><mo stretchy="false">]</mo></mrow><annotation encoding="application/x-tex">d_H(\mathbf{a},\mathbf{b})=
+              \sum_{i=1}^{36}\mathbf{1}[a_i\ne b_i]</annotation></semantics></math></span>
+    <p class="lesson-equation__caption">Hamming distance counts different bits. The local detector accepts only a small number of bit errors when matching a valid code.</p>
+  </div>
+          
+  <div class="lesson-table-wrap" role="region" aria-label="Detection field, Meaning, Not the same as" tabindex="0">
+    <table class="lesson-table">
+      <thead><tr><th scope="col">Detection field</th><th scope="col">Meaning</th><th scope="col">Not the same as</th></tr></thead>
+      <tbody><tr><td>id</td><td>Decoded integer 0…586</td><td>A semantic class such as “landing pad”</td></tr><tr><td>centerX / centerY</td><td>Normalized image center, −100…100; right/up positive</td><td>World x/y in meters</td></tr><tr><td>corners / bbox</td><td>Image pixel geometry</td><td>Calibrated camera pose</td></tr><tr><td>yaw</td><td>Image-plane marker rotation, about (−180°, 180°]</td><td>Full 3D aircraft-to-tag yaw</td></tr><tr><td>hamming</td><td>Number of corrected data-bit errors</td><td>Confidence probability</td></tr></tbody>
+    </table>
+  </div>
+        
+        </section>
+        <section class="lesson-section" id="pose" aria-labelledby="pose-title">
+          <span class="lesson-section__number">03 / 05</span>
+          <h2 id="pose-title">2D alignment is not 3D pose</h2>
+          
+          <p class="lesson-lede">A square in an image contains clues about 3D orientation, but physical pose requires camera calibration and a known tag size. Hopper Studio deliberately reports only image geometry and image-plane yaw.</p>
+          
+  <div class="lesson-equation">
+    <span class="katex"><math xmlns="http://www.w3.org/1998/Math/MathML" display="block"><semantics><mrow><mi>s</mi><mrow><mo fence="true">[</mo><mtable rowspacing="0.16em" columnalign="center" columnspacing="1em"><mtr><mtd><mstyle scriptlevel="0" displaystyle="false"><mi>u</mi></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="false"><mi>v</mi></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="false"><mn>1</mn></mstyle></mtd></mtr></mtable><mo fence="true">]</mo></mrow><mo>=</mo><mi>K</mi><mtext> </mtext><mo stretchy="false">[</mo><mi>R</mi><mo>∣</mo><mi mathvariant="bold">t</mi><mo stretchy="false">]</mo><mrow><mo fence="true">[</mo><mtable rowspacing="0.16em" columnalign="center" columnspacing="1em"><mtr><mtd><mstyle scriptlevel="0" displaystyle="false"><mi>X</mi></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="false"><mi>Y</mi></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="false"><mi>Z</mi></mstyle></mtd></mtr><mtr><mtd><mstyle scriptlevel="0" displaystyle="false"><mn>1</mn></mstyle></mtd></mtr></mtable><mo fence="true">]</mo></mrow></mrow><annotation encoding="application/x-tex">s
+              \begin{bmatrix}u\\v\\1\end{bmatrix}
+              =
+              K\,[R\mid\mathbf{t}]
+              \begin{bmatrix}X\\Y\\Z\\1\end{bmatrix}</annotation></semantics></math></span>
+    <p class="lesson-equation__caption">A calibrated pinhole-camera model. K contains camera intrinsics; R and t describe physical pose. The course detector does not solve this full equation.</p>
+  </div>
+          
+  <aside class="lesson-callout lesson-callout--caution">
+    <div><b>No range estimate</b><p>The current detection has no tag size, focal length, depth, distance, altitude, or 3D translation. Apparent size can change with tilt as well as distance.</p></div>
+  </aside>
+        
+        </section>
+        <section class="lesson-section" id="centering" aria-labelledby="centering-title">
+          <span class="lesson-section__number">04 / 05</span>
+          <h2 id="centering-title">The centering command is a bounded feedback loop</h2>
+          
+          <p><code>centerOnAprilTag</code> scans after every movement. It corrects the dominant center error with a short roll or pitch pulse, levels the drone, waits for the configured rescan delay, and only then reads a new image. This avoids measuring a target while roll or pitch is distorting its image position. Yaw alignment follows after X/Y centering.</p>
+          
+  <div class="lesson-api">
+    
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">id = &quot;any&quot;</div>
+        <div class="lesson-api__detail"><b>Target</b><p>Use any or a rounded numeric ID. any chooses the visible tag nearest image center.</p></div>
+      </article>
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">translationPower = 10</div>
+        <div class="lesson-api__detail"><b>0…100%</b><p>Clamped motor-control percentage used for roll/pitch correction pulses.</p></div>
+      </article>
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">centerSlack = 5</div>
+        <div class="lesson-api__detail"><b>1…35%</b><p>Required absolute x and y image error before translation is considered centered.</p></div>
+      </article>
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">angleSlack = 5</div>
+        <div class="lesson-api__detail"><b>1…45°</b><p>Required absolute image-plane yaw error.</p></div>
+      </article>
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">lostTagSearches = 3</div>
+        <div class="lesson-api__detail"><b>1…20 scans</b><p>Consecutive missed scans allowed before returning false.</p></div>
+      </article>
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">rescanDelay = 0.5</div>
+        <div class="lesson-api__detail"><b>0…5 seconds</b><p>Wait after each roll/pitch correction and reset before capturing the next image.</p></div>
+      </article>
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">30-second hard deadline</div>
+        <div class="lesson-api__detail"><b>Timeout</b><p>Returns false and resets movement if the loop cannot finish in time.</p></div>
+      </article>
+  </div>
+          
+    <figure class="lesson-code">
+      <figcaption class="lesson-code__bar">
+        <span>Center, check return value, and land · javascript</span>
+        <button class="lesson-copy" type="button" data-copy-code>Copy</button>
+      </figcaption>
+      <pre><code class="language-javascript"><span class="token keyword">await</span> drone<span class="token punctuation">.</span><span class="token function">takeOff</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token keyword">try</span> <span class="token punctuation">{</span>
+  <span class="token keyword">const</span> aligned <span class="token operator">=</span> <span class="token keyword">await</span> vision<span class="token punctuation">.</span><span class="token function">centerOnAprilTag</span><span class="token punctuation">(</span>
+    drone<span class="token punctuation">,</span>
+    <span class="token number">7</span><span class="token punctuation">,</span>  <span class="token comment">// tag ID</span>
+    <span class="token number">10</span><span class="token punctuation">,</span> <span class="token comment">// translation power %</span>
+    <span class="token number">5</span><span class="token punctuation">,</span>  <span class="token comment">// center slack %</span>
+    <span class="token number">5</span><span class="token punctuation">,</span>  <span class="token comment">// angle slack degrees</span>
+    <span class="token number">3</span><span class="token punctuation">,</span>  <span class="token comment">// allowed lost scans</span>
+    <span class="token number">0.5</span> <span class="token comment">// wait after roll/pitch before rescan</span>
+  <span class="token punctuation">)</span><span class="token punctuation">;</span>
+  console<span class="token punctuation">.</span><span class="token function">log</span><span class="token punctuation">(</span>aligned <span class="token operator">?</span> <span class="token string">"Aligned"</span> <span class="token operator">:</span> <span class="token string">"Alignment failed safely"</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span> <span class="token keyword">finally</span> <span class="token punctuation">{</span>
+  drone<span class="token punctuation">.</span><span class="token function">reset</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+  <span class="token keyword">await</span> drone<span class="token punctuation">.</span><span class="token function">land</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span></code></pre>
+    </figure>
+          
+  <aside class="lesson-callout lesson-callout--caution">
+    <div><b>What it does not control</b><p>The loop does not regulate altitude, camera-to-tag distance, forward collision, landing, or a globally calibrated pose. An aligned tag can still be too near, too far, or at an unsafe height.</p></div>
+  </aside>
+        
+        </section>
+        <section class="lesson-section" id="experiment" aria-labelledby="experiment-title">
+          <span class="lesson-section__number">05 / 05</span>
+          <h2 id="experiment-title">Design a tag experiment with geometry</h2>
+          
+          <ol>
+            <li>Print one tag at high contrast with a quiet white margin. Do not resample it with smoothing.</li>
+            <li>Measure the printed black-border dimension even if the current lesson does not use physical pose.</li>
+            <li>Test detection across distance, pitch, yaw, partial occlusion, and illumination.</li>
+            <li>Record ID accuracy, missed scans, hamming corrections, center error, and runtime.</li>
+            <li>Choose center and angle slack from observed noise—not from aesthetics.</li>
+            <li>Include a lost-tag branch that hovers or lands; never continue blindly on stale geometry.</li>
+          </ol>
+          
+    <figure class="lesson-code">
+      <figcaption class="lesson-code__bar">
+        <span>Python · a conservative tag check · python</span>
+        <button class="lesson-copy" type="button" data-copy-code>Copy</button>
+      </figcaption>
+      <pre><code class="language-python">take_off<span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token keyword">try</span><span class="token punctuation">:</span>
+    aligned <span class="token operator">=</span> center_on_april_tag<span class="token punctuation">(</span><span class="token builtin">id</span><span class="token operator">=</span><span class="token number">7</span><span class="token punctuation">,</span> power<span class="token operator">=</span><span class="token number">10</span><span class="token punctuation">,</span> center_slack<span class="token operator">=</span><span class="token number">5</span><span class="token punctuation">,</span> angle_slack<span class="token operator">=</span><span class="token number">5</span><span class="token punctuation">,</span> lost_searches<span class="token operator">=</span><span class="token number">3</span><span class="token punctuation">,</span> rescan_delay<span class="token operator">=</span><span class="token number">0.5</span><span class="token punctuation">)</span>
+    <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"aligned:"</span><span class="token punctuation">,</span> aligned<span class="token punctuation">)</span>
+<span class="token keyword">finally</span><span class="token punctuation">:</span>
+    reset_motion<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    land<span class="token punctuation">(</span><span class="token punctuation">)</span></code></pre>
+    </figure>
+          
+  <details class="lesson-check">
+    <summary>Check your understanding · Why does a larger tag often detect farther away?</summary>
+    <div class="lesson-check__answer"><p>At the same distance, it occupies more pixels. The border, corners, and 36 data bits survive downsampling and blur better. This improves 2D decoding but still does not create a calibrated distance measurement.</p></div>
+  </details>
+        
+        </section>
+  <footer class="lesson-sources" id="sources">
+    <h2>Sources and verification</h2>
+    <ol><li>Hopper Studio tag36h11 detector — Verified against lib/apriltags.ts and lib/vision.ts</li><li><a href="https://github.com/AprilRobotics/apriltag" target="_blank" rel="noopener noreferrer">AprilTag 3</a> — Official implementation, papers, detector guidance, and calibrated pose requirements</li><li><a href="https://april.eecs.umich.edu/media/pdfs/olson2011tags.pdf" target="_blank" rel="noopener noreferrer">AprilTag: A robust and flexible visual fiducial system</a> — Olson; original AprilTag paper</li></ol>
+    <p class="lesson-sources__verified">Content and command behavior verified 28 July 2026</p>
+  </footer>
+      
+    <nav class="lesson-pagination" aria-label="Lesson navigation">
+      <a href="07-teachable-machine-models.html" data-lesson-slug="07-teachable-machine-models">
+              <small>← Previous lesson</small><b>Teachable Machine image models</b>
+            </a>
+      <a href="09-python-coding-reference.html" data-lesson-slug="09-python-coding-reference">
+              <small>Next lesson →</small><b>Python coding reference</b>
+            </a>
+    </nav>
+    </main>
+  </div>
+  </div>
+</body>
+</html>

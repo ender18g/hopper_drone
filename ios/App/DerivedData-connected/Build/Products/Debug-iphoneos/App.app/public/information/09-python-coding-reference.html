@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Every supported Python command and helper, with explicit defaults, named arguments, return shapes, language differences, and safe mission patterns.">
+  <meta name="theme-color" content="#062b4d">
+  <title>Python coding reference · Hopper Field Guide</title>
+  <link rel="icon" href="../favicon.png">
+  <link rel="stylesheet" href="assets/lesson.css">
+  <script src="assets/lesson.js" defer></script>
+</head>
+<body class="lesson-document">
+  <div class="lesson-surface">
+    <a class="lesson-skip" href="#lesson-content">Skip to lesson content</a>
+    <div class="lesson-progress" aria-hidden="true"></div>
+    
+  <header class="lesson-topbar">
+    <a class="lesson-topbar__brand" href="index.html" data-lesson-hub>
+      <span class="lesson-topbar__brand-mark" aria-hidden="true">HF</span>
+      <span><b>Hopper field guide</b><small>Interactive learning library</small></span>
+    </a>
+    <span class="lesson-topbar__count">LESSON 09 / 09</span>
+    <div class="lesson-topbar__actions">
+      <button class="lesson-topbar__button" type="button" data-print-lesson aria-label="Print this lesson"><span>Print</span> ↗</button>
+      
+    </div>
+  </header>
+    
+  <div class="lesson-layout" id="lesson-content">
+    
+  <nav class="lesson-toc" aria-label="On this page">
+    <span class="lesson-toc__label">On this page</span>
+    <ol>
+      
+            <li>
+              <a href="#runtime">
+                <span>01</span>
+                This looks like Python and runs through a transpiler
+              </a>
+            </li>
+            <li>
+              <a href="#flight">
+                <span>02</span>
+                Flight, state, and accessory commands
+              </a>
+            </li>
+            <li>
+              <a href="#vision">
+                <span>03</span>
+                Vision commands
+              </a>
+            </li>
+            <li>
+              <a href="#program-state">
+                <span>04</span>
+                Program state and keyboard helpers
+              </a>
+            </li>
+            <li>
+              <a href="#helpers">
+                <span>05</span>
+                Classroom helper functions
+              </a>
+            </li>
+            <li>
+              <a href="#syntax">
+                <span>06</span>
+                Supported control flow
+              </a>
+            </li>
+      <li><a href="#sources"><span>07</span>Sources</a></li>
+    </ol>
+  </nav>
+    <main class="lesson-main">
+      
+  <details class="lesson-mobile-toc">
+    <summary>On this page</summary>
+    <nav aria-label="Mobile lesson navigation">
+      <ol>
+        <li><a href="#lesson-title">Overview</a></li>
+        <li><a href="#runtime">This looks like Python and runs through a transpiler</a></li><li><a href="#flight">Flight, state, and accessory commands</a></li><li><a href="#vision">Vision commands</a></li><li><a href="#program-state">Program state and keyboard helpers</a></li><li><a href="#helpers">Classroom helper functions</a></li><li><a href="#syntax">Supported control flow</a></li>
+        <li><a href="#sources">Sources</a></li>
+      </ol>
+    </nav>
+  </details>
+      
+  <header class="lesson-hero">
+    <p class="lesson-kicker">Readable missions in a classroom subset</p>
+    <h1 id="lesson-title">Python coding reference</h1>
+    <p class="lesson-hero__summary">Every supported Python command and helper, with explicit defaults, named arguments, return shapes, language differences, and safe mission patterns.</p>
+    <div class="lesson-meta" aria-label="Lesson details">
+      <span class="lesson-chip">Lesson 09 of 9</span>
+      <span class="lesson-chip">38 min</span>
+      <span class="lesson-chip">Python</span>
+    </div>
+  </header>
+  <section class="lesson-objectives" aria-labelledby="objectives-title">
+    <h2 id="objectives-title">Learning objectives</h2>
+    <ol><li>Use the complete Hopper Python command surface without await.</li><li>Pass required and optional arguments by the documented names.</li><li>Recognize where this classroom transpiler differs from CPython.</li><li>Write a mission with a guaranteed landing path and current vision evidence.</li></ol>
+  </section>
+        <section class="lesson-section" id="runtime" aria-labelledby="runtime-title">
+          <span class="lesson-section__number">01 / 06</span>
+          <h2 id="runtime-title">This looks like Python and runs through a transpiler</h2>
+          
+          <p class="lesson-lede">Hopper Studio translates a deliberately limited Python-like language into the same asynchronous JavaScript API used by the Blocks and JavaScript editors.</p>
+          
+  <div class="lesson-cards">
+    
+      <article class="lesson-card">
+        <span class="lesson-card__tag">Convenience</span>
+        <h3>No await keyword</h3>
+        <p>Supported Hopper commands automatically wait when translated. Writing await is rejected.</p>
+      </article>
+      <article class="lesson-card">
+        <span class="lesson-card__tag">Scope</span>
+        <h3>Classroom subset</h3>
+        <p>Assignments, decisions, loops, simple functions, exceptions, break/continue, return, raise, and assert are supported.</p>
+      </article>
+      <article class="lesson-card">
+        <span class="lesson-card__tag">Not supported</span>
+        <h3>Not CPython</h3>
+        <p>Imports, classes, async, lambda, with, yield, and other advanced statements are rejected.</p>
+      </article>
+      <article class="lesson-card">
+        <span class="lesson-card__tag">Returned data</span>
+        <h3>JavaScript field names</h3>
+        <p>Objects keep fields such as whiteCoverage, centerX, className, and probability.</p>
+      </article>
+  </div>
+          
+  <aside class="lesson-callout lesson-callout--gold">
+    <div><b>Defaults now match the reference</b><p>The transpiler materializes documented optional values before calling the JavaScript runtime. Even so, explicit flight duration and power are clearer and safer than relying on defaults.</p></div>
+  </aside>
+        
+        </section>
+        <section class="lesson-section" id="flight" aria-labelledby="flight-title">
+          <span class="lesson-section__number">02 / 06</span>
+          <h2 id="flight-title">Flight, state, and accessory commands</h2>
+          
+          
+  <div class="lesson-api">
+    
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">take_off()</div>
+        <div class="lesson-api__detail"><b>None</b><p>Takes off and waits for stabilization.</p></div>
+      </article>
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">land()</div>
+        <div class="lesson-api__detail"><b>None</b><p>Zeros movement, sends land, and waits.</p></div>
+      </article>
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">hover()</div>
+        <div class="lesson-api__detail"><b>None</b><p>Zeros motion axes and waits 1 second.</p></div>
+      </article>
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">wait(seconds)</div>
+        <div class="lesson-api__detail"><b>None</b><p>Waits a nonnegative duration.</p></div>
+      </article>
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">fly(direction, seconds=1, power=15)</div>
+        <div class="lesson-api__detail"><b>None</b><p>Direction: up, down, left, right, forward, backward. Power is normally 0…100%. Specify duration and power in flight code.</p></div>
+      </article>
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">rotate(degrees=0, direction=&quot;clockwise&quot;)</div>
+        <div class="lesson-api__detail"><b>None</b><p>Direction: clockwise or counterclockwise.</p></div>
+      </article>
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">flip(direction)</div>
+        <div class="lesson-api__detail"><b>None</b><p>Direction: forward, backward, left, right. Requires clearance.</p></div>
+      </article>
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">set_axis(axis, power)</div>
+        <div class="lesson-api__detail"><b>None</b><p>Axis: pitch, roll, yaw, gaz, or altitude. Signed −100…100 and persistent.</p></div>
+      </article>
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">reset_motion()</div>
+        <div class="lesson-api__detail"><b>None</b><p>Zeros axes. Does not land.</p></div>
+      </article>
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">battery_level()</div>
+        <div class="lesson-api__detail"><b>number or null-like value</b><p>Reported battery percentage when telemetry exists.</p></div>
+      </article>
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">is_flying() / is_landed()</div>
+        <div class="lesson-api__detail"><b>bool</b><p>Reads the controller state.</p></div>
+      </article>
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">wait_for_battery_change()</div>
+        <div class="lesson-api__detail"><b>None</b><p>Waits for new battery telemetry or program cancellation.</p></div>
+      </article>
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">take_photo()</div>
+        <div class="lesson-api__detail"><b>None</b><p>Captures and stores the current Studio camera/simulator frame.</p></div>
+      </article>
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">open_grabber() / close_grabber()</div>
+        <div class="lesson-api__detail"><b>None</b><p>Requires the claw accessory.</p></div>
+      </article>
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">fire_gun()</div>
+        <div class="lesson-api__detail"><b>None</b><p>Requires the cannon accessory.</p></div>
+      </article>
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">emergency_cutoff()</div>
+        <div class="lesson-api__detail"><b>None</b><p>Immediately stops motors; emergency only.</p></div>
+      </article>
+  </div>
+          
+    <figure class="lesson-code">
+      <figcaption class="lesson-code__bar">
+        <span>Explicit flight mission · python</span>
+        <button class="lesson-copy" type="button" data-copy-code>Copy</button>
+      </figcaption>
+      <pre><code class="language-python">take_off<span class="token punctuation">(</span><span class="token punctuation">)</span>
+
+<span class="token keyword">try</span><span class="token punctuation">:</span>
+    fly<span class="token punctuation">(</span><span class="token string">"forward"</span><span class="token punctuation">,</span> seconds<span class="token operator">=</span><span class="token number">1.5</span><span class="token punctuation">,</span> power<span class="token operator">=</span><span class="token number">15</span><span class="token punctuation">)</span>
+    hover<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    rotate<span class="token punctuation">(</span>degrees<span class="token operator">=</span><span class="token number">90</span><span class="token punctuation">,</span> direction<span class="token operator">=</span><span class="token string">"clockwise"</span><span class="token punctuation">)</span>
+    take_photo<span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token keyword">finally</span><span class="token punctuation">:</span>
+    reset_motion<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    land<span class="token punctuation">(</span><span class="token punctuation">)</span></code></pre>
+    </figure>
+        
+        </section>
+        <section class="lesson-section" id="vision" aria-labelledby="vision-title">
+          <span class="lesson-section__number">03 / 06</span>
+          <h2 id="vision-title">Vision commands</h2>
+          
+          
+  <div class="lesson-api">
+    
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">scan_threshold(threshold=60, invert=False)</div>
+        <div class="lesson-api__detail"><b>ThresholdResult</b><p>Fresh binary scan. Fields use camelCase: whiteCoverage, blackCoverage, centerWhite, frameWidth, frameHeight.</p></div>
+      </article>
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">sees_binary(color, threshold=60, invert=False, coverage=10)</div>
+        <div class="lesson-api__detail"><b>bool</b><p>Fresh scan; color is white or black; coverage is percent.</p></div>
+      </article>
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">binary_at(color, x=0, y=0, threshold=60, invert=False)</div>
+        <div class="lesson-api__detail"><b>bool</b><p>Fresh scan at one normalized pixel. Center is 0,0; top right is 100,100.</p></div>
+      </article>
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">load_object_model()</div>
+        <div class="lesson-api__detail"><b>model</b><p>Loads the local COCO-SSD model. Usually the first object scan can load it automatically.</p></div>
+      </article>
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">scan_objects(confidence=0.55)</div>
+        <div class="lesson-api__detail"><b>detections</b><p>Fresh COCO-SSD scan. Confidence is 0…1.</p></div>
+      </article>
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">detect_objects(confidence=0.55)</div>
+        <div class="lesson-api__detail"><b>detections</b><p>Exact alias of scan_objects.</p></div>
+      </article>
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">sees_object(label, confidence=0.55)</div>
+        <div class="lesson-api__detail"><b>bool</b><p>Fresh scan and exact case-insensitive COCO label.</p></div>
+      </article>
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">object_coordinate(label, axis, confidence=0.55)</div>
+        <div class="lesson-api__detail"><b>number</b><p>Stored coordinate, no fresh scan. Axis x or y; −100…100; right/up positive.</p></div>
+      </article>
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">object_x(label, confidence=0.55) / object_y(...)</div>
+        <div class="lesson-api__detail"><b>number</b><p>Convenience wrappers for stored x or y.</p></div>
+      </article>
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">center_on_object(label, power=10, confidence=0.55, center_slack=5, lost_searches=3, rescan_delay=0.5)</div>
+        <div class="lesson-api__detail"><b>bool</b><p>Bounded object-box centering loop using roll/pitch only. It never changes yaw.</p></div>
+      </article>
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">scan_april_tags()</div>
+        <div class="lesson-api__detail"><b>tag detections</b><p>Fresh tag36h11 scan.</p></div>
+      </article>
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">sees_april_tag(id=&quot;any&quot;)</div>
+        <div class="lesson-api__detail"><b>bool</b><p>Fresh scan; any or ID 0…586.</p></div>
+      </article>
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">center_on_april_tag(id=&quot;any&quot;, power=10, center_slack=5, angle_slack=5, lost_searches=3, rescan_delay=0.5)</div>
+        <div class="lesson-api__detail"><b>bool</b><p>Bounded 2D centering/alignment loop that waits for a level image before rescanning.</p></div>
+      </article>
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">scan_custom_model()</div>
+        <div class="lesson-api__detail"><b>predictions</b><p>Fresh whole-frame Teachable Machine classification.</p></div>
+      </article>
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">sees_custom_label(label, confidence=0.75)</div>
+        <div class="lesson-api__detail"><b>bool</b><p>Fresh classification and exact label.</p></div>
+      </article>
+  </div>
+          
+    <figure class="lesson-code">
+      <figcaption class="lesson-code__bar">
+        <span>Fresh object scan before stored coordinate · python</span>
+        <button class="lesson-copy" type="button" data-copy-code>Copy</button>
+      </figcaption>
+      <pre><code class="language-python">confidence <span class="token operator">=</span> <span class="token number">0.55</span>
+
+<span class="token keyword">if</span> sees_object<span class="token punctuation">(</span><span class="token string">"bottle"</span><span class="token punctuation">,</span> confidence<span class="token operator">=</span>confidence<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    x <span class="token operator">=</span> object_x<span class="token punctuation">(</span><span class="token string">"bottle"</span><span class="token punctuation">,</span> confidence<span class="token operator">=</span>confidence<span class="token punctuation">)</span>
+    y <span class="token operator">=</span> object_y<span class="token punctuation">(</span><span class="token string">"bottle"</span><span class="token punctuation">,</span> confidence<span class="token operator">=</span>confidence<span class="token punctuation">)</span>
+    <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string-interpolation"><span class="token string">f"bottle center: (</span><span class="token interpolation"><span class="token punctuation">{</span>x<span class="token punctuation">}</span></span><span class="token string">, </span><span class="token interpolation"><span class="token punctuation">{</span>y<span class="token punctuation">}</span></span><span class="token string">)"</span></span><span class="token punctuation">)</span>
+<span class="token keyword">else</span><span class="token punctuation">:</span>
+    <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"No current bottle detection"</span><span class="token punctuation">)</span></code></pre>
+    </figure>
+        
+        </section>
+        <section class="lesson-section" id="program-state" aria-labelledby="program-state-title">
+          <span class="lesson-section__number">04 / 06</span>
+          <h2 id="program-state-title">Program state and keyboard helpers</h2>
+          
+          
+  <div class="lesson-api">
+    
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">stopped()</div>
+        <div class="lesson-api__detail"><b>bool</b><p>True after the runtime is stopped; useful in a while loop.</p></div>
+      </article>
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">key_pressed(key)</div>
+        <div class="lesson-api__detail"><b>bool</b><p>Keys: lowercase letters, ArrowUp/Down/Left/Right, or Space.</p></div>
+      </article>
+      <article class="lesson-api__item">
+        <div class="lesson-api__signature">print(*values)</div>
+        <div class="lesson-api__detail"><b>None</b><p>Writes values to the Studio console.</p></div>
+      </article>
+  </div>
+          
+    <figure class="lesson-code">
+      <figcaption class="lesson-code__bar">
+        <span>Poll a key without a busy loop · python</span>
+        <button class="lesson-copy" type="button" data-copy-code>Copy</button>
+      </figcaption>
+      <pre><code class="language-python">take_off<span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token keyword">try</span><span class="token punctuation">:</span>
+    <span class="token keyword">while</span> <span class="token keyword">not</span> stopped<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token keyword">if</span> key_pressed<span class="token punctuation">(</span><span class="token string">"ArrowUp"</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+            set_axis<span class="token punctuation">(</span><span class="token string">"pitch"</span><span class="token punctuation">,</span> <span class="token number">10</span><span class="token punctuation">)</span>
+        <span class="token keyword">else</span><span class="token punctuation">:</span>
+            reset_motion<span class="token punctuation">(</span><span class="token punctuation">)</span>
+        wait<span class="token punctuation">(</span><span class="token number">0.05</span><span class="token punctuation">)</span>
+<span class="token keyword">finally</span><span class="token punctuation">:</span>
+    reset_motion<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    land<span class="token punctuation">(</span><span class="token punctuation">)</span></code></pre>
+    </figure>
+          
+  <aside class="lesson-callout lesson-callout--caution">
+    <div><b>Always yield</b><p>A while loop should contain wait() or another waiting Hopper command. Otherwise it can monopolize the browser and delay Stop handling.</p></div>
+  </aside>
+        
+        </section>
+        <section class="lesson-section" id="helpers" aria-labelledby="helpers-title">
+          <span class="lesson-section__number">05 / 06</span>
+          <h2 id="helpers-title">Classroom helper functions</h2>
+          
+          
+  <div class="lesson-table-wrap" role="region" aria-label="Helper, Supported form, Difference worth knowing" tabindex="0">
+    <table class="lesson-table">
+      <thead><tr><th scope="col">Helper</th><th scope="col">Supported form</th><th scope="col">Difference worth knowing</th></tr></thead>
+      <tbody><tr><td>len(value)</td><td>Length or 0 for a null-like value</td><td>Uses JavaScript .length.</td></tr><tr><td>range(stop) / range(start, stop, step)</td><td>Returns an array; finite numbers; step ≠ 0</td><td>Floats are accepted.</td></tr><tr><td>contains(collection, value)</td><td>Membership test</td><td>Uses Set/Map has or includes when available.</td></tr><tr><td>abs, min, max</td><td>Numeric helpers</td><td>Empty min/max follow JavaScript infinities.</td></tr><tr><td>round(value)</td><td>One value</td><td>Uses Math.round, not Python banker’s rounding; no ndigits.</td></tr><tr><td>int(value)</td><td>Truncate Number(value)</td><td>Conversion behavior follows JavaScript.</td></tr><tr><td>float(value)</td><td>Number(value)</td><td>Conversion behavior follows JavaScript.</td></tr><tr><td>str(value)</td><td>String(value)</td><td><code>str(None)</code> becomes <code>"null"</code>.</td></tr><tr><td>bool(value)</td><td>Boolean(value)</td><td>Unlike Python, an empty list is truthy.</td></tr></tbody>
+    </table>
+  </div>
+          
+  <aside class="lesson-callout lesson-callout--gold">
+    <div><b>Portable thinking</b><p>Use this editor for course missions, not as a general Python interpreter. If a language edge case matters, rewrite it in a simple explicit form or test it in real CPython separately.</p></div>
+  </aside>
+        
+        </section>
+        <section class="lesson-section" id="syntax" aria-labelledby="syntax-title">
+          <span class="lesson-section__number">06 / 06</span>
+          <h2 id="syntax-title">Supported control flow</h2>
+          
+          <p>Supported statements include assignments, <code>if / elif / else</code>, <code>while</code>, <code>for … in</code>, simple <code>def</code>, <code>try / except / finally</code>, <code>break</code>, <code>continue</code>, <code>pass</code>, <code>return</code>, <code>raise</code>, and <code>assert</code>. User-defined function parameters must be simple names; default-valued parameters and type annotations are not supported.</p>
+          
+    <figure class="lesson-code">
+      <figcaption class="lesson-code__bar">
+        <span>Function, loop, and exception pattern · python</span>
+        <button class="lesson-copy" type="button" data-copy-code>Copy</button>
+      </figcaption>
+      <pre><code class="language-python"><span class="token keyword">def</span> <span class="token function">confirm_object</span><span class="token punctuation">(</span>label<span class="token punctuation">,</span> confidence<span class="token punctuation">,</span> attempts<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    hits <span class="token operator">=</span> <span class="token number">0</span>
+    <span class="token keyword">for</span> attempt <span class="token keyword">in</span> <span class="token builtin">range</span><span class="token punctuation">(</span>attempts<span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token keyword">if</span> sees_object<span class="token punctuation">(</span>label<span class="token punctuation">,</span> confidence<span class="token operator">=</span>confidence<span class="token punctuation">)</span><span class="token punctuation">:</span>
+            hits <span class="token operator">=</span> hits <span class="token operator">+</span> <span class="token number">1</span>
+        wait<span class="token punctuation">(</span><span class="token number">0.15</span><span class="token punctuation">)</span>
+    <span class="token keyword">return</span> hits <span class="token operator">>=</span> <span class="token number">2</span>
+
+take_off<span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token keyword">try</span><span class="token punctuation">:</span>
+    <span class="token keyword">if</span> confirm_object<span class="token punctuation">(</span><span class="token string">"bottle"</span><span class="token punctuation">,</span> <span class="token number">0.55</span><span class="token punctuation">,</span> <span class="token number">3</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+        fly<span class="token punctuation">(</span><span class="token string">"forward"</span><span class="token punctuation">,</span> seconds<span class="token operator">=</span><span class="token number">1</span><span class="token punctuation">,</span> power<span class="token operator">=</span><span class="token number">15</span><span class="token punctuation">)</span>
+    <span class="token keyword">else</span><span class="token punctuation">:</span>
+        hover<span class="token punctuation">(</span><span class="token punctuation">)</span>
+<span class="token keyword">except</span><span class="token punctuation">:</span>
+    <span class="token keyword">print</span><span class="token punctuation">(</span><span class="token string">"Mission command failed"</span><span class="token punctuation">)</span>
+<span class="token keyword">finally</span><span class="token punctuation">:</span>
+    reset_motion<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    land<span class="token punctuation">(</span><span class="token punctuation">)</span></code></pre>
+    </figure>
+          
+  <details class="lesson-check">
+    <summary>Check your understanding · Why does the example call land() inside finally?</summary>
+    <div class="lesson-check__answer"><p>The finally block runs after the try body whether it succeeds or raises an error. It documents and enforces the mission’s safe terminal action.</p></div>
+  </details>
+        
+        </section>
+  <footer class="lesson-sources" id="sources">
+    <h2>Sources and verification</h2>
+    <ol><li>Hopper Studio Python transpiler — Verified against lib/python.ts and the shared JavaScript command implementations</li><li><a href="https://docs.python.org/3/reference/" target="_blank" rel="noopener noreferrer">Python language reference</a> — CPython reference used to explain where the classroom subset differs</li></ol>
+    <p class="lesson-sources__verified">Content and command behavior verified 28 July 2026</p>
+  </footer>
+      
+    <nav class="lesson-pagination" aria-label="Lesson navigation">
+      <a href="08-apriltags-with-hopper.html" data-lesson-slug="08-apriltags-with-hopper">
+              <small>← Previous lesson</small><b>AprilTags with Hopper</b>
+            </a>
+      <a href="index.html" data-lesson-hub>
+              <small>Course complete</small><b>Return to the library →</b>
+            </a>
+    </nav>
+    </main>
+  </div>
+  </div>
+</body>
+</html>

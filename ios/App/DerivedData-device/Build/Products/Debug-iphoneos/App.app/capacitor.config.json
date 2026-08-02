@@ -1,0 +1,11 @@
+{
+	"appId": "org.usna.hopperstudio",
+	"appName": "USNA Hopper Studio",
+	"webDir": "student-build",
+	"ios": {
+		"contentInset": "always",
+		"preferredContentMode": "desktop",
+		"scrollEnabled": true
+	},
+	"packageClassList": []
+}

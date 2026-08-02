@@ -25,28 +25,7 @@ import {
   drawAprilTag,
   type AprilTagDetection,
 } from "../lib/apriltags";
-
-type ObjectTemplate = Pick<
-  SimulationObject,
-  "label" | "src" | "emoji" | "flagColor" | "size" | "kind"
-> & {
-  menuLabel: string;
-};
-
-const OBJECT_LIBRARY: ObjectTemplate[] = [
-  { label: "person", menuLabel: "Person (Marine)", src: "sim-assets/marine-digicam.png", size: 0.92, kind: "object" },
-  { label: "knife", menuLabel: "Knife", emoji: "🔪", size: 0.68, kind: "object" },
-  { label: "stop sign", menuLabel: "Stop sign", emoji: "🛑", size: 0.72, kind: "object" },
-  { label: "laptop", menuLabel: "Computer (laptop)", emoji: "💻", size: 0.76, kind: "object" },
-  { label: "truck", menuLabel: "Truck", emoji: "🚚", size: 0.82, kind: "object" },
-  { label: "red flag", menuLabel: "Flag (red)", flagColor: "red", size: 0.78, kind: "object" },
-  { label: "blue flag", menuLabel: "Flag (blue)", flagColor: "blue", size: 0.78, kind: "object" },
-  { label: "car", menuLabel: "Car", src: "sim-assets/car.png", size: 0.72, kind: "object" },
-  { label: "airplane", menuLabel: "Airplane", src: "sim-assets/airplane.png", size: 0.7, kind: "object" },
-  { label: "banana", menuLabel: "Banana", src: "sim-assets/banana.png", size: 0.58, kind: "object" },
-  { label: "apple", menuLabel: "Apple", src: "sim-assets/apple.png", size: 0.56, kind: "object" },
-  { label: "white paper", menuLabel: "White paper", size: 0.72, kind: "paper" },
-];
+import { SIMULATOR_OBJECT_LIBRARY } from "../lib/simulator-targets";
 
 const SCATTER_LOCATIONS = [
   { x: 2.1, y: 5.55 },
@@ -337,11 +316,11 @@ export default function SimulatedDroneArea({
   useEffect(() => {
     const canvas = thresholdCanvasRef.current;
     if (!canvas || !thresholdResult) return;
-    canvas.width = thresholdResult.frameWidth;
-    canvas.height = thresholdResult.frameHeight;
+    if (canvas.width !== thresholdResult.frameWidth) canvas.width = thresholdResult.frameWidth;
+    if (canvas.height !== thresholdResult.frameHeight) canvas.height = thresholdResult.frameHeight;
     canvas.getContext("2d")?.putImageData(
       new ImageData(
-        new Uint8ClampedArray(thresholdResult.binaryData),
+        thresholdResult.binaryData,
         thresholdResult.frameWidth,
         thresholdResult.frameHeight,
       ),
@@ -350,7 +329,7 @@ export default function SimulatedDroneArea({
     );
   }, [thresholdResult]);
 
-  const objectTypes = OBJECT_LIBRARY;
+  const objectTypes = SIMULATOR_OBJECT_LIBRARY;
 
   const addObject = (label: string) => {
     const template = objectTypes.find((item) => item.label === label);
