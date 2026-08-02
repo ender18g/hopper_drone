@@ -45,7 +45,7 @@ next-env.d.ts
 /desktop/branding.json
 /desktop-release/
 /ios/App/App/public/
-/ios/App/DerivedData/
+/ios/App/DerivedData*/
 /.wrangler/
 /outputs/
 /work/
