@@ -221,6 +221,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   const nativeCameraPendingFrameRef = useRef<string | null>(null);
   const nativeCameraLiveLoggedRef = useRef(false);
   const thresholdPreviewBusyRef = useRef(false);
+  const thresholdPreviewErrorLoggedRef = useRef(false);
   const lastThresholdUiUpdateRef = useRef(0);
   const projectNameRef = useRef("Object Detection Lab");
   const javascriptCodeRef = useRef(JAVASCRIPT_STARTER_PROGRAM);
@@ -1216,6 +1217,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
         false,
       );
       if (!result) return undefined;
+      thresholdPreviewErrorLoggedRef.current = false;
       latestThresholdRef.current = result;
       drawThresholdResult(thresholdOverlayRef.current, result);
       setDisplayVisionMode("threshold");
@@ -1230,8 +1232,14 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
       }
       return result;
     } catch (error) {
-      setVisionTestingMode(null);
-      appendLog("Threshold scan:", error);
+      // Native iPad frames are replaced continuously. WebKit can occasionally
+      // expose an image between decode states, so one failed capture must not
+      // switch off a continuous threshold preview. The next scheduled scan
+      // retries against the newest frame.
+      if (!thresholdPreviewErrorLoggedRef.current) {
+        thresholdPreviewErrorLoggedRef.current = true;
+        appendLog("Threshold scan skipped; waiting for the next camera frame:", error);
+      }
       return undefined;
     } finally {
       thresholdPreviewBusyRef.current = false;

@@ -11,6 +11,7 @@
     "build": "npm run lessons && vinext build && node scripts/write-offline-manifest.mjs",
     "build:student": "npm run lessons && vite build --config vite.standalone.config.ts",
     "build:pages": "npm run build:student && node scripts/prepare-pages.mjs",
+    "build:local-server": "npm run build:pages && node scripts/prepare-local-server.mjs",
     "build:desktop": "npm run build:student && node scripts/prepare-desktop.mjs && npm run test:desktop",
     "build:ipad": "npm run build:student && node scripts/prepare-ipad.mjs && npx cap sync ios",
     "build:all": "npm run build && npm run build:student",

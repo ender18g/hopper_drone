@@ -1,4 +1,4 @@
-name: Build and release Hopper Studio desktop apps
+name: Build and release Hopper Studio downloads
 
 on:
   push:
@@ -97,9 +97,41 @@ jobs:
           path: desktop-release/*.zip
           if-no-files-found: error
 
+  local-server:
+    name: Local server ZIP
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22.13.0
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Build local server website
+        run: npm run build:local-server
+
+      - name: Package local server ZIP
+        shell: bash
+        run: |
+          cd local-server-release
+          zip -r ../Hopper-Studio-Local-Server.zip Hopper-Studio-Local-Server
+
+      - name: Upload local server release file
+        uses: actions/upload-artifact@v7
+        with:
+          name: hopper-studio-local-server
+          path: Hopper-Studio-Local-Server.zip
+          if-no-files-found: error
+
   release:
     name: Create GitHub Release
-    needs: [windows, macos]
+    needs: [windows, macos, local-server]
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -132,6 +164,6 @@ jobs:
           gh release create "$tag" release-assets/* \
             --repo "$REPOSITORY" \
             --target "$COMMIT_SHA" \
-            --title "${STUDIO_NAME} Desktop ${RUN_NUMBER}.${RUN_ATTEMPT}" \
-            --notes "Windows: download the portable .exe (no installation or administrator access). macOS: download the arm64 ZIP for Apple Silicon or the x64 ZIP for Intel, then open the ${STUDIO_NAME} .app inside. Builds are signed when the repository signing secrets are configured." \
+            --title "${STUDIO_NAME} ${RUN_NUMBER}.${RUN_ATTEMPT}" \
+            --notes "Windows: download the portable .exe (no installation or administrator access). macOS: download the arm64 ZIP for Apple Silicon or the x64 ZIP for Intel, then open the ${STUDIO_NAME} .app inside. Local server: download Hopper-Studio-Local-Server.zip, extract it, and use the included one-click Mongoose launcher; the site opens at http://localhost:8000/. Builds are signed when the repository signing secrets are configured." \
             --latest

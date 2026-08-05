@@ -64,6 +64,12 @@ test("web runtime selects native iPad Bluetooth and camera paths", async () => {
   assert.match(vision, /const originalInputs = node\.input \?\? \[\]/);
   assert.match(vision, /originalInputs\.map/);
   assert.match(studio, /objectScanSummary/);
+  const thresholdPreview = studio.slice(
+    studio.indexOf("const previewThreshold"),
+    studio.indexOf("const previewObjects"),
+  );
+  assert.match(thresholdPreview, /waiting for the next camera frame/);
+  assert.doesNotMatch(thresholdPreview, /setVisionTestingMode\(null\)/);
   assert.match(vision, /bundledModelShardSizes/);
   assert.match(vision, /usesBundledIPadModel/);
   assert.match(vision, /tf\.setBackend\("cpu"\)/);

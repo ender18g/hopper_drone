@@ -23,7 +23,7 @@ students do not install Python and do not write `await`.
 ## Download the desktop app
 
 Every push to `main` runs `.github/workflows/release-desktop.yml` and creates a
-new GitHub Release with both student downloads:
+new GitHub Release with the desktop and local-server downloads:
 
 - `Hopper-Studio-Windows-x64-*.exe` is a portable Windows app. It does not
   install anything and does not ask for administrator access.
@@ -31,6 +31,10 @@ new GitHub Release with both student downloads:
   Apple Silicon Macs.
 - `Hopper-Studio-macOS-x64-*.zip` contains the Hopper Studio `.app` for Intel
   Macs.
+- `Hopper-Studio-Local-Server.zip` contains the complete static website plus
+  Mongoose for Windows and Apple Silicon Macs. Extract the ZIP, then use the
+  included one-click launcher to open `http://localhost:8000/` with no Node.js
+  installation.
 
 The desktop app includes the complete website, local vision models, Blockly
 media, and the restricted Hopper camera proxy. Students do not need Node.js or
@@ -123,6 +127,18 @@ Hopper Studio keeps this port fixed because browser Bluetooth permissions belong
 Bluetooth flight control is independent of the current Wi-Fi network. The **Wi-Fi offline** camera indicator does not disable **Connect drone**. Hopper Studio checks the camera only when you select the Wi-Fi box or connect the video feed, so being on another Wi-Fi network does not create camera errors during Bluetooth-only use.
 
 The local camera proxy accepts only `192.168.2.1`; it cannot be used as a general web proxy.
+
+## Start the no-install local website
+
+Download `Hopper-Studio-Local-Server.zip` from the latest GitHub Release and
+extract the whole folder. On Windows, double-click `Start Local Server.bat`
+(or launch `mongoose.exe` and open `http://localhost:8000/`). On an Apple
+Silicon Mac, double-click `Start Local Server.command`. Keep the server window
+open while using Hopper Studio.
+
+This small Mongoose server is a static web host. The portable desktop apps
+remain the recommended downloads for real-camera vision work because they also
+include the restricted Hopper camera proxy.
 
 ## Use the simulated drone
 
