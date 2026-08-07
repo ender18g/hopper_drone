@@ -602,6 +602,12 @@ export class VisionRuntime {
     );
   }
 
+  async seesAnyObject(minimumConfidence = 0.55) {
+    const confidence = Number(minimumConfidence);
+    const detections = await this.detectObjects(confidence);
+    return detections.some((detection) => detection.score >= confidence);
+  }
+
   objectCoordinate(
     label: string,
     axis: "x" | "y",

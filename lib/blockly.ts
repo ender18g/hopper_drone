@@ -389,6 +389,18 @@ export function registerHopperBlocks() {
       tooltip: "Scans a fresh camera frame, then checks it for the requested object.",
     },
     {
+      type: "vision_sees_any_object",
+      message0: "camera sees any object at %1 %% confidence",
+      args0: [
+        { type: "input_value", name: "CONFIDENCE", check: "Number" },
+      ],
+      output: "Boolean",
+      inputsInline: true,
+      colour: VISION,
+      tooltip:
+        "Scans a fresh camera frame and is true when any built-in COCO object meets the confidence threshold.",
+    },
+    {
       type: "vision_object_coordinate",
       message0: "%1 coordinate of %2 at %3 %% confidence",
       args0: [
@@ -734,6 +746,10 @@ export function registerHopperBlocks() {
     block,
     `await vision.seesObject(${value(block, "LABEL", '"bottle"')}, ${value(block, "CONFIDENCE", "55")} / 100)`,
   );
+  javascriptGenerator.forBlock.vision_sees_any_object = (block) => activeExpression(
+    block,
+    `await vision.seesAnyObject(${value(block, "CONFIDENCE", "55")} / 100)`,
+  );
   javascriptGenerator.forBlock.vision_object_coordinate = (block) => activeExpression(
     block,
     `await vision.objectCoordinate(${value(block, "LABEL", '"apple"')}, "${block.getFieldValue("AXIS")}", ${value(block, "CONFIDENCE", "55")} / 100)`,
@@ -929,6 +945,11 @@ export const hopperToolbox: Blockly.utils.toolbox.ToolboxDefinition = {
             LABEL: { shadow: { type: "text", fields: { TEXT: "bottle" } } },
             CONFIDENCE: numberShadow(55),
           },
+        },
+        {
+          kind: "block",
+          type: "vision_sees_any_object",
+          inputs: { CONFIDENCE: numberShadow(55) },
         },
         {
           kind: "block",

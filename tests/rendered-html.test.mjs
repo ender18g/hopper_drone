@@ -252,6 +252,7 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(vision, /scanAprilTags/);
   assert.match(vision, /centerOnAprilTag/);
   assert.match(vision, /centerOnObject/);
+  assert.match(vision, /seesAnyObject/);
   assert.match(vision, /binaryAt/);
   assert.match(vision, /normalizedCoordinateToPixel/);
   assert.match(vision, /this\.scanned\("custom"/);
@@ -282,7 +283,12 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(blockly, /rescan after roll\/pitch/);
   assert.doesNotMatch(blockly, /vision_sees_color/);
   assert.match(blockly, /vision_sees_custom_label/);
+  assert.match(blockly, /vision_sees_any_object/);
+  assert.match(blockly, /vision\.seesAnyObject/);
   assert.match(blockly, /vision_object_coordinate/);
+  assert.match(component, /VIEW ALL \{COCO_OBJECT_LABELS\.length\} BUILT-IN LABELS/);
+  assert.match(component, /role="dialog"/);
+  assert.match(styles, /\.coco-label-dialog/);
   assert.match(blockly, /minidrone_takeoff/);
   assert.match(blockly, /message0: "take and store photo"/);
   assert.match(blockly, /await drone\.takePicture\(\)/);
@@ -974,7 +980,13 @@ test("calculates binary threshold coverage and centered object coordinates", asy
     return [{ class: "bottle", score: 0.97 }];
   };
   assert.equal(await runtime.seesObject("bottle", 0.55), true);
-  assert.equal(objectScans, 1, "camera sees object performs its own scan");
+  assert.equal(await runtime.seesAnyObject(0.95), true);
+  runtime.detectObjects = async () => {
+    objectScans += 1;
+    return [{ class: "bottle", score: 0.54 }];
+  };
+  assert.equal(await runtime.seesAnyObject(0.55), false);
+  assert.equal(objectScans, 3, "camera sees object blocks perform their own scans");
 
   const objectScanSequence = [
     [{ class: "person", score: 0.97, centerX: -18, centerY: 0 }],

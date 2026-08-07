@@ -53,6 +53,7 @@ import {
   transpilePython,
 } from "../lib/python";
 import { JAVASCRIPT_STARTER_PROGRAM } from "../lib/coding-starters";
+import { COCO_OBJECT_LABELS } from "../lib/coco-labels";
 import {
   checkNativeCamera,
   isNativeIPadApp,
@@ -208,6 +209,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   const visionRef = useRef<VisionRuntime | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
   const customModelInputRef = useRef<HTMLInputElement>(null);
+  const cocoLabelsCloseRef = useRef<HTMLButtonElement>(null);
   const objectScanBusyRef = useRef(false);
   const aprilTagScanBusyRef = useRef(false);
   const latestDetectionsRef = useRef<VisionDetection[]>([]);
@@ -259,6 +261,7 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
   const [thresholdPercent, setThresholdPercent] = useState(60);
   const [thresholdInvert, setThresholdInvert] = useState(false);
   const [objectConfidencePercent, setObjectConfidencePercent] = useState(55);
+  const [showCocoLabels, setShowCocoLabels] = useState(false);
   const [thresholdResult, setThresholdResult] = useState<ThresholdResult | null>(null);
   const [visionTestingMode, setVisionTestingMode] = useState<VisionTestingMode | null>(null);
   const [displayVisionMode, setDisplayVisionMode] = useState<VisionScanKind | null>(null);
@@ -588,6 +591,16 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
     void nativeCameraStopRef.current?.();
     nativeCameraStopRef.current = null;
   }, []);
+
+  useEffect(() => {
+    if (!showCocoLabels) return;
+    cocoLabelsCloseRef.current?.focus();
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setShowCocoLabels(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [showCocoLabels]);
 
   useEffect(() => {
     let disposed = false;
@@ -2190,7 +2203,19 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
           <section className="vision-tool object-tool">
             <div className="tool-title">
               <span className="tool-number">02</span>
-              <div><h2>OBJECT DETECTOR</h2><p>Local COCO-SSD · continuous live testing</p></div>
+              <div>
+                <h2>OBJECT DETECTOR</h2>
+                <p>Local COCO-SSD · continuous live testing</p>
+                <button
+                  type="button"
+                  className="object-labels-link"
+                  aria-haspopup="dialog"
+                  aria-expanded={showCocoLabels}
+                  onClick={() => setShowCocoLabels(true)}
+                >
+                  VIEW ALL {COCO_OBJECT_LABELS.length} BUILT-IN LABELS
+                </button>
+              </div>
               <button
                 className={`tiny-toggle ${visionTestingMode === "object" ? "on" : ""}`}
                 onClick={() => void toggleVisionTesting("object")}
@@ -2377,6 +2402,44 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
           }}
           onDisconnect={() => void disconnectSimulation()}
         />
+      )}
+      {showCocoLabels && (
+        <div
+          className="coco-label-modal"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setShowCocoLabels(false);
+          }}
+        >
+          <section
+            className="coco-label-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="coco-label-dialog-title"
+            aria-describedby="coco-label-dialog-description"
+          >
+            <header>
+              <div>
+                <span>BUILT-IN OBJECT DETECTION</span>
+                <h2 id="coco-label-dialog-title">COCO object labels</h2>
+              </div>
+              <button
+                ref={cocoLabelsCloseRef}
+                type="button"
+                aria-label="Close COCO object labels"
+                onClick={() => setShowCocoLabels(false)}
+              >
+                ×
+              </button>
+            </header>
+            <p id="coco-label-dialog-description">
+              Type a label exactly as shown below in a “camera sees” object block.
+              The detector recognizes these {COCO_OBJECT_LABELS.length} labels.
+            </p>
+            <ul>
+              {COCO_OBJECT_LABELS.map((label) => <li key={label}><code>{label}</code></li>)}
+            </ul>
+          </section>
+        </div>
       )}
       {toast && <div className="toast" role="status">{toast}</div>}
     </main>
