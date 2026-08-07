@@ -84,3 +84,16 @@ export const COCO_OBJECT_LABELS = [
   "hair drier",
   "toothbrush",
 ] as const;
+
+export function filterCocoObjectLabels(query: string) {
+  const normalizedQuery = String(query).trim().toLowerCase();
+  if (!normalizedQuery) return [...COCO_OBJECT_LABELS];
+
+  const prefixMatches = COCO_OBJECT_LABELS.filter((label) =>
+    label.startsWith(normalizedQuery),
+  );
+  const otherMatches = COCO_OBJECT_LABELS.filter((label) =>
+    !label.startsWith(normalizedQuery) && label.includes(normalizedQuery),
+  );
+  return [...prefixMatches, ...otherMatches];
+}

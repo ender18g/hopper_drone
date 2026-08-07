@@ -2206,16 +2206,17 @@ export default function HopperStudio({ cameraProxyAvailable = false }: HopperStu
               <div>
                 <h2>OBJECT DETECTOR</h2>
                 <p>Local COCO-SSD · continuous live testing</p>
-                <button
-                  type="button"
-                  className="object-labels-link"
-                  aria-haspopup="dialog"
-                  aria-expanded={showCocoLabels}
-                  onClick={() => setShowCocoLabels(true)}
-                >
-                  VIEW ALL {COCO_OBJECT_LABELS.length} BUILT-IN LABELS
-                </button>
               </div>
+              <button
+                type="button"
+                className="object-labels-link"
+                aria-label={`View all ${COCO_OBJECT_LABELS.length} built-in COCO object labels`}
+                aria-haspopup="dialog"
+                aria-expanded={showCocoLabels}
+                onClick={() => setShowCocoLabels(true)}
+              >
+                VIEW ALL LABELS
+              </button>
               <button
                 className={`tiny-toggle ${visionTestingMode === "object" ? "on" : ""}`}
                 onClick={() => void toggleVisionTesting("object")}

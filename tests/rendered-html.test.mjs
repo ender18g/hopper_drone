@@ -285,8 +285,11 @@ test("ships the local flight, simulation, vision, offline cache, and student-bui
   assert.match(blockly, /vision_sees_custom_label/);
   assert.match(blockly, /vision_sees_any_object/);
   assert.match(blockly, /vision\.seesAnyObject/);
+  assert.match(blockly, /class CocoObjectLabelField extends Blockly\.FieldTextInput/);
+  assert.match(blockly, /document\.createElement\("datalist"\)/);
+  assert.match(blockly, /type: "coco_object_label"/);
   assert.match(blockly, /vision_object_coordinate/);
-  assert.match(component, /VIEW ALL \{COCO_OBJECT_LABELS\.length\} BUILT-IN LABELS/);
+  assert.match(component, /VIEW ALL LABELS/);
   assert.match(component, /role="dialog"/);
   assert.match(styles, /\.coco-label-dialog/);
   assert.match(blockly, /minidrone_takeoff/);
@@ -662,6 +665,26 @@ test("highlights and translates the classroom Python surface to the async runtim
     () => python.transpilePython("take_off()\n  land()"),
     /Python line 2: unexpected indentation/,
   );
+});
+
+test("filters built-in COCO labels for block autocomplete", async () => {
+  const source = await readFile(new URL("../lib/coco-labels.ts", import.meta.url), "utf8");
+  const compiled = ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const labels = await import(
+    `data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}#coco-labels`
+  );
+
+  assert.equal(labels.COCO_OBJECT_LABELS.length, 80);
+  assert.equal(new Set(labels.COCO_OBJECT_LABELS).size, 80);
+  assert.deepEqual(labels.filterCocoObjectLabels("bo").slice(0, 4), [
+    "boat",
+    "bottle",
+    "bowl",
+    "book",
+  ]);
+  assert.deepEqual(labels.filterCocoObjectLabels("traffic"), ["traffic light"]);
 });
 
 test("captures real and simulated camera frames as session JPEG photos", async () => {

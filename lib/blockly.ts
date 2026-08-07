@@ -1,5 +1,6 @@
 import * as Blockly from "blockly";
 import { javascriptGenerator, Order } from "blockly/javascript";
+import { COCO_OBJECT_LABELS, filterCocoObjectLabels } from "./coco-labels";
 
 const DRONE = "#00205b";
 const GENERAL = "#008c95";
@@ -457,6 +458,47 @@ export function registerHopperBlocks() {
     },
   ]);
 
+  class CocoObjectLabelField extends Blockly.FieldTextInput {
+    protected override widgetCreate_(): HTMLInputElement | HTMLTextAreaElement {
+      const editor = super.widgetCreate_();
+      if (!(editor instanceof HTMLInputElement)) return editor;
+
+      const listId = `coco-object-labels-${this.getSourceBlock()?.id ?? "editor"}`;
+      const suggestions = document.createElement("datalist");
+      suggestions.id = listId;
+      editor.setAttribute("list", listId);
+      editor.setAttribute("autocomplete", "off");
+      editor.setAttribute("aria-label", "Built-in COCO object label");
+      editor.title = "Start typing to choose a built-in COCO object label.";
+
+      const updateSuggestions = () => {
+        suggestions.replaceChildren(
+          ...filterCocoObjectLabels(editor.value).map((label) => {
+            const option = document.createElement("option");
+            option.value = label;
+            return option;
+          }),
+        );
+      };
+      updateSuggestions();
+      editor.addEventListener("input", updateSuggestions);
+      editor.parentElement?.appendChild(suggestions);
+      return editor;
+    }
+  }
+
+  Blockly.Blocks.coco_object_label = {
+    init() {
+      this.appendDummyInput()
+        .appendField(new CocoObjectLabelField("bottle"), "LABEL");
+      this.setOutput(true, "String");
+      this.setColour(VISION);
+      this.setTooltip(
+        `Start typing to choose one of the ${COCO_OBJECT_LABELS.length} built-in COCO object labels.`,
+      );
+    },
+  };
+
   const settingsIcon = `data:image/svg+xml,${encodeURIComponent(
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="white" d="M19.4 13a7.7 7.7 0 0 0 .1-1 7.7 7.7 0 0 0-.1-1l2.1-1.6-2-3.4-2.5 1a7.9 7.9 0 0 0-1.7-1L15 3.3h-4L10.6 6a7.9 7.9 0 0 0-1.7 1L6.4 6l-2 3.4L6.5 11a7.7 7.7 0 0 0-.1 1 7.7 7.7 0 0 0 .1 1l-2.1 1.6 2 3.4 2.5-1a7.9 7.9 0 0 0 1.7 1l.4 2.7h4l.4-2.7a7.9 7.9 0 0 0 1.7-1l2.5 1 2-3.4L19.4 13ZM13 15.5A3.5 3.5 0 1 1 13 8a3.5 3.5 0 0 1 0 7.5Z"/></svg>',
   )}`;
@@ -750,6 +792,10 @@ export function registerHopperBlocks() {
     block,
     `await vision.seesAnyObject(${value(block, "CONFIDENCE", "55")} / 100)`,
   );
+  javascriptGenerator.forBlock.coco_object_label = (block) => [
+    JSON.stringify(block.getFieldValue("LABEL") || ""),
+    Order.ATOMIC,
+  ];
   javascriptGenerator.forBlock.vision_object_coordinate = (block) => activeExpression(
     block,
     `await vision.objectCoordinate(${value(block, "LABEL", '"apple"')}, "${block.getFieldValue("AXIS")}", ${value(block, "CONFIDENCE", "55")} / 100)`,
@@ -876,7 +922,7 @@ export const hopperToolbox: Blockly.utils.toolbox.ToolboxDefinition = {
               kind: "block",
               type: "vision_center_object",
               inputs: {
-                LABEL: { shadow: { type: "text", fields: { TEXT: "person" } } },
+                LABEL: { shadow: { type: "coco_object_label", fields: { LABEL: "person" } } },
                 POWER: numberShadow(10),
               },
             },
@@ -942,7 +988,7 @@ export const hopperToolbox: Blockly.utils.toolbox.ToolboxDefinition = {
           kind: "block",
           type: "vision_sees_object",
           inputs: {
-            LABEL: { shadow: { type: "text", fields: { TEXT: "bottle" } } },
+            LABEL: { shadow: { type: "coco_object_label", fields: { LABEL: "bottle" } } },
             CONFIDENCE: numberShadow(55),
           },
         },
@@ -955,7 +1001,7 @@ export const hopperToolbox: Blockly.utils.toolbox.ToolboxDefinition = {
           kind: "block",
           type: "vision_object_coordinate",
           inputs: {
-            LABEL: { shadow: { type: "text", fields: { TEXT: "apple" } } },
+            LABEL: { shadow: { type: "coco_object_label", fields: { LABEL: "apple" } } },
             CONFIDENCE: numberShadow(55),
           },
         },
