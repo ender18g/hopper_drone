@@ -14,7 +14,6 @@ module.exports = {
   productName: studioName,
   asar: true,
   afterPack: "desktop/build/after-pack.mjs",
-  electronLanguages: ["en"],
   electronVersion: "43.2.0",
   directories: {
     output: "../desktop-release",
@@ -28,6 +27,7 @@ module.exports = {
     "package.json",
   ],
   mac: {
+    electronLanguages: ["en"],
     target: [
       {
         target: "zip",
@@ -50,6 +50,10 @@ module.exports = {
     },
   },
   win: {
+    // Windows locale packs use region-qualified names such as en-US.pak.
+    // A bare "en" was removed by electron-builder 26.15.3, leaving the
+    // locales directory empty and making Electron crash before main.mjs ran.
+    electronLanguages: ["en-US"],
     target: [
       {
         target: "portable",

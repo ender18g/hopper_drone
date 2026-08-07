@@ -1,14 +1,21 @@
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, dialog, Menu, shell } from "electron";
 import { startDesktopServer } from "./server.mjs";
+
+// Electron exposes its main-process API as a CommonJS built-in. Loading it
+// through createRequire keeps this native ESM entry point stable across Node
+// versions instead of depending on synthetic named-export detection.
+const require = createRequire(import.meta.url);
+const { app, BrowserWindow, dialog, Menu, shell } = require("electron");
 
 const moduleDirectory = dirname(fileURLToPath(import.meta.url));
 const branding = JSON.parse(readFileSync(join(moduleDirectory, "branding.json"), "utf8"));
 const STUDIO_NAME = branding.studioName || "Drone Studio";
 const ALLOWED_DRONE_NAME = /^(?:mambo_|travis_|ftw_|mars_|hopper)/i;
 const APP_ID = "org.wrc.hopperstudio";
+const DESKTOP_SMOKE_TEST = process.argv.includes("--desktop-smoke-test");
 
 let desktopServer;
 let mainWindow;
@@ -51,6 +58,48 @@ function isAllowedExternalUrl(value) {
 function openExternalReference(value) {
   if (!isAllowedExternalUrl(value)) return;
   void shell.openExternal(value).catch(() => undefined);
+}
+
+function presentMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  if (!mainWindow.isVisible()) mainWindow.show();
+  mainWindow.focus();
+}
+
+const delay = (milliseconds) =>
+  new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
+
+async function verifyRenderedInterface(window) {
+  const deadline = Date.now() + 30_000;
+  let status;
+  while (Date.now() < deadline && !window.isDestroyed()) {
+    status = await window.webContents.executeJavaScript(
+      `(() => {
+        const root = document.querySelector("#root");
+        return {
+          readyState: document.readyState,
+          rootChildren: root?.childElementCount || 0,
+          hasStudioName: (document.body?.innerText || "")
+            .toLowerCase()
+            .includes(${JSON.stringify(STUDIO_NAME.toLowerCase())}),
+        };
+      })()`,
+      true,
+    );
+    if (
+      window.isVisible()
+      && status.readyState === "complete"
+      && status.rootChildren > 0
+      && status.hasStudioName
+    ) {
+      return;
+    }
+    await delay(200);
+  }
+  throw new Error(
+    `Desktop UI did not render visibly within 30 seconds: ${JSON.stringify(status)}`,
+  );
 }
 
 function secureWebContents(contents) {
@@ -226,7 +275,9 @@ async function createMainWindow() {
     height: 940,
     minWidth: 1024,
     minHeight: 700,
-    show: false,
+    // This app has a large offline bundle. Showing its native frame and matching
+    // background immediately gives Windows users feedback while Chromium loads.
+    show: true,
     autoHideMenuBar: true,
     backgroundColor: "#111a21",
     title: STUDIO_NAME,
@@ -243,24 +294,29 @@ async function createMainWindow() {
       webSecurity: true,
     },
   });
+  mainWindow = window;
 
   configureSession(window);
   attachBluetoothPicker(window);
-  window.once("ready-to-show", () => window.show());
+  window.webContents.on("render-process-gone", (_event, details) => {
+    if (DESKTOP_SMOKE_TEST || window.isDestroyed()) return;
+    window.show();
+    void dialog.showMessageBox(window, {
+      type: "error",
+      title: `${STUDIO_NAME} stopped`,
+      message: `${STUDIO_NAME} could not display its interface.`,
+      detail: `The renderer process ended unexpectedly (${details.reason}, code ${details.exitCode}).`,
+    });
+  });
   window.on("closed", () => {
     if (mainWindow === window) mainWindow = undefined;
   });
   await window.loadURL(`${appOrigin}/?desktop=1`);
-  mainWindow = window;
   return window;
 }
 
 app.on("web-contents-created", (_event, contents) => secureWebContents(contents));
-app.on("second-instance", () => {
-  if (!mainWindow) return;
-  if (mainWindow.isMinimized()) mainWindow.restore();
-  mainWindow.focus();
-});
+app.on("second-instance", presentMainWindow);
 app.on("window-all-closed", () => app.quit());
 app.on("before-quit", () => {
   void desktopServer?.close().catch(() => undefined);
@@ -270,9 +326,18 @@ app.on("before-quit", () => {
 app.whenReady()
   .then(async () => {
     Menu.setApplicationMenu(null);
-    await createMainWindow();
+    const window = await createMainWindow();
+    if (DESKTOP_SMOKE_TEST) {
+      await verifyRenderedInterface(window);
+      app.exit(0);
+    }
   })
   .catch(async (error) => {
+    if (DESKTOP_SMOKE_TEST) {
+      console.error(error);
+      app.exit(1);
+      return;
+    }
     await dialog.showMessageBox({
       type: "error",
       title: `${STUDIO_NAME} could not start`,

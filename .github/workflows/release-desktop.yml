@@ -38,6 +38,34 @@ jobs:
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
 
+      - name: Smoke-test packaged Windows UI
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $locale = Get-Item "desktop-release/win-unpacked/locales/en-US.pak"
+          if ($locale.Length -le 0) {
+            throw "The packaged app has no usable en-US Electron locale."
+          }
+
+          $apps = @(Get-ChildItem "desktop-release" -Filter "*-Windows-x64-*.exe" -File)
+          if ($apps.Count -ne 1) {
+            throw "Expected one portable Windows EXE, found $($apps.Count)."
+          }
+
+          $log = Join-Path $env:RUNNER_TEMP "hopper-electron.log"
+          $process = Start-Process `
+            -FilePath $apps[0].FullName `
+            -ArgumentList @("--desktop-smoke-test", "--enable-logging=file", "--log-file=$log") `
+            -PassThru
+          if (-not $process.WaitForExit(120000)) {
+            taskkill.exe /PID $process.Id /T /F | Out-Host
+            throw "The portable Windows app did not finish its UI smoke test within 120 seconds."
+          }
+          if ($process.ExitCode -ne 0) {
+            if (Test-Path $log) { Get-Content $log | Out-Host }
+            throw "The portable Windows app failed its UI smoke test with exit code $($process.ExitCode)."
+          }
+
       - name: Upload Windows release file
         uses: actions/upload-artifact@v7
         with:
